@@ -229,7 +229,7 @@ typedef struct cell *pointer;
 #define T_CLOSURE       64	/* 0000000001000000 */
 #define T_CONTINUATION 128	/* 0000000010000000 */
 #ifdef USE_MACRO
-# define T_MACRO        256	/* 0000000100000000 */
+# define T_MACRO       256	/* 0000000100000000 */
 #endif
 #define T_PROMISE      512	/* 0000001000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
@@ -337,9 +337,12 @@ jmp_buf error_jmp;
 #endif
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
 
+void gc(register pointer a, register pointer b);
+void FatalError(char *fmt);
+void Error(char *fmt);
+
 /* allocate new cell segment */
-alloc_cellseg(n)
-int     n;
+int alloc_cellseg(int n)
 {
 	register pointer p;
 	register long i;
@@ -367,8 +370,7 @@ int     n;
 }
 
 /* allocate new string segment */
-alloc_strseg(n)
-int     n;
+int alloc_strseg(int n)
 {
 	register char *p;
 	register long i;
@@ -387,26 +389,8 @@ int     n;
 	return n;
 }
 
-/* initialization of Mini-Scheme */
-init_scheme()
-{
-	register pointer i;
-
-	if (alloc_cellseg(FIRST_CELLSEGS) != FIRST_CELLSEGS)
-		FatalError("Unable to allocate initial cell segments");
-	if (!alloc_strseg(1))
-		FatalError("Unable to allocate initial string segments");
-#ifdef VERBOSE
-	gc_verbose = 1;
-#else
-	gc_verbose = 0;
-#endif
-	init_globals();
-}
-
 /* get new cell.  parameter a, b is marked by gc. */
-pointer get_cell(a, b)
-register pointer a, b;
+pointer get_cell(register pointer a, register pointer b)
 {
 	register pointer x;
 
@@ -430,35 +414,32 @@ register pointer a, b;
 	x = free_cell;
 	free_cell = cdr(x);
 	--fcells;
-	return (x);
+	return x;
 }
 
 /* get new cons cell */
-pointer cons(a, b)
-register pointer a, b;
+pointer cons(register pointer a, register pointer b)
 {
 	register pointer x = get_cell(a, b);
 
 	type(x) = T_PAIR;
 	car(x) = a;
 	cdr(x) = b;
-	return (x);
+	return x;
 }
 
 /* get number atom */
-pointer mk_number(num)
-register long num;
+pointer mk_number(register long num)
 {
 	register pointer x = get_cell(NIL, NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
 	ivalue(x) = num;
-	return (x);
+	return x;
 }
 
 /* allocate name to string area */
-char   *store_string(name)
-char   *name;
+char *store_string(char *name)
 {
 	register char *q;
 	register short i;
@@ -481,24 +462,22 @@ char   *name;
 	}
 	strcpy(q, name);
 FOUND:
-	return (q);
+	return q;
 }
 
 /* get new string */
-pointer mk_string(str)
-char   *str;
+pointer mk_string(char *str)
 {
 	register pointer x = get_cell(NIL, NIL);
 
 	strvalue(x) = store_string(str);
 	type(x) = (T_STRING | T_ATOM);
 	keynum(x) = (short) (-1);
-	return (x);
+	return x;
 }
 
 /* get new symbol */
-pointer mk_symbol(name)
-char   *name;
+pointer mk_symbol(char *name)
 {
 	register pointer x;
 
@@ -508,56 +487,54 @@ char   *name;
 			break;
 
 	if (x != NIL)
-		return (car(x));
+		return car(x);
 	else {
 		x = cons(mk_string(name), NIL);
 		type(x) = T_SYMBOL;
 		oblist = cons(x, oblist);
-		return (x);
+		return x;
 	}
 }
 
 /* make symbol or number atom from string */
-pointer mk_atom(q)
-char   *q;
+pointer mk_atom(char *q)
 {
 	char    c, *p;
 
 	p = q;
 	if (!isdigit(c = *p++)) {
 		if ((c != '+' && c != '-') || !isdigit(*p))
-			return (mk_symbol(q));
+			return mk_symbol(q);
 	}
 	for ( ; (c = *p) != 0; ++p)
 		if (!isdigit(c))
-			return (mk_symbol(q));
-	return (mk_number(atol(q)));
+			return mk_symbol(q);
+	return mk_number(atol(q));
 }
 
 /* make constant */
-pointer mk_const(name)
-char   *name;
+pointer mk_const(char *name)
 {
 	long    x;
 	char    tmp[256];
 
 	if (!strcmp(name, "t"))
-		return (T);
+		return T;
 	else if (!strcmp(name, "f"))
-		return (F);
+		return F;
 	else if (*name == 'o') {/* #o (octal) */
 		sprintf(tmp, "0%s", &name[1]);
 		sscanf(tmp, "%lo", &x);
-		return (mk_number(x));
+		return mk_number(x);
 	} else if (*name == 'd') {	/* #d (decimal) */
 		sscanf(&name[1], "%ld", &x);
-		return (mk_number(x));
+		return mk_number(x);
 	} else if (*name == 'x') {	/* #x (hex) */
 		sprintf(tmp, "0x%s", &name[1]);
 		sscanf(tmp, "%lx", &x);
-		return (mk_number(x));
+		return mk_number(x);
 	} else
-		return (NIL);
+		return NIL;
 }
 
 
@@ -567,17 +544,16 @@ char   *name;
  *  We use algorithm E (Kunuth, The Art of Computer Programming Vol.1,
  *  sec.3.5) for marking.
  */
-mark(a)
-pointer a;
+void mark(pointer a)
 {
 	register pointer t, q, p;
 
-E1:	t = (pointer) 0;
+	t = (pointer) 0;
 	p = a;
 E2:	setmark(p);
-E3:	if (isatom(p))
+	if (isatom(p))
 		goto E6;
-E4:	q = car(p);
+	q = car(p);
 	if (q && !ismark(q)) {
 		setatom(p);
 		car(p) = t;
@@ -611,8 +587,7 @@ E6:	if (!t)
 
 
 /* garbage collection. parameter a, b is marked. */
-gc(a, b)
-register pointer a, b;
+void gc(register pointer a, register pointer b)
 {
 	register pointer p;
 	register short i;
@@ -681,7 +656,7 @@ char   *currentline = linebuff;
 char   *endline = linebuff;
 
 /* get new character from input file */
-int     inchar()
+char inchar()
 {
 	if (currentline >= endline) {	/* input buffer is empty */
 		if (feof(infp)) {
@@ -697,17 +672,17 @@ int     inchar()
 			}
 		endline = linebuff + strlen(linebuff);
 	}
-	return (*currentline++);
+	return *currentline++;
 }
 
 /* clear input buffer */
-clearinput()
+void clearinput()
 {
 	currentline = endline = linebuff;
 }
 
 /* back to standard input */
-flushinput()
+void flushinput()
 {
 	if (infp != stdin) {
 		fclose(infp);
@@ -716,15 +691,23 @@ flushinput()
 	clearinput();
 }
 
+/* check c is delimiter */
+int isdelim(char *s, char c)
+{
+	while (*s)
+		if (*s++ == c)
+			return 0;
+	return 1;
+}
+
 /* back character to input buffer */
-backchar()
+void backchar()
 {
 	currentline--;
 }
 
 /* read chacters to delimiter */
-char   *readstr(delim)
-char   *delim;
+char *readstr(char *delim)
 {
 	char   *p = strbuff;
 
@@ -732,11 +715,11 @@ char   *delim;
 		;
 	backchar();
 	*--p = '\0';
-	return (strbuff);
+	return strbuff;
 }
 
 /* read string expression "xxx...xxx" */
-char   *readstrexp()
+char *readstrexp()
 {
 	char    c, *p = strbuff;
 
@@ -747,24 +730,13 @@ char   *readstrexp()
 			*(p - 1) = '"';
 		else {
 			*p = '\0';
-			return (strbuff);
+			return strbuff;
 		}
 	}
 }
 
-/* check c is delimiter */
-isdelim(s, c)
-char   *s;
-char    c;
-{
-	while (*s)
-		if (*s++ == c)
-			return (0);
-	return (1);
-}
-
 /* skip white characters */
-skipspace()
+void skipspace()
 {
 	while (isspace(inchar()))
 		;
@@ -772,47 +744,45 @@ skipspace()
 }
 
 /* get token */
-token()
+int token()
 {
 	skipspace();
 	switch (inchar()) {
 	case '(':
-		return (TOK_LPAREN);
+		return TOK_LPAREN;
 	case ')':
-		return (TOK_RPAREN);
+		return TOK_RPAREN;
 	case '.':
-		return (TOK_DOT);
+		return TOK_DOT;
 	case '\'':
-		return (TOK_QUOTE);
+		return TOK_QUOTE;
 	case ';':
-		return (TOK_COMMENT);
+		return TOK_COMMENT;
 	case '"':
-		return (TOK_DQUOTE);
+		return TOK_DQUOTE;
 #ifdef USE_QQUOTE
 	case BACKQUOTE:
-		return (TOK_BQUOTE);
+		return TOK_BQUOTE;
 	case ',':
 		if (inchar() == '@')
-			return (TOK_ATMARK);
+			return TOK_ATMARK;
 		else {
 			backchar();
-			return (TOK_COMMA);
+			return TOK_COMMA;
 		}
 #endif
 	case '#':
-		return (TOK_SHARP);
+		return TOK_SHARP;
 	default:
 		backchar();
-		return (TOK_ATOM);
+		return TOK_ATOM;
 	}
 }
 
 /* ========== Rootines for Printing ========== */
 #define	ok_abbrev(x)	(ispair(x) && cdr(x) == NIL)
 
-strunquote(p, s)
-char *p;
-char *s;
+void strunquote(char *p, char *s)
 {
 	*p++ = '"';
 	for ( ; *s; ++s) {
@@ -831,12 +801,10 @@ char *s;
 
 
 /* print atoms */
-int printatom(l, f)
-pointer l;
-int     f;
+int printatom(pointer l, int f)
 {
-	char	*p;
-	
+	char *p = "";
+
 	if (l == NIL)
 		p = "()";
 	else if (l == T)
@@ -876,42 +844,38 @@ int     f;
 /* ========== Rootines for Evaluation Cycle ========== */
 
 /* make closure. c is code. e is environment */
-pointer mk_closure(c, e)
-register pointer c, e;
+pointer mk_closure(register pointer c, register pointer e)
 {
 	register pointer x = get_cell(c, e);
 
 	type(x) = T_CLOSURE;
 	car(x) = c;
 	cdr(x) = e;
-	return (x);
+	return x;
 }
 
 /* make continuation. */
-pointer mk_continuation(d)
-register pointer d;
+pointer mk_continuation(register pointer d)
 {
 	register pointer x = get_cell(NIL, d);
 
 	type(x) = T_CONTINUATION;
 	cont_dump(x) = d;
-	return (x);
+	return x;
 }
 
 /* reverse list -- make new cells */
-pointer reverse(a)
-register pointer a;		/* a must be checked by gc */
+pointer reverse(register pointer a) /* a must be checked by gc */
 {
 	register pointer p = NIL;
 
 	for ( ; ispair(a); a = cdr(a))
 		p = cons(car(a), p);
-	return (p);
+	return p;
 }
 
 /* reverse list --- no make new cells */
-pointer non_alloc_rev(term, list)
-pointer term, list;
+pointer non_alloc_rev(pointer term, pointer list)
 {
 	register pointer p = list, result = term, q;
 
@@ -921,12 +885,11 @@ pointer term, list;
 		result = p;
 		p = q;
 	}
-	return (result);
+	return result;
 }
 
 /* append list -- make new cells */
-pointer append(a, b)
-register pointer a, b;
+pointer append(register pointer a, register pointer b)
 {
 	register pointer p = b, q;
 
@@ -939,23 +902,22 @@ register pointer a, b;
 			a = q;
 		}
 	}
-	return (p);
+	return p;
 }
 
 /* equivalence of atoms */
-eqv(a, b)
-register pointer a, b;
+int eqv(register pointer a, register pointer b)
 {
 	if (isstring(a)) {
 		if (isstring(b))
 			return (strvalue(a) == strvalue(b));
 		else
-			return (0);
+			return 0;
 	} else if (isnumber(a)) {
 		if (isnumber(b))
 			return (ivalue(a) == ivalue(b));
 		else
-			return (0);
+			return 0;
 	} else
 		return (a == b);
 }
@@ -1836,7 +1798,7 @@ register short op;
 		}
 
 	case OP_QUIT:		/* quit */
-		return (NIL);
+		return NIL;
 
 	case OP_GC:		/* gc */
 		gc(NIL, NIL);
@@ -2259,9 +2221,7 @@ register short op;
 
 /* ========== Initialization of internal keywords ========== */
 
-mk_syntax(op, name)
-unsigned short op;
-char   *name;
+void mk_syntax(unsigned short op, char *name)
 {
 	pointer x;
 
@@ -2271,9 +2231,7 @@ char   *name;
 	oblist = cons(x, oblist);
 }
 
-mk_proc(op, name)
-unsigned short op;
-char   *name;
+void mk_proc(unsigned short op, char *name)
 {
 	pointer x, y;
 
@@ -2285,7 +2243,7 @@ char   *name;
 }
 
 
-init_vars_global()
+void init_vars_global()
 {
 	pointer x;
 
@@ -2309,7 +2267,7 @@ init_vars_global()
 }
 
 
-init_syntax()
+void init_syntax()
 {
 	/* init syntax */
 	mk_syntax(OP_LAMBDA, "lambda");
@@ -2333,7 +2291,7 @@ init_syntax()
 }
 
 
-init_procs()
+void init_procs()
 {
 	/* init procedure */
 	mk_proc(OP_PEVAL, "eval");
@@ -2394,7 +2352,7 @@ init_procs()
 
 
 /* initialize several globals */
-init_globals()
+void init_globals()
 {
 	init_vars_global();
 	init_syntax();
@@ -2410,23 +2368,36 @@ init_globals()
 
 }
 
+/* initialization of Mini-Scheme */
+void init_scheme()
+{
+	if (alloc_cellseg(FIRST_CELLSEGS) != FIRST_CELLSEGS)
+		FatalError("Unable to allocate initial cell segments");
+	if (!alloc_strseg(1))
+		FatalError("Unable to allocate initial string segments");
+#ifdef VERBOSE
+	gc_verbose = 1;
+#else
+	gc_verbose = 0;
+#endif
+	init_globals();
+}
+
 /* ========== Error ==========  */
 
-FatalError(fmt, a, b, c)
-char   *fmt, *a, *b, *c;
+void FatalError(char *fmt)
 {
 	fprintf(stderr, "Fatal error: ");
-	fprintf(stderr, fmt, a, b, c);
+	fprintf(stderr, fmt);
 	fprintf(stderr, "\n");
 	exit(1);
 }
 
 #ifdef USE_SETJMP
-Error(fmt, a, b, c)
-char   *fmt, *a, *b, *c;
+void Error(char *fmt)
 {
 	fprintf(stderr, "Error: ");
-	fprintf(stderr, fmt, a, b, c);
+	fprintf(stderr, fmt);
 	fprintf(stderr, "\n");
 	flushinput();
 	longjmp(error_jmp, OP_T0LVL);
@@ -2436,15 +2407,15 @@ char   *fmt, *a, *b, *c;
 
 /* ========== Main ========== */
 
-main()
+void main()
 {
-	short   op = (short) OP_LOAD;
+	short op = (short)OP_LOAD;
 
 	printf(banner);
 	init_scheme();
 	args = cons(mk_string(InitFile), NIL);
 #ifdef USE_SETJMP
-	op = setjmp(error_jmp);
+	op = (short)setjmp(error_jmp);
 #endif
 	Eval_Cycle(op);
 }
