@@ -939,20 +939,20 @@ int eqv(register pointer a, register pointer b)
 #endif
 
 #define Error_0(s) BEGIN                       \
-    args = cons(mk_string((s)), NIL);          \
-    operator = (short)OP_ERR0;                 \
-    return T; END
+	args = cons(mk_string((s)), NIL);          \
+	operator = (short)OP_ERR0;                 \
+	goto LOOP; END
 
 #define Error_1(s, a) BEGIN                    \
-    args = cons((a), NIL);                     \
-    args = cons(mk_string((s)), args);         \
-    operator = (short)OP_ERR0;                 \
-    return T; END
+	args = cons((a), NIL);                     \
+	args = cons(mk_string((s)), args);         \
+	operator = (short)OP_ERR0;                 \
+	goto LOOP; END
 
 /* control macros for Eval_Cycle */
 #define s_goto(a) BEGIN                        \
-    operator = (short)(a);                     \
-    return T; END
+	operator = (short)(a);                     \
+	goto LOOP; END
 
 #define s_save(a, b, c)  (                     \
     dump = cons(envir, cons((c), dump)),       \
@@ -962,12 +962,12 @@ int eqv(register pointer a, register pointer b)
 
 #define s_return(a) BEGIN                      \
     value = (a);                               \
-    operator = ivalue(car(dump));              \
+    operator = (short)ivalue(car(dump));       \
     args = cadr(dump);                         \
     envir = caddr(dump);                       \
     code = cadddr(dump);                       \
     dump = cddddr(dump);                       \
-    return T; END
+    goto LOOP; END
 
 #define s_retbool(tf)	s_return((tf) ? T : F)
 
@@ -976,116 +976,117 @@ int eqv(register pointer a, register pointer b)
 /* ========== Evaluation Cycle ========== */
 
 /* operator code */
-#define	OP_LOAD			0
-#define	OP_T0LVL		1
-#define	OP_T1LVL		2
-#define	OP_READ			3
-#define	OP_VALUEPRINT		4
-#define	OP_EVAL			5
-#define	OP_E0ARGS		6
-#define	OP_E1ARGS		7
-#define	OP_APPLY		8
-#define	OP_DOMACRO		9
+enum {
+	OP_LOAD = 0,
+	OP_T0LVL,
+	OP_T1LVL,
+	OP_READ,
+	OP_VALUEPRINT,
+	OP_EVAL,
+	OP_E0ARGS,
+	OP_E1ARGS,
+	OP_APPLY,
+	OP_DOMACRO,
 
-#define	OP_LAMBDA		10
-#define	OP_QUOTE		11
-#define	OP_DEF0			12
-#define	OP_DEF1			13
-#define	OP_BEGIN		14
-#define	OP_IF0			15
-#define	OP_IF1			16
-#define	OP_SET0			17
-#define	OP_SET1			18
-#define	OP_LET0			19
-#define	OP_LET1			20
-#define	OP_LET2			21
-#define	OP_LET0AST		22
-#define	OP_LET1AST		23
-#define	OP_LET2AST		24
-#define	OP_LET0REC		25
-#define	OP_LET1REC		26
-#define	OP_LET2REC		27
-#define	OP_COND0		28
-#define	OP_COND1		29
-#define	OP_DELAY		30
-#define	OP_AND0			31
-#define	OP_AND1			32
-#define	OP_OR0			33
-#define	OP_OR1			34
-#define	OP_C0STREAM		35
-#define	OP_C1STREAM		36
-#define	OP_0MACRO		37
-#define	OP_1MACRO		38
-#define	OP_CASE0		39
-#define	OP_CASE1		40
-#define	OP_CASE2		41
+	OP_LAMBDA,
+	OP_QUOTE,
+	OP_DEF0,
+	OP_DEF1,
+	OP_BEGIN,
+	OP_IF0,
+	OP_IF1,
+	OP_SET0,
+	OP_SET1,
+	OP_LET0,
+	OP_LET1,
+	OP_LET2,
+	OP_LET0AST,
+	OP_LET1AST,
+	OP_LET2AST,
+	OP_LET0REC,
+	OP_LET1REC,
+	OP_LET2REC,
+	OP_COND0,
+	OP_COND1,
+	OP_DELAY,
+	OP_AND0,
+	OP_AND1,
+	OP_OR0,
+	OP_OR1,
+	OP_C0STREAM,
+	OP_C1STREAM,
+	OP_0MACRO,
+	OP_1MACRO,
+	OP_CASE0,
+	OP_CASE1,
+	OP_CASE2,
 
-#define	OP_PEVAL		42
-#define	OP_PAPPLY		43
-#define	OP_CONTINUATION		44
-#define	OP_ADD			45
-#define	OP_SUB			46
-#define	OP_MUL			47
-#define	OP_DIV			48
-#define	OP_REM			49
-#define	OP_CAR			50
-#define	OP_CDR			51
-#define	OP_CONS			52
-#define	OP_SETCAR		53
-#define	OP_SETCDR		54
-#define	OP_NOT			55
-#define	OP_BOOL			56
-#define	OP_NULL			57
-#define	OP_ZEROP		58
-#define	OP_POSP			59
-#define	OP_NEGP			60
-#define	OP_NEQ			61
-#define	OP_LESS			62
-#define	OP_GRE			63
-#define	OP_LEQ			64
-#define	OP_GEQ			65
-#define	OP_SYMBOL		66
-#define	OP_NUMBER		67
-#define	OP_STRING		68
-#define	OP_PROC			69
-#define	OP_PAIR			70
-#define	OP_EQ			71
-#define	OP_EQV			72
-#define	OP_FORCE		73
-#define	OP_WRITE		74
-#define	OP_DISPLAY		75
-#define	OP_NEWLINE		76
-#define	OP_ERR0			77
-#define	OP_ERR1			78
-#define	OP_REVERSE		79
-#define	OP_APPEND		80
-#define	OP_PUT			81
-#define	OP_GET			82
-#define	OP_QUIT			83
-#define	OP_GC			84
-#define	OP_GCVERB		85
-#define	OP_NEWSEGMENT		86
+	OP_PEVAL,
+	OP_PAPPLY,
+	OP_CONTINUATION,
+	OP_ADD,
+	OP_SUB,
+	OP_MUL,
+	OP_DIV,
+	OP_REM,
+	OP_CAR,
+	OP_CDR,
+	OP_CONS,
+	OP_SETCAR,
+	OP_SETCDR,
+	OP_NOT,
+	OP_BOOL,
+	OP_NULL,
+	OP_ZEROP,
+	OP_POSP,
+	OP_NEGP,
+	OP_NEQ,
+	OP_LESS,
+	OP_GRE,
+	OP_LEQ,
+	OP_GEQ,
+	OP_SYMBOL,
+	OP_NUMBER,
+	OP_STRING,
+	OP_PROC,
+	OP_PAIR,
+	OP_EQ,
+	OP_EQV,
+	OP_FORCE,
+	OP_WRITE,
+	OP_DISPLAY,
+	OP_NEWLINE,
+	OP_ERR0,
+	OP_ERR1,
+	OP_REVERSE,
+	OP_APPEND,
+	OP_PUT,
+	OP_GET,
+	OP_QUIT,
+	OP_GC,
+	OP_GCVERB,
+	OP_NEWSEGMENT,
 
-#define	OP_RDSEXPR		87
-#define	OP_RDLIST		88
-#define	OP_RDDOT		89
-#define	OP_RDQUOTE		90
-#define	OP_RDQQUOTE		91
-#define	OP_RDUNQUOTE		92
-#define	OP_RDUQTSP		93
+	OP_RDSEXPR,
+	OP_RDLIST,
+	OP_RDDOT,
+	OP_RDQUOTE,
+	OP_RDQQUOTE,
+	OP_RDUNQUOTE,
+	OP_RDUQTSP,
 
-#define	OP_P0LIST		94
-#define	OP_P1LIST		95
+	OP_P0LIST,
+	OP_P1LIST,
 
-#define	OP_LIST_LENGTH		96
-#define	OP_ASSQ			97
-#define	OP_PRINT_WIDTH		98
-#define	OP_P0_WIDTH		99
-#define	OP_P1_WIDTH		100
-#define	OP_GET_CLOSURE		101
-#define	OP_CLOSUREP		102
-#define	OP_MACROP		103
-
+	OP_LIST_LENGTH,
+	OP_ASSQ,
+	OP_PRINT_WIDTH,
+	OP_P0_WIDTH,
+	OP_P1_WIDTH,
+	OP_GET_CLOSURE,
+	OP_CLOSUREP,
+	OP_MACROP,
+};
 
 static FILE *tmpfp;
 static int tok;
@@ -1093,12 +1094,16 @@ static int print_flag;
 static pointer value;
 static short operator;
 
-pointer opexe_0(op)
-register short op;
+/* kernel of this intepreter */
+pointer Eval_Cycle(short op)
 {
 	register pointer x, y;
+	register long v;
+	static long w;
 
-	switch (op) {
+	operator = op;
+LOOP:
+	switch (operator) {
 	case OP_LOAD:		/* load */
 		if (!isstring(car(args))) {
 			Error_0("load -- argument is not string");
@@ -1371,20 +1376,7 @@ register short op;
 			args = NIL;
 			s_goto(OP_BEGIN);
 		}
-	default:
-		sprintf(strbuff, "%d is illegal operator", operator);
-		Error_0(strbuff);
-	}
-	return T;
-}
 
-
-pointer opexe_1(op)
-register short op;
-{
-	register pointer x, y;
-
-	switch (op) {
 	case OP_LET0REC:	/* letrec */
 		envir = cons(NIL, envir);
 		args = NIL;
@@ -1562,21 +1554,6 @@ register short op;
 		args = cons(mk_continuation(dump), NIL);
 		s_goto(OP_APPLY);
 
-	default:
-		sprintf(strbuff, "%d is illegal operator", operator);
-		Error_0(strbuff);
-	}
-	return T;
-}
-
-
-pointer opexe_2(op)
-register short op;
-{
-	register pointer x, y;
-	register long v;
-
-	switch (op) {
 	case OP_ADD:		/* + */
 		for (x = args, v = 0; x != NIL; x = cdr(x))
 			v += ivalue(car(x));
@@ -1646,20 +1623,6 @@ register short op;
 			Error_0("Unable to set-cdr! for non-cons cell");
 		}
 
-	default:
-		sprintf(strbuff, "%d is illegal operator", operator);
-		Error_0(strbuff);
-	}
-	return T;
-}
-
-
-pointer opexe_3(op)
-register short op;
-{
-	register pointer x, y;
-
-	switch (op) {
 	case OP_NOT:		/* not */
 		s_retbool(isfalse(car(args)));
 	case OP_BOOL:		/* boolean? */
@@ -1690,10 +1653,10 @@ register short op;
 		s_retbool(isstring(car(args)));
 	case OP_PROC:		/* procedure? */
 		/*--
-	         * continuation should be procedure by the example
-	         * (call-with-current-continuation procedure?) ==> #t
-                 * in R^3 report sec. 6.9
-	         */
+		 * continuation should be procedure by the example
+		 * (call-with-current-continuation procedure?) ==> #t
+		 * in R^3 report sec. 6.9
+		 */
 		s_retbool(isproc(car(args)) || isclosure(car(args))
 			  || iscontinuation(car(args)));
 	case OP_PAIR:		/* pair? */
@@ -1702,20 +1665,7 @@ register short op;
 		s_retbool(car(args) == cadr(args));
 	case OP_EQV:		/* eqv? */
 		s_retbool(eqv(car(args), cadr(args)));
-	default:
-		sprintf(strbuff, "%d is illegal operator", operator);
-		Error_0(strbuff);
-	}
-	return T;
-}
 
-
-pointer opexe_4(op)
-register short op;
-{
-	register pointer x, y;
-
-	switch (op) {
 	case OP_FORCE:		/* force */
 		code = car(args);
 		if (ispromise(code)) {
@@ -1798,7 +1748,7 @@ register short op;
 		}
 
 	case OP_QUIT:		/* quit */
-		return NIL;
+		break;
 
 	case OP_GC:		/* gc */
 		gc(NIL, NIL);
@@ -1818,17 +1768,8 @@ register short op;
 		fprintf(outfp, "allocate %d new segments\n",
 			alloc_cellseg((int) ivalue(car(args))));
 		s_return(T);
-	}
-}
 
-
-pointer opexe_5(op)
-register short op;
-{
-	register pointer x, y;
-
-	switch (op) {
-	/* ========== reading part ========== */
+		/* ========== reading part ========== */
 	case OP_RDSEXPR:
 		switch (tok) {
 		case TOK_COMMENT:
@@ -1894,7 +1835,7 @@ register short op;
 			tok = token();
 			s_goto(OP_RDSEXPR);
 		} else {
-			s_save(OP_RDLIST, args, NIL);;
+			s_save(OP_RDLIST, args, NIL);
 			s_goto(OP_RDSEXPR);
 		}
 
@@ -1962,29 +1903,11 @@ register short op;
 			s_return(T);
 		}
 
-	default:
-		sprintf(strbuff, "%d is illegal operator", operator);
-		Error_0(strbuff);
-
-	}
-	return T;
-}
-
-
-pointer opexe_6(op)
-register short op;
-{
-	register pointer x, y;
-	register long v;
-	static long	w;
-	char	buffer[32];
-
-	switch (op) {
 	case OP_LIST_LENGTH:	/* list-length */	/* a.k */
 		for (x = car(args), v = 0; ispair(x); x = cdr(x))
 			++v;
 		s_return(mk_number(v));
-		
+
 	case OP_ASSQ:		/* assq */	/* a.k */
 		x = car(args);
 		for (y = cadr(args); ispair(y); y = cdr(y)) {
@@ -1999,13 +1922,13 @@ register short op;
 		} else {
 			s_return(F);
 		}
-		
+
 	case OP_PRINT_WIDTH:	/* print-width */	/* a.k */
 		w = 0;
 		args = car(args);
 		print_flag = -1;
 		s_goto(OP_P0_WIDTH);
-		
+
 	case OP_P0_WIDTH:
 		if (!ispair(args)) {
 			w += printatom(args, print_flag);
@@ -2036,7 +1959,7 @@ register short op;
 			args = car(args);
 			s_goto(OP_P0_WIDTH);
 		}
-		
+
 	case OP_P1_WIDTH:
 		if (ispair(args)) {
 			s_save(OP_P1_WIDTH, cdr(args), NIL);
@@ -2049,7 +1972,7 @@ register short op;
 			++w;
 			s_return(mk_number(w));
 		}
-		
+
 	case OP_GET_CLOSURE:	/* get-closure-code */	/* a.k */
 		args = car(args);
 		if (args == NIL) {
@@ -2063,160 +1986,30 @@ register short op;
 		} else {
 			s_return(F);
 		}
+
 	case OP_CLOSUREP:		/* closure? */
 		/*
 		 * Note, macro object is also a closure.
 		 * Therefore, (closure? <#MACRO>) ==> #t
 		 */
 		if (car(args) == NIL) {
-		    s_return(F);
+			s_return(F);
 		}
 		s_retbool(isclosure(car(args)));
 #ifdef USE_MACRO
 	case OP_MACROP:		/* macro? */
 		if (car(args) == NIL) {
-		    s_return(F);
+			s_return(F);
 		}
 		s_retbool(ismacro(car(args)));
 #endif
+
 	default:
 		sprintf(strbuff, "%d is illegal operator", operator);
 		Error_0(strbuff);
 	}
-	return T;	/* NOTREACHED */
-}
 
-
-
-
-pointer	(*dispatch_table[])() = {
-	opexe_0,	/* OP_LOAD = 0, */
-	opexe_0,	/* OP_T0LVL, */
-	opexe_0,	/* OP_T1LVL, */
-	opexe_0,	/* OP_READ, */
-	opexe_0,	/* OP_VALUEPRINT, */
-	opexe_0,	/* OP_EVAL, */
-	opexe_0,	/* OP_E0ARGS, */
-	opexe_0,	/* OP_E1ARGS, */
-	opexe_0,	/* OP_APPLY, */
-	opexe_0,	/* OP_DOMACRO, */
-	
-	opexe_0,	/* OP_LAMBDA, */
-	opexe_0,	/* OP_QUOTE, */
-	opexe_0,	/* OP_DEF0, */
-	opexe_0,	/* OP_DEF1, */
-	opexe_0,	/* OP_BEGIN, */
-	opexe_0,	/* OP_IF0, */
-	opexe_0,	/* OP_IF1, */
-	opexe_0,	/* OP_SET0, */
-	opexe_0,	/* OP_SET1, */
-	opexe_0,	/* OP_LET0, */
-	opexe_0,	/* OP_LET1, */
-	opexe_0,	/* OP_LET2, */
-	opexe_0,	/* OP_LET0AST, */
-	opexe_0,	/* OP_LET1AST, */
-	opexe_0,	/* OP_LET2AST, */
-	
-	opexe_1,	/* OP_LET0REC, */
-	opexe_1,	/* OP_LET1REC, */
-	opexe_1,	/* OP_LETREC2, */
-	opexe_1,	/* OP_COND0, */
-	opexe_1,	/* OP_COND1, */
-	opexe_1,	/* OP_DELAY, */
-	opexe_1,	/* OP_AND0, */
-	opexe_1,	/* OP_AND1, */
-	opexe_1,	/* OP_OR0, */
-	opexe_1,	/* OP_OR1, */
-	opexe_1,	/* OP_C0STREAM, */
-	opexe_1,	/* OP_C1STREAM, */
-	opexe_1,	/* OP_0MACRO, */
-	opexe_1,	/* OP_1MACRO, */
-	opexe_1,	/* OP_CASE0, */
-	opexe_1,	/* OP_CASE1, */
-	opexe_1,	/* OP_CASE2, */
-	
-	opexe_1,	/* OP_PEVAL, */
-	opexe_1,	/* OP_PAPPLY, */
-	opexe_1,	/* OP_CONTINUATION, */
-	
-	opexe_2,	/* OP_ADD, */
-	opexe_2,	/* OP_SUB, */
-	opexe_2,	/* OP_MUL, */
-	opexe_2,	/* OP_DIV, */
-	opexe_2,	/* OP_REM, */
-	opexe_2,	/* OP_CAR, */
-	opexe_2,	/* OP_CDR, */
-	opexe_2,	/* OP_CONS, */
-	opexe_2,	/* OP_SETCAR, */
-	opexe_2,	/* OP_SETCDR, */
-	
-	opexe_3,	/* OP_NOT, */
-	opexe_3,	/* OP_BOOL, */
-	opexe_3,	/* OP_NULL, */
-	opexe_3,	/* OP_ZEROP, */
-	opexe_3,	/* OP_POSP, */
-	opexe_3,	/* OP_NEGP, */
-	opexe_3,	/* OP_NEQ, */
-	opexe_3,	/* OP_LESS, */
-	opexe_3,	/* OP_GRE, */
-	opexe_3,	/* OP_LEQ, */
-	opexe_3,	/* OP_GEQ, */
-	opexe_3,	/* OP_SYMBOL, */
-	opexe_3,	/* OP_NUMBER, */
-	opexe_3,	/* OP_STRING, */
-	opexe_3,	/* OP_PROC, */
-	opexe_3,	/* OP_PAIR, */
-	opexe_3,	/* OP_EQ, */
-	opexe_3,	/* OP_EQV, */
-	
-	opexe_4,	/* OP_FORCE, */
-	opexe_4,	/* OP_WRITE, */
-	opexe_4,	/* OP_DISPLAY, */
-	opexe_4,	/* OP_NEWLINE, */
-	opexe_4,	/* OP_ERR0, */
-	opexe_4,	/* OP_ERR1, */
-	opexe_4,	/* OP_REVERSE, */
-	opexe_4,	/* OP_APPEND, */
-	opexe_4,	/* OP_PUT, */
-	opexe_4,	/* OP_GET, */
-	opexe_4,	/* OP_QUIT, */
-	opexe_4,	/* OP_GC, */
-	opexe_4,	/* OP_GCVERB, */
-	opexe_4,	/* OP_NEWSEGMENT, */
-	
-	opexe_5,	/* OP_RDSEXPR, */
-	opexe_5,	/* OP_RDLIST, */
-	opexe_5,	/* OP_RDDOT, */
-	opexe_5,	/* OP_RDQUOTE, */
-	opexe_5,	/* OP_RDQQUOTE, */
-	opexe_5,	/* OP_RDUNQUOTE, */
-	opexe_5,	/* OP_RDUQTSP, */
-	opexe_5,	/* OP_P0LIST, */
-	opexe_5,	/* OP_P1LIST, */
-	
-	opexe_6,	/* OP_LIST_LENGTH, */
-	opexe_6,	/* OP_ASSQ, */
-	opexe_6,	/* OP_PRINT_WIDTH, */
-	opexe_6,	/* OP_P0_WIDTH, */
-	opexe_6,	/* OP_P1_WIDTH, */
-	opexe_6,	/* OP_GET_CLOSURE, */
-	opexe_6,	/* OP_CLOSUREP, */
-#ifdef USE_MACRO
-	opexe_6,	/* OP_MACROP, */
-#endif
-	
-};
-
-
-/* kernel of this intepreter */
-pointer Eval_Cycle(op)
-register short op;
-{
-
-	operator = op;
-	for (;;)
-		if ((*dispatch_table[operator])(operator) == NIL)
-			return NIL;
+	return NIL;
 }
 
 /* ========== Initialization of internal keywords ========== */
