@@ -156,6 +156,7 @@
 #define prompt "> "
 #define InitFile "init.scm"
 #define FIRST_CELLSEGS 3
+#define snprintf _snprintf
 #endif
 
 #ifdef TURBOC
@@ -494,6 +495,23 @@ pointer mk_symbol(char *name)
 		oblist = cons(x, oblist);
 		return x;
 	}
+}
+
+/* get new uninterned-symbol */
+pointer mk_uninterned_symbol(char *name) {
+	register pointer x;
+
+	x = cons(mk_string(name), NIL);
+	type(x) = T_SYMBOL;
+	return x;
+}
+
+pointer gensym() {
+	char name[40];
+	static unsigned long gensym_cnt;
+
+	snprintf(name, 40, "gensym-%lu", gensym_cnt++);
+	return mk_uninterned_symbol(name);
 }
 
 /* make symbol or number atom from string */
@@ -987,6 +1005,7 @@ enum {
 	OP_E1ARGS,
 	OP_APPLY,
 	OP_DOMACRO,
+	OP_GENSYM,
 
 	OP_LAMBDA,
 	OP_QUOTE,
@@ -1237,6 +1256,9 @@ LOOP:
 		code = value;
 		s_goto(OP_EVAL);
 #endif
+
+	case OP_GENSYM:
+		s_return(gensym());
 
 	case OP_LAMBDA:	/* lambda */
 		s_return(mk_closure(code, envir));
@@ -2132,7 +2154,7 @@ void init_procs()
 	mk_proc(OP_GC, "gc");
 	mk_proc(OP_GCVERB, "gc-verbose");
 	mk_proc(OP_NEWSEGMENT, "new-segment");
-	mk_proc(OP_LIST_LENGTH, "list-length");	/* a.k */
+	mk_proc(OP_LIST_LENGTH, "length");	/* a.k */
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
 	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */	
 	mk_proc(OP_GET_CLOSURE, "get-closure-code");	/* a.k */
@@ -2140,6 +2162,7 @@ void init_procs()
 #ifdef USE_MACRO
 	mk_proc(OP_MACROP, "macro?");	/* a.k */
 #endif
+	mk_proc(OP_GENSYM, "gensym");
 	mk_proc(OP_QUIT, "quit");
 }
 
