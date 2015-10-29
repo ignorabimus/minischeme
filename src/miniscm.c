@@ -342,6 +342,24 @@ void gc(register pointer a, register pointer b);
 void FatalError(char *fmt);
 void Error(char *fmt);
 
+#ifndef USE_SCHEME_STACK
+
+/* this structure holds all the interpreter's registers */
+struct dump_stack_frame {
+	short op;
+	pointer args;
+	pointer envir;
+	pointer code;
+};
+
+pointer save = &_NIL; /* temporarily save for gc */
+void *dump_base = 0; /* pointer to base of allocated dump stack */
+int dump_size = 0;   /* number of frames allocated for dump stack */
+
+#define STACK_GROWTH 3
+
+#endif
+
 /* allocate new cell segment */
 int alloc_cellseg(int n)
 {
@@ -622,7 +640,17 @@ void gc(register pointer a, register pointer b)
 	mark(args);
 	mark(envir);
 	mark(code);
+#ifndef USE_SCHEME_STACK
+	for (j = 0; j < (intptr_t)dump; j++) {
+		struct dump_stack_frame *frame = (struct dump_stack_frame *)dump_base + j;
+		mark(frame->args);
+		mark(frame->envir);
+		mark(frame->code);
+	}
+	mark(save);
+#else
 	mark(dump);
+#endif
 
 	/* mark variables a, b */
 	mark(a);
@@ -972,24 +1000,80 @@ int eqv(register pointer a, register pointer b)
 	operator = (short)(a);                     \
 	goto LOOP; END
 
-#define s_save(a, b, c)  (                     \
-    dump = cons(envir, cons((c), dump)),       \
-    dump = cons((b), dump),                    \
-    dump = cons(mk_number((long)(a)), dump))   \
+#ifndef USE_SCHEME_STACK
 
+#define s_save(a, b, c) BEGIN \
+	struct dump_stack_frame *next_frame; \
+	if ((intptr_t)dump >= dump_size) {   \
+		dump_size += STACK_GROWTH;       \
+		dump_base = realloc(dump_base, sizeof(struct dump_stack_frame) * dump_size); \
+	} \
+	next_frame = (struct dump_stack_frame *)dump_base + (intptr_t)dump; \
+	next_frame->op = (a);      \
+	next_frame->args = (b);    \
+	next_frame->envir = envir; \
+	next_frame->code = (c);    \
+	dump = (pointer)((intptr_t)dump + 1); END
 
-#define s_return(a) BEGIN                      \
-    value = (a);                               \
-    operator = (short)ivalue(car(dump));       \
-    args = cadr(dump);                         \
-    envir = caddr(dump);                       \
-    code = cadddr(dump);                       \
-    dump = cddddr(dump);                       \
-    goto LOOP; END
+#define s_return(a) BEGIN \
+	struct dump_stack_frame *frame = (struct dump_stack_frame *)dump_base + (intptr_t)dump - 1; \
+	value = (a);          \
+	operator = frame->op; \
+	args = frame->args;   \
+	envir = frame->envir; \
+	code = frame->code;   \
+	dump = (pointer)((intptr_t)dump - 1); \
+	goto LOOP; END
+
+pointer s_clone(pointer dump) {
+	intptr_t n;
+	struct dump_stack_frame *dump_frame;
+
+	if (dump == NIL) return (pointer)0;
+
+	n = (intptr_t)s_clone(cddddr(dump));
+	dump_frame = (struct dump_stack_frame *)dump_base + n;
+	dump_frame->op = (short)ivalue(car(dump));
+	dump_frame->args = cadr(dump);
+	dump_frame->envir = caddr(dump);
+	dump_frame->code = cadddr(dump);
+	return (pointer)(n + 1);
+}
+
+pointer s_clone_save(pointer dump) {
+	pointer d;
+	struct dump_stack_frame *dump_frame;
+
+	if ((intptr_t)dump == 0) return NIL;
+
+	dump_frame = (struct dump_stack_frame *)dump_base + (intptr_t)dump - 1;
+	d = cons(dump_frame->code, s_clone_save((pointer)((intptr_t)dump - 1)));
+	d = cons(dump_frame->envir, d);
+	save = cons(dump_frame->args, d);
+	d = cons(mk_number(dump_frame->op), save);
+	save = NIL;
+	return d;
+}
+
+#else
+
+#define s_save(a, b, c)  (               \
+	dump = cons(envir, cons((c), dump)), \
+	dump = cons((b), dump),              \
+	dump = cons(mk_number((long)(a)), dump))
+
+#define s_return(a) BEGIN                \
+	value = (a);                         \
+	operator = (short)ivalue(car(dump)); \
+	args = cadr(dump);                   \
+	envir = caddr(dump);                 \
+	code = cadddr(dump);                 \
+	dump = cddddr(dump);                 \
+	goto LOOP; END
+
+#endif /* USE_SCHEME_STACK */
 
 #define s_retbool(tf)	s_return((tf) ? T : F)
-
-
 
 /* ========== Evaluation Cycle ========== */
 
@@ -1136,7 +1220,11 @@ LOOP:
 
 	case OP_T0LVL:	/* top level */
 		fprintf(outfp, "\n");
+#ifndef USE_SCHEME_STACK
+		dump = 0;
+#else
 		dump = NIL;
+#endif
 		envir = global_env;
 		s_save(OP_VALUEPRINT, NIL, NIL);
 		s_save(OP_T1LVL, NIL, NIL);
@@ -1245,7 +1333,11 @@ LOOP:
 			args = NIL;
 			s_goto(OP_BEGIN);
 		} else if (iscontinuation(code)) {	/* CONTINUATION */
+#ifndef USE_SCHEME_STACK
+			dump = s_clone(cont_dump(code));
+#else
 			dump = cont_dump(code);
+#endif
 			s_return(args != NIL ? car(args) : NIL);
 		} else {
 			Error_0("Illegal function");
@@ -1573,7 +1665,11 @@ LOOP:
 
 	case OP_CONTINUATION:	/* call-with-current-continuation */
 		code = car(args);
+#ifndef USE_SCHEME_STACK
+		args = cons(mk_continuation(s_clone_save(dump)), NIL);
+#else
 		args = cons(mk_continuation(dump), NIL);
+#endif
 		s_goto(OP_APPLY);
 
 	case OP_ADD:		/* + */
