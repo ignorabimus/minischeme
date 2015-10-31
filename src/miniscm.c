@@ -233,6 +233,9 @@ typedef struct cell *pointer;
 # define T_MACRO       256	/* 0000000100000000 */
 #endif
 #define T_PROMISE      512	/* 0000001000000000 */
+#ifndef USE_SCHEME_STACK
+# define T_DUMPSTACK  1024	/* 0000010000000000 */
+#endif
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -275,6 +278,10 @@ typedef struct cell *pointer;
 
 #define ispromise(p)    (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
+
+#ifndef USE_SCHEME_STACK
+# define isdumpstack(p)  (type(p)&T_DUMPSTACK)
+#endif
 
 #define isatom(p)       (type(p)&T_ATOM)
 #define setatom(p)      type(p) |= T_ATOM
@@ -343,21 +350,15 @@ void FatalError(char *fmt);
 void Error(char *fmt);
 
 #ifndef USE_SCHEME_STACK
+#define dump_prev(p)  (car(p))
+#define dump_next(p)  (cdr(p))
+#define dump_op(p)    (car((p) + 1))
+#define dump_args(p)  (cdr((p) + 1))
+#define dump_envir(p) (car((p) + 2))
+#define dump_code(p)  (cdr((p) + 2))
 
-/* this structure holds all the interpreter's registers */
-struct dump_stack_frame {
-	short op;
-	pointer args;
-	pointer envir;
-	pointer code;
-};
-
-pointer save = &_NIL; /* temporarily save for gc */
-void *dump_base = 0; /* pointer to base of allocated dump stack */
-int dump_size = 0;   /* number of frames allocated for dump stack */
-
-#define STACK_GROWTH 3
-
+pointer save = &_NIL; /* pointer to save temporarily for gc */
+pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
 
 /* allocate new cell segment */
@@ -435,6 +436,42 @@ pointer get_cell(register pointer a, register pointer b)
 	--fcells;
 	return x;
 }
+
+#ifndef USE_SCHEME_STACK
+pointer find_consecutive_cells(int n) {
+	pointer *pp = &free_cell;
+
+	while (*pp != NIL) {
+		pointer p = *pp;
+		int cnt = 0;
+		do {
+			if (++cnt >= n) {
+				pointer x = *pp;
+				*pp = cdr(*pp + n - 1);
+				fcells -= n;
+				return x;
+			}
+			p = cdr(p);
+		} while (cdr(p) == p + 1);
+		pp = &cdr(*pp + cnt - 1);
+	}
+	return NIL;
+}
+
+pointer get_consecutive_cells(int n) {
+	pointer x;
+
+	x = find_consecutive_cells(n);
+	if (x == NIL) {
+		gc(NIL, NIL);
+		x = find_consecutive_cells(n);
+		if (x == NIL) {
+			FatalError("run out of cells  --- unable to recover consecutive cells");
+		}
+	}
+	return x;
+}
+#endif
 
 /* get new cons cell */
 pointer cons(register pointer a, register pointer b)
@@ -573,6 +610,18 @@ pointer mk_const(char *name)
 		return NIL;
 }
 
+#ifndef USE_SCHEME_STACK
+/* get dump stack */
+pointer mk_dumpstack(pointer next)
+{
+	pointer x = get_consecutive_cells(3);
+
+	type(x) = T_DUMPSTACK;
+	car(x) = NIL;
+	cdr(x) = next;
+	return x;
+}
+#endif
 
 /* ========== garbage collector ========== */
 
@@ -587,6 +636,15 @@ void mark(pointer a)
 	t = (pointer) 0;
 	p = a;
 E2:	setmark(p);
+#ifndef USE_SCHEME_STACK
+	if (isdumpstack(p)) {
+		setmark(p + 1);
+		setmark(p + 2);
+		mark(dump_args(p));
+		mark(dump_envir(p));
+		mark(dump_code(p));
+	}
+#endif
 	if (isatom(p))
 		goto E6;
 	q = car(p);
@@ -627,7 +685,6 @@ void gc(register pointer a, register pointer b)
 {
 	register pointer p;
 	register short i;
-	register long j;
 
 	if (gc_verbose)
 		printf("gc...");
@@ -641,16 +698,9 @@ void gc(register pointer a, register pointer b)
 	mark(envir);
 	mark(code);
 #ifndef USE_SCHEME_STACK
-	for (j = 0; j < (intptr_t)dump; j++) {
-		struct dump_stack_frame *frame = (struct dump_stack_frame *)dump_base + j;
-		mark(frame->args);
-		mark(frame->envir);
-		mark(frame->code);
-	}
 	mark(save);
-#else
-	mark(dump);
 #endif
+	mark(dump);
 
 	/* mark variables a, b */
 	mark(a);
@@ -661,7 +711,8 @@ void gc(register pointer a, register pointer b)
 	fcells = 0;
 	free_cell = NIL;
 	for (i = 0; i <= last_cell_seg; i++) {
-		for (j = 0, p = cell_seg[i]; j < CELL_SEGSIZE; j++, p++) {
+		p = cell_seg[i] + CELL_SEGSIZE;
+		while (--p >= cell_seg[i]) {
 			if (ismark(p))
 				clrmark(p);
 			else {
@@ -1002,57 +1053,49 @@ int eqv(register pointer a, register pointer b)
 
 #ifndef USE_SCHEME_STACK
 
-#define s_save(a, b, c) BEGIN \
-	struct dump_stack_frame *next_frame; \
-	if ((intptr_t)dump >= dump_size) {   \
-		dump_size += STACK_GROWTH;       \
-		dump_base = realloc(dump_base, sizeof(struct dump_stack_frame) * dump_size); \
-	} \
-	next_frame = (struct dump_stack_frame *)dump_base + (intptr_t)dump; \
-	next_frame->op = (a);      \
-	next_frame->args = (b);    \
-	next_frame->envir = envir; \
-	next_frame->code = (c);    \
-	dump = (pointer)((intptr_t)dump + 1); END
+#define s_save(a, b, c) BEGIN                 \
+	if (dump_prev(dump) == NIL) {             \
+		dump_prev(dump) = mk_dumpstack(dump); \
+	}                                         \
+	dump_op(dump) = (pointer)(a);             \
+	dump_args(dump) = (b);                    \
+	dump_envir(dump) = envir;                 \
+	dump_code(dump) = (c);                    \
+	dump = dump_prev(dump); END
 
-#define s_return(a) BEGIN \
-	struct dump_stack_frame *frame = (struct dump_stack_frame *)dump_base + (intptr_t)dump - 1; \
-	value = (a);          \
-	operator = frame->op; \
-	args = frame->args;   \
-	envir = frame->envir; \
-	code = frame->code;   \
-	dump = (pointer)((intptr_t)dump - 1); \
+#define s_return(a) BEGIN            \
+	value = (a);                     \
+	dump = dump_next(dump);          \
+	operator = (short)dump_op(dump); \
+	args = dump_args(dump);          \
+	envir = dump_envir(dump);        \
+	code = dump_code(dump);          \
 	goto LOOP; END
 
-pointer s_clone(pointer dump) {
-	intptr_t n;
-	struct dump_stack_frame *dump_frame;
+pointer s_clone(pointer d) {
+	pointer p;
 
-	if (dump == NIL) return (pointer)0;
+	if (d == NIL) return dump_base;
 
-	n = (intptr_t)s_clone(cddddr(dump));
-	dump_frame = (struct dump_stack_frame *)dump_base + n;
-	dump_frame->op = (short)ivalue(car(dump));
-	dump_frame->args = cadr(dump);
-	dump_frame->envir = caddr(dump);
-	dump_frame->code = cadddr(dump);
-	return (pointer)(n + 1);
+	p = s_clone(cddddr(d));
+	dump_op(p) = (pointer)ivalue(car(d));
+	dump_args(p) = cadr(d);
+	dump_envir(p) = caddr(d);
+	dump_code(p) = cadddr(d);
+	return dump_prev(p);
 }
 
-pointer s_clone_save(pointer dump) {
-	pointer d;
-	struct dump_stack_frame *dump_frame;
+pointer s_clone_save(pointer d) {
+	pointer p;
 
-	if ((intptr_t)dump == 0) return NIL;
+	if (d == dump_base) return NIL;
 
-	dump_frame = (struct dump_stack_frame *)dump_base + (intptr_t)dump - 1;
-	d = cons(dump_frame->code, s_clone_save((pointer)((intptr_t)dump - 1)));
-	d = cons(dump_frame->envir, d);
-	save = cons(dump_frame->args, d);
-	d = cons(mk_number(dump_frame->op), save);
+	p = cons(dump_code(dump_next(d)), s_clone_save(dump_next(d)));
+	p = cons(dump_envir(dump_next(d)), p);
+	save = cons(dump_args(dump_next(d)), p);
+	p = cons(mk_number((long)dump_op(dump_next(d))), save);
 	save = NIL;
-	return d;
+	return p;
 }
 
 #else
@@ -1221,7 +1264,7 @@ LOOP:
 	case OP_T0LVL:	/* top level */
 		fprintf(outfp, "\n");
 #ifndef USE_SCHEME_STACK
-		dump = 0;
+		dump = dump_base;
 #else
 		dump = NIL;
 #endif
@@ -2277,7 +2320,9 @@ void init_globals()
 	UNQUOTE = mk_symbol("unquote");
 	UNQUOTESP = mk_symbol("unquote-splicing");
 #endif
-
+#ifndef USE_SCHEME_STACK
+	dump_base = mk_dumpstack(NIL);
+#endif
 }
 
 /* initialization of Mini-Scheme */
