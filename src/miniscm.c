@@ -1294,15 +1294,9 @@ LOOP:
 			for (x = envir; x != NIL; x = cdr(x)) {
 				for (y = car(x); y != NIL; y = cdr(y))
 					if (caar(y) == code)
-						break;
-				if (y != NIL)
-					break;
+						s_return(cdar(y));
 			}
-			if (x != NIL) {
-				s_return(cdar(y));
-			} else {
-				Error_1("Unbounded variable", code);
-			}
+			Error_1("Unbounded variable", code);
 		} else if (ispair(code)) {
 			if (issyntax(x = car(code))) {	/* SYNTAX */
 				code = cdr(code);
@@ -1433,17 +1427,12 @@ LOOP:
 	case OP_SET1:		/* set! */
 		for (x = envir; x != NIL; x = cdr(x)) {
 			for (y = car(x); y != NIL; y = cdr(y))
-				if (caar(y) == code)
-					break;
-			if (y != NIL)
-				break;
+				if (caar(y) == code) {
+					cdar(y) = value;
+					s_return(value);
+				}
 		}
-		if (x != NIL) {
-			cdar(y) = value;
-			s_return(value);
-		} else {
-			Error_1("Unbounded variable", code);
-		}
+		Error_1("Unbounded variable", code);
 
 	case OP_BEGIN:		/* begin */
 		if (!ispair(code)) {
