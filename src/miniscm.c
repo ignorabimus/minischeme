@@ -336,6 +336,7 @@ pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
 long    fcells = 0;		/* # of free cells */
 
+FILE   *srcfp;			/* source file */
 FILE   *infp;			/* input file */
 FILE   *outfp;			/* output file */
 
@@ -758,13 +759,17 @@ char inchar()
 	if (currentline >= endline) {	/* input buffer is empty */
 		if (feof(infp)) {
 			fclose(infp);
-			infp = stdin;
-			printf(prompt);
+			infp = srcfp;
+			if (infp == stdin) {
+				printf(prompt);
+			}
 		}
 		strcpy(linebuff, "\n");
 		if (fgets(currentline = linebuff, LINESIZE, infp) == NULL)
 			if (infp == stdin) {
 				fprintf(stderr, "Good-bye\n");
+				exit(0);
+			} else if (infp == srcfp) {
 				exit(0);
 			}
 		endline = linebuff + strlen(linebuff);
@@ -1255,14 +1260,18 @@ LOOP:
 			Error_0("load -- argument is not string");
 		}
 		if ((infp = fopen(strvalue(car(args)), "r")) == NULL) {
-			infp = stdin;
+			infp = srcfp;
 			Error_1("Unable to open", car(args));
 		}
-		fprintf(outfp, "loading %s", strvalue(car(args)));
+		if (infp == stdin) {
+			fprintf(outfp, "loading %s", strvalue(car(args)));
+		}
 		s_goto(OP_T0LVL);
 
 	case OP_T0LVL:	/* top level */
-		fprintf(outfp, "\n");
+		if (infp == stdin) {
+			fprintf(outfp, "\n");
+		}
 #ifndef USE_SCHEME_STACK
 		dump = dump_base;
 #else
@@ -1271,8 +1280,9 @@ LOOP:
 		envir = global_env;
 		s_save(OP_VALUEPRINT, NIL, NIL);
 		s_save(OP_T1LVL, NIL, NIL);
-		if (infp == stdin)
+		if (infp == stdin) {
 			printf(prompt);
+		}
 		s_goto(OP_READ);
 
 	case OP_T1LVL:	/* top level */
@@ -1286,8 +1296,12 @@ LOOP:
 	case OP_VALUEPRINT:	/* print evalution result */
 		print_flag = 1;
 		args = value;
-		s_save(OP_T0LVL, NIL, NIL);
-		s_goto(OP_P0LIST);
+		if (infp == stdin) {
+			s_save(OP_T0LVL, NIL, NIL);
+			s_goto(OP_P0LIST);
+		} else {
+			s_goto(OP_T0LVL);
+		}
 
 	case OP_EVAL:		/* main part of evalution */
 		if (issymbol(code)) {	/* symbol */
@@ -2191,7 +2205,7 @@ void init_vars_global()
 	pointer x;
 
 	/* init input/output file */
-	infp = stdin;
+	infp = srcfp;
 	outfp = stdout;
 	/* init NIL */
 	type(NIL) = (T_ATOM | MARK);
@@ -2353,11 +2367,20 @@ void Error(char *fmt)
 
 /* ========== Main ========== */
 
-void main()
+void main(int argc, char *argv[])
 {
 	short op = (short)OP_LOAD;
 
-	printf(banner);
+	if (argc > 1) {
+		if ((srcfp = fopen(argv[1], "r")) == NULL) {
+			fprintf(stderr, "Unable to open %s\n", argv[1]);
+			exit(1);
+		}
+	} else {
+		srcfp = stdin;
+		printf(banner);
+	}
+
 	init_scheme();
 	args = cons(mk_string(InitFile), NIL);
 #ifdef USE_SETJMP
