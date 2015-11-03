@@ -637,15 +637,6 @@ void mark(pointer a)
 	t = (pointer) 0;
 	p = a;
 E2:	setmark(p);
-#ifndef USE_SCHEME_STACK
-	if (isdumpstack(p)) {
-		setmark(p + 1);
-		setmark(p + 2);
-		mark(dump_args(p));
-		mark(dump_envir(p));
-		mark(dump_code(p));
-	}
-#endif
 	if (isatom(p))
 		goto E6;
 	q = car(p);
@@ -699,9 +690,23 @@ void gc(register pointer a, register pointer b)
 	mark(envir);
 	mark(code);
 #ifndef USE_SCHEME_STACK
+	for (p = dump_base; p != dump; p = dump_prev(p)) {
+		setmark(p);
+		setmark(p + 1);
+		setmark(p + 2);
+		mark(dump_args(p));
+		mark(dump_envir(p));
+		mark(dump_code(p));
+	}
+	for ( ; p != NIL; p = dump_prev(p)) {
+		setmark(p);
+		setmark(p + 1);
+		setmark(p + 2);
+	}
 	mark(save);
-#endif
+#else
 	mark(dump);
+#endif
 
 	/* mark variables a, b */
 	mark(a);
