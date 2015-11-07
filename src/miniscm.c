@@ -358,9 +358,10 @@ void Error(char *fmt);
 #define dump_envir(p) (car((p) + 2))
 #define dump_code(p)  (cdr((p) + 2))
 
-pointer save = &_NIL; /* pointer to save temporarily for gc */
 pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
+
+pointer save = &_NIL; /* pointer to save temporarily for gc */
 
 /* allocate new cell segment */
 int alloc_cellseg(int n)
@@ -703,10 +704,10 @@ void gc(register pointer a, register pointer b)
 		setmark(p + 1);
 		setmark(p + 2);
 	}
-	mark(save);
 #else
 	mark(dump);
 #endif
+	mark(save);
 
 	/* mark variables a, b */
 	mark(a);
@@ -1525,11 +1526,13 @@ LOOP:
 		s_goto(OP_EVAL);
 
 	case OP_LET1AST:	/* let* (make new frame) */
+		save = value;	/* save value for gc */
 		envir = cons(NIL, envir);
 		s_goto(OP_LET2AST);
 
 	case OP_LET2AST:	/* let* (caluculate parameters) */
 		car(envir) = cons(cons(caar(code), value), car(envir));
+		save = NIL;
 		code = cdr(code);
 		if (ispair(code)) {	/* continue */
 			s_save(OP_LET2AST, args, code);
