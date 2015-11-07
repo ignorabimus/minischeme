@@ -361,8 +361,6 @@ void Error(char *fmt);
 pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
 
-pointer save = &_NIL; /* pointer to save temporarily for gc */
-
 /* allocate new cell segment */
 int alloc_cellseg(int n)
 {
@@ -707,7 +705,6 @@ void gc(register pointer a, register pointer b)
 #else
 	mark(dump);
 #endif
-	mark(save);
 
 	/* mark variables a, b */
 	mark(a);
@@ -1103,9 +1100,8 @@ pointer s_clone_save(pointer d) {
 
 	p = cons(dump_code(dump_next(d)), s_clone_save(dump_next(d)));
 	p = cons(dump_envir(dump_next(d)), p);
-	save = cons(dump_args(dump_next(d)), p);
-	p = cons(mk_number((long)dump_op(dump_next(d))), save);
-	save = NIL;
+	args = cons(dump_args(dump_next(d)), p);
+	p = cons(mk_number((long)dump_op(dump_next(d))), args);
 	return p;
 }
 
@@ -1526,13 +1522,12 @@ LOOP:
 		s_goto(OP_EVAL);
 
 	case OP_LET1AST:	/* let* (make new frame) */
-		save = value;	/* save value for gc */
-		envir = cons(NIL, envir);
+		envir = cons(value, envir);	/* save value for gc */
+		car(envir) = NIL;
 		s_goto(OP_LET2AST);
 
 	case OP_LET2AST:	/* let* (caluculate parameters) */
 		car(envir) = cons(cons(caar(code), value), car(envir));
-		save = NIL;
 		code = cdr(code);
 		if (ispair(code)) {	/* continue */
 			s_save(OP_LET2AST, args, code);
