@@ -13,6 +13,9 @@
  */
 /*--
  *
+ *  This version has been modified by Tatsuya WATANABE.
+ *	current version is 0.85w1
+ *
  *  This version has been modified by R.C. Secrist.
  *
  *  Mini-Scheme is now maintained by Akira KIDA.
@@ -102,7 +105,7 @@
 
 
 
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85k4-a.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w1.\n"
 
 
 #include <stdio.h>
