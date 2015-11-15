@@ -538,21 +538,24 @@ pointer mk_string(char *str)
 /* get new symbol */
 pointer mk_symbol(char *name)
 {
-	register pointer x;
+	register pointer x, y = NIL;
 
 	/* fisrt check oblist */
-	for (x = oblist; x != NIL; x = cdr(x))
-		if (!strcmp(name, symname(car(x))))
-			break;
-
-	if (x != NIL)
-		return car(x);
-	else {
-		x = cons(mk_string(name), NIL);
-		type(x) = T_SYMBOL;
-		oblist = cons(x, oblist);
-		return x;
+	for (x = oblist; x != NIL; y = x, x = cdr(x)) {
+		if (!strcmp(name, symname(car(x)))) {
+			if (y != NIL) {
+				cdr(y) = cdr(x);
+				cdr(x) = oblist;
+				oblist = x;
+			}
+			return car(x);
+		}
 	}
+
+	x = cons(mk_string(name), NIL);
+	type(x) = T_SYMBOL;
+	oblist = cons(x, oblist);
+	return x;
 }
 
 /* get new uninterned-symbol */
@@ -1311,9 +1314,17 @@ LOOP:
 	case OP_EVAL:		/* main part of evalution */
 		if (issymbol(code)) {	/* symbol */
 			for (x = envir; x != NIL; x = cdr(x)) {
-				for (y = car(x); y != NIL; y = cdr(y))
-					if (caar(y) == code)
+				register pointer z = NIL;
+				for (y = car(x); y != NIL; z = y, y = cdr(y)) {
+					if (caar(y) == code) {
+						if (z != NIL) {
+							cdr(z) = cdr(y);
+							cdr(y) = car(x);
+							car(x) = y;
+						}
 						s_return(cdar(y));
+					}
+				}
 			}
 			Error_1("Unbounded variable", code);
 		} else if (ispair(code)) {
@@ -1445,11 +1456,18 @@ LOOP:
 
 	case OP_SET1:		/* set! */
 		for (x = envir; x != NIL; x = cdr(x)) {
-			for (y = car(x); y != NIL; y = cdr(y))
+			register pointer z = NIL;
+			for (y = car(x); y != NIL; z = y, y = cdr(y)) {
 				if (caar(y) == code) {
+					if (z != NIL) {
+						cdr(z) = cdr(y);
+						cdr(y) = car(x);
+						car(x) = y;
+					}
 					cdar(y) = value;
 					s_return(value);
 				}
+			}
 		}
 		Error_1("Unbounded variable", code);
 
