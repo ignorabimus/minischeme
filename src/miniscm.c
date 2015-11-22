@@ -32,15 +32,11 @@
  * Define or undefine following symbols as you need.
  */
 /* #define VERBOSE */	/* define this if you want verbose GC */
-#define	AVOID_HACK_LOOP	/* define this if your compiler is poor
-			 * enougth to complain "do { } while (0)"
-			 * construction.
-			 */
 #define USE_SETJMP	/* undef this if you do not want to use setjmp() */
 #define USE_QQUOTE	/* undef this if you do not need quasiquote */
 #define USE_MACRO	/* undef this if you do not need macro */
 
-	
+
 #ifdef USE_QQUOTE
 /*--
  *  If your machine can't support "forward single quotation character"
@@ -116,46 +112,46 @@ typedef struct cell *pointer;
 /* macros for cell operations */
 #define type(p)         ((p)->_flag)
 
-#define isstring(p)     (type(p)&T_STRING)
+#define is_string(p)    (type(p)&T_STRING)
 #define strvalue(p)     ((p)->_object._string._svalue)
 #define keynum(p)       ((p)->_object._string._keynum)
 
-#define isnumber(p)     (type(p)&T_NUMBER)
+#define is_number(p)    (type(p)&T_NUMBER)
 #define ivalue(p)       ((p)->_object._number._ivalue)
 
-#define ispair(p)       (type(p)&T_PAIR)
+#define is_pair(p)      (type(p)&T_PAIR)
 #define car(p)          ((p)->_object._cons._car)
 #define cdr(p)          ((p)->_object._cons._cdr)
 
-#define issymbol(p)     (type(p)&T_SYMBOL)
+#define is_symbol(p)    (type(p)&T_SYMBOL)
 #define symname(p)      strvalue(car(p))
 #define hasprop(p)      (type(p)&T_SYMBOL)
 #define symprop(p)      cdr(p)
 
-#define issyntax(p)     (type(p)&T_SYNTAX)
+#define is_syntax(p)    (type(p)&T_SYNTAX)
 #define isproc(p)       (type(p)&T_PROC)
 #define syntaxname(p)   strvalue(car(p))
 #define syntaxnum(p)    keynum(car(p))
 #define procnum(p)      ivalue(p)
 
-#define isclosure(p)    (type(p)&T_CLOSURE)
+#define is_closure(p)   (type(p)&T_CLOSURE)
 #ifdef USE_MACRO
-# define ismacro(p)      (type(p)&T_MACRO)
+# define is_macro(p)    (type(p)&T_MACRO)
 #endif
 #define closure_code(p) car(p)
 #define closure_env(p)  cdr(p)
 
-#define iscontinuation(p) (type(p)&T_CONTINUATION)
+#define is_continuation(p) (type(p)&T_CONTINUATION)
 #define cont_dump(p)    cdr(p)
 
-#define ispromise(p)    (type(p)&T_PROMISE)
+#define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
 
-#define isatom(p)      (type(p)&T_ATOM)
+#define is_atom(p)      (type(p)&T_ATOM)
 #define setatom(p)      type(p) |= T_ATOM
 #define clratom(p)      type(p) &= CLRATOM
 
-#define ismark(p)       (type(p)&MARK)
+#define is_mark(p)      (type(p)&MARK)
 #define setmark(p)      type(p) |= MARK
 #define clrmark(p)      type(p) &= UNMARK
 
@@ -197,7 +193,6 @@ pointer QUOTE;			/* pointer to syntax quote */
 pointer QQUOTE;			/* pointer to symbol quasiquote */
 pointer UNQUOTE;		/* pointer to symbol unquote */
 pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
-
 #endif
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
@@ -214,16 +209,16 @@ jmp_buf error_jmp;
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
 
 void gc(register pointer a, register pointer b);
-void FatalError(char *fmt);
-void Error(char *fmt);
+void FatalError(char *s);
+void Error(char *s);
 
 #ifndef USE_SCHEME_STACK
-#define dump_prev(p)  (car(p))
-#define dump_next(p)  (cdr(p))
-#define dump_op(p)    (car((p) + 1))
-#define dump_args(p)  (cdr((p) + 1))
-#define dump_envir(p) (car((p) + 2))
-#define dump_code(p)  (cdr((p) + 2))
+#define dump_prev(p)  car(p)
+#define dump_next(p)  cdr(p)
+#define dump_op(p)    car((p) + 1)
+#define dump_args(p)  cdr((p) + 1)
+#define dump_envir(p) car((p) + 2)
+#define dump_code(p)  cdr((p) + 2)
 
 pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
@@ -298,27 +293,32 @@ pointer get_cell(register pointer a, register pointer b)
 }
 
 #ifndef USE_SCHEME_STACK
-pointer find_consecutive_cells(int n) {
+pointer find_consecutive_cells(int n)
+{
 	pointer *pp = &free_cell;
 
 	while (*pp != NIL) {
 		pointer p = *pp;
-		int cnt = 0;
-		do {
-			if (++cnt >= n) {
-				pointer x = *pp;
-				*pp = cdr(*pp + n - 1);
-				fcells -= n;
-				return x;
+		int cnt;
+		for (cnt = 1; cnt < n; cnt++) {
+			if (cdr(p) != p + 1) {
+				break;
 			}
 			p = cdr(p);
-		} while (cdr(p) == p + 1);
+		}
+		if (cnt >= n) {
+			pointer x = *pp;
+			*pp = cdr(*pp + n - 1);
+			fcells -= n;
+			return x;
+		}
 		pp = &cdr(*pp + cnt - 1);
 	}
 	return NIL;
 }
 
-pointer get_consecutive_cells(int n) {
+pointer get_consecutive_cells(int n)
+{
 	pointer x;
 
 	x = find_consecutive_cells(n);
@@ -416,7 +416,8 @@ pointer mk_symbol(char *name)
 }
 
 /* get new uninterned-symbol */
-pointer mk_uninterned_symbol(char *name) {
+pointer mk_uninterned_symbol(char *name)
+{
 	register pointer x;
 
 	x = cons(mk_string(name), NIL);
@@ -424,7 +425,8 @@ pointer mk_uninterned_symbol(char *name) {
 	return x;
 }
 
-pointer gensym() {
+pointer gensym()
+{
 	char name[40];
 	static unsigned long gensym_cnt;
 
@@ -501,10 +503,10 @@ void mark(pointer a)
 	t = (pointer) 0;
 	p = a;
 E2:	setmark(p);
-	if (isatom(p))
+	if (is_atom(p))
 		goto E6;
 	q = car(p);
-	if (q && !ismark(q)) {
+	if (q && !is_mark(q)) {
 		setatom(p);
 		car(p) = t;
 		t = p;
@@ -512,7 +514,7 @@ E2:	setmark(p);
 		goto E2;
 	}
 E5:	q = cdr(p);
-	if (q && !ismark(q)) {
+	if (q && !is_mark(q)) {
 		cdr(p) = t;
 		t = p;
 		p = q;
@@ -521,7 +523,7 @@ E5:	q = cdr(p);
 E6:	if (!t)
 		return;
 	q = t;
-	if (isatom(q)) {
+	if (is_atom(q)) {
 		clratom(q);
 		t = car(q);
 		car(q) = p;
@@ -580,7 +582,7 @@ void gc(register pointer a, register pointer b)
 	free_cell = NIL;
 	p = cell_seg + CELL_SEGSIZE;
 	while (--p >= cell_seg) {
-		if (ismark(p))
+		if (is_mark(p))
 			clrmark(p);
 		else {
 			type(p) = 0;
@@ -630,13 +632,15 @@ char inchar()
 			}
 		}
 		strcpy(linebuff, "\n");
-		if (fgets(currentline = linebuff, LINESIZE, infp) == NULL)
+		if (fgets(currentline = linebuff, LINESIZE, infp) == NULL) {
 			if (infp == stdin) {
 				fprintf(stderr, "Good-bye\n");
 				exit(0);
-			} else if (infp == srcfp) {
+			}
+			if (infp == srcfp) {
 				exit(0);
 			}
+		}
 		endline = linebuff + strlen(linebuff);
 	}
 	return *currentline++;
@@ -747,7 +751,7 @@ int token()
 }
 
 /* ========== Rootines for Printing ========== */
-#define	ok_abbrev(x)	(ispair(x) && cdr(x) == NIL)
+#define	ok_abbrev(x)	(is_pair(x) && cdr(x) == NIL)
 
 void strunquote(char *p, char *s)
 {
@@ -778,28 +782,28 @@ int printatom(pointer l, int f)
 		p = "#t";
 	else if (l == F)
 		p = "#f";
-	else if (isnumber(l)) {
+	else if (is_number(l)) {
 		p = strbuff;
 		sprintf(p, "%ld", ivalue(l));
-	} else if (isstring(l)) {
+	} else if (is_string(l)) {
 		if (!f)
 			p = strvalue(l);
 		else {
 			p = strbuff;
 			strunquote(p, strvalue(l));
 		}
-	} else if (issymbol(l))
+	} else if (is_symbol(l))
 		p = symname(l);
 	else if (isproc(l)) {
 		p = strbuff;
 		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
 #ifdef USE_MACRO
-	} else if (ismacro(l)) {
+	} else if (is_macro(l)) {
 		p = "#<MACRO>";
 #endif
-	} else if (isclosure(l))
+	} else if (is_closure(l))
 		p = "#<CLOSURE>";
-	else if (iscontinuation(l))
+	else if (is_continuation(l))
 		p = "#<CONTINUATION>";
 	if (f < 0)
 		return strlen(p);
@@ -836,7 +840,7 @@ pointer reverse(register pointer a) /* a must be checked by gc */
 {
 	register pointer p = NIL;
 
-	for ( ; ispair(a); a = cdr(a))
+	for ( ; is_pair(a); a = cdr(a))
 		p = cons(car(a), p);
 	return p;
 }
@@ -875,13 +879,13 @@ pointer append(register pointer a, register pointer b)
 /* equivalence of atoms */
 int eqv(register pointer a, register pointer b)
 {
-	if (isstring(a)) {
-		if (isstring(b))
+	if (is_string(a)) {
+		if (is_string(b))
 			return (strvalue(a) == strvalue(b));
 		else
 			return 0;
-	} else if (isnumber(a)) {
-		if (isnumber(b))
+	} else if (is_number(a)) {
+		if (is_number(b))
 			return (ivalue(a) == ivalue(b));
 		else
 			return 0;
@@ -894,16 +898,8 @@ int eqv(register pointer a, register pointer b)
 #define isfalse(p)      ((p) == NIL || (p) == F)
 
 /* Error macro */
-#ifdef	AVOID_HACK_LOOP
-# define	BEGIN	{
-# define	END	}
-#else
-/*
- * I believe this is better, but some compiler complains....
- */
-# define	BEGIN	do {
-# define	END	} while (0)
-#endif
+#define	BEGIN	do {
+#define	END	} while (0)
 
 #define Error_0(s) BEGIN                       \
 	args = cons(mk_string((s)), NIL);          \
@@ -923,23 +919,23 @@ int eqv(register pointer a, register pointer b)
 
 #ifndef USE_SCHEME_STACK
 
-#define s_save(a, b, c) BEGIN                 \
-	if (dump_prev(dump) == NIL) {             \
-		dump_prev(dump) = mk_dumpstack(dump); \
-	}                                         \
-	dump_op(dump) = (pointer)(a);             \
-	dump_args(dump) = (b);                    \
-	dump_envir(dump) = envir;                 \
-	dump_code(dump) = (c);                    \
+#define s_save(a, b, c) BEGIN                  \
+	if (dump_prev(dump) == NIL) {              \
+		dump_prev(dump) = mk_dumpstack(dump);  \
+	}                                          \
+	dump_op(dump) = (pointer)(a);              \
+	dump_args(dump) = (b);                     \
+	dump_envir(dump) = envir;                  \
+	dump_code(dump) = (c);                     \
 	dump = dump_prev(dump); END
 
-#define s_return(a) BEGIN            \
-	value = (a);                     \
-	dump = dump_next(dump);          \
-	operator = (short)dump_op(dump); \
-	args = dump_args(dump);          \
-	envir = dump_envir(dump);        \
-	code = dump_code(dump);          \
+#define s_return(a) BEGIN                      \
+	value = (a);                               \
+	dump = dump_next(dump);                    \
+	operator = (short)dump_op(dump);           \
+	args = dump_args(dump);                    \
+	envir = dump_envir(dump);                  \
+	code = dump_code(dump);                    \
 	goto LOOP; END
 
 pointer s_clone(pointer d) {
@@ -969,18 +965,18 @@ pointer s_clone_save(pointer d) {
 
 #else
 
-#define s_save(a, b, c)  (               \
-	dump = cons(envir, cons((c), dump)), \
-	dump = cons((b), dump),              \
+#define s_save(a, b, c)  (                     \
+	dump = cons(envir, cons((c), dump)),       \
+	dump = cons((b), dump),                    \
 	dump = cons(mk_number((long)(a)), dump))
 
-#define s_return(a) BEGIN                \
-	value = (a);                         \
-	operator = (short)ivalue(car(dump)); \
-	args = cadr(dump);                   \
-	envir = caddr(dump);                 \
-	code = cadddr(dump);                 \
-	dump = cddddr(dump);                 \
+#define s_return(a) BEGIN                      \
+	value = (a);                               \
+	operator = (short)ivalue(car(dump));       \
+	args = cadr(dump);                         \
+	envir = caddr(dump);                       \
+	code = cadddr(dump);                       \
+	dump = cddddr(dump);                       \
 	goto LOOP; END
 
 #endif /* USE_SCHEME_STACK */
@@ -1119,7 +1115,7 @@ pointer Eval_Cycle(short op)
 LOOP:
 	switch (operator) {
 	case OP_LOAD:		/* load */
-		if (!isstring(car(args))) {
+		if (!is_string(car(args))) {
 			Error_0("load -- argument is not string");
 		}
 		if ((infp = fopen(strvalue(car(args)), "r")) == NULL) {
@@ -1151,7 +1147,7 @@ LOOP:
 	case OP_T1LVL:	/* top level */
 		code = value;
 		s_goto(OP_EVAL);
-		
+
 	case OP_READ:		/* read */
 		tok = token();
 		s_goto(OP_RDSEXPR);
@@ -1167,7 +1163,7 @@ LOOP:
 		}
 
 	case OP_EVAL:		/* main part of evalution */
-		if (issymbol(code)) {	/* symbol */
+		if (is_symbol(code)) {	/* symbol */
 			for (x = envir; x != NIL; x = cdr(x)) {
 				register pointer z = NIL;
 				for (y = car(x); y != NIL; z = y, y = cdr(y)) {
@@ -1182,8 +1178,8 @@ LOOP:
 				}
 			}
 			Error_1("Unbounded variable", code);
-		} else if (ispair(code)) {
-			if (issyntax(x = car(code))) {	/* SYNTAX */
+		} else if (is_pair(code)) {
+			if (is_syntax(x = car(code))) {	/* SYNTAX */
 				code = cdr(code);
 				s_goto(syntaxnum(x));
 			} else {/* first, eval top element and eval arguments */
@@ -1201,7 +1197,7 @@ LOOP:
 
 #ifdef USE_MACRO
 	case OP_E0ARGS:	/* eval arguments */
-		if (ismacro(value)) {	/* macro expansion */
+		if (is_macro(value)) {	/* macro expansion */
 			s_save(OP_DOMACRO, NIL, NIL);
 			args = cons(code, NIL);
 			code = value;
@@ -1214,7 +1210,7 @@ LOOP:
 
 	case OP_E1ARGS:	/* eval arguments */
 		args = cons(value, args);
-		if (ispair(code)) {	/* continue */
+		if (is_pair(code)) {	/* continue */
 			s_save(OP_E1ARGS, args, cdr(code));
 			code = car(code);
 			args = NIL;
@@ -1229,11 +1225,11 @@ LOOP:
 	case OP_APPLY:		/* apply 'code' to 'args' */
 		if (isproc(code)) {
 			s_goto(procnum(code));	/* PROCEDURE */
-		} else if (isclosure(code)) {	/* CLOSURE */
+		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */
 			envir = cons(NIL, closure_env(code));
 			for (x = car(closure_code(code)), y = args;
-			     ispair(x); x = cdr(x), y = cdr(y)) {
+			     is_pair(x); x = cdr(x), y = cdr(y)) {
 				if (y == NIL) {
 					Error_0("Few arguments");
 				} else {
@@ -1246,7 +1242,7 @@ LOOP:
 				 * 	Error_0("Many arguments");
 				 * }
 				 */
-			} else if (issymbol(x))
+			} else if (is_symbol(x))
 				car(envir) = cons(cons(x, y), car(envir));
 			else {
 				Error_0("Syntax error in closure");
@@ -1254,7 +1250,7 @@ LOOP:
 			code = cdr(closure_code(code));
 			args = NIL;
 			s_goto(OP_BEGIN);
-		} else if (iscontinuation(code)) {	/* CONTINUATION */
+		} else if (is_continuation(code)) {	/* CONTINUATION */
 #ifndef USE_SCHEME_STACK
 			dump = s_clone(cont_dump(code));
 #else
@@ -1281,14 +1277,14 @@ LOOP:
 		s_return(car(code));
 
 	case OP_DEF0:	/* define */
-		if (ispair(car(code))) {
+		if (is_pair(car(code))) {
 			x = caar(code);
 			code = cons(LAMBDA, cons(cdar(code), cdr(code)));
 		} else {
 			x = car(code);
 			code = cadr(code);
 		}
-		if (!issymbol(x)) {
+		if (!is_symbol(x)) {
 			Error_0("Variable is not symbol");
 		}
 		s_save(OP_DEF1, NIL, x);
@@ -1327,7 +1323,7 @@ LOOP:
 		Error_1("Unbounded variable", code);
 
 	case OP_BEGIN:		/* begin */
-		if (!ispair(code)) {
+		if (!is_pair(code)) {
 			s_return(code);
 		}
 		if (cdr(code) != NIL) {
@@ -1352,12 +1348,12 @@ LOOP:
 	case OP_LET0:		/* let */
 		args = NIL;
 		value = code;
-		code = issymbol(car(code)) ? cadr(code) : car(code);
+		code = is_symbol(car(code)) ? cadr(code) : car(code);
 		s_goto(OP_LET1);
 
 	case OP_LET1:		/* let (caluculate parameters) */
 		args = cons(value, args);
-		if (ispair(code)) {	/* continue */
+		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1, args, cdr(code));
 			code = cadar(code);
 			args = NIL;
@@ -1371,10 +1367,10 @@ LOOP:
 
 	case OP_LET2:		/* let */
 		envir = cons(NIL, envir);
-		for (x = issymbol(car(code)) ? cadr(code) : car(code), y = args;
+		for (x = is_symbol(car(code)) ? cadr(code) : car(code), y = args;
 		     y != NIL; x = cdr(x), y = cdr(y))
 			car(envir) = cons(cons(caar(x), car(y)), car(envir));
-		if (issymbol(car(code))) {	/* named let */
+		if (is_symbol(car(code))) {	/* named let */
 			for (x = cadr(code), args = NIL; x != NIL; x = cdr(x))
 				args = cons(caar(x), args);
 			x = mk_closure(cons(reverse(args), cddr(code)), envir);
@@ -1405,7 +1401,7 @@ LOOP:
 	case OP_LET2AST:	/* let* (caluculate parameters) */
 		car(envir) = cons(cons(caar(code), value), car(envir));
 		code = cdr(code);
-		if (ispair(code)) {	/* continue */
+		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET2AST, args, code);
 			code = cadar(code);
 			args = NIL;
@@ -1425,7 +1421,7 @@ LOOP:
 
 	case OP_LET1REC:	/* letrec (caluculate parameters) */
 		args = cons(value, args);
-		if (ispair(code)) {	/* continue */
+		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1REC, args, cdr(code));
 			code = cadar(code);
 			args = NIL;
@@ -1445,7 +1441,7 @@ LOOP:
 		s_goto(OP_BEGIN);
 
 	case OP_COND0:		/* cond */
-		if (!ispair(code)) {
+		if (!is_pair(code)) {
 			Error_0("Syntax error in cond");
 		}
 		s_save(OP_COND1, NIL, code);
@@ -1526,7 +1522,7 @@ LOOP:
 	case OP_0MACRO:	/* macro */
 		x = car(code);
 		code = cadr(code);
-		if (!issymbol(x)) {
+		if (!is_symbol(x)) {
 			Error_0("Variable is not symbol");
 		}
 		s_save(OP_1MACRO, NIL, x);
@@ -1551,7 +1547,7 @@ LOOP:
 
 	case OP_CASE1:		/* case */
 		for (x = code; x != NIL; x = cdr(x)) {
-			if (!ispair(y = caar(x)))
+			if (!is_pair(y = caar(x)))
 				break;
 			for ( ; y != NIL; y = cdr(y))
 				if (eqv(car(y), value))
@@ -1560,7 +1556,7 @@ LOOP:
 				break;
 		}
 		if (x != NIL) {
-			if (ispair(caar(x))) {
+			if (is_pair(caar(x))) {
 				code = cdar(x);
 				s_goto(OP_BEGIN);
 			} else {/* else */
@@ -1633,14 +1629,14 @@ LOOP:
 		s_return(mk_number(v));
 
 	case OP_CAR:		/* car */
-		if (ispair(car(args))) {
+		if (is_pair(car(args))) {
 			s_return(caar(args));
 		} else {
 			Error_0("Unable to car for non-cons cell");
 		}
 
 	case OP_CDR:		/* cdr */
-		if (ispair(car(args))) {
+		if (is_pair(car(args))) {
 			s_return(cdar(args));
 		} else {
 			Error_0("Unable to cdr for non-cons cell");
@@ -1651,7 +1647,7 @@ LOOP:
 		s_return(args);
 
 	case OP_SETCAR:	/* set-car! */
-		if (ispair(car(args))) {
+		if (is_pair(car(args))) {
 			caar(args) = cadr(args);
 			s_return(car(args));
 		} else {
@@ -1659,7 +1655,7 @@ LOOP:
 		}
 
 	case OP_SETCDR:	/* set-cdr! */
-		if (ispair(car(args))) {
+		if (is_pair(car(args))) {
 			cdar(args) = cadr(args);
 			s_return(car(args));
 		} else {
@@ -1689,21 +1685,21 @@ LOOP:
 	case OP_GEQ:		/* >= */
 		s_retbool(ivalue(car(args)) >= ivalue(cadr(args)));
 	case OP_SYMBOL:	/* symbol? */
-		s_retbool(issymbol(car(args)));
+		s_retbool(is_symbol(car(args)));
 	case OP_NUMBER:	/* number? */
-		s_retbool(isnumber(car(args)));
+		s_retbool(is_number(car(args)));
 	case OP_STRING:	/* string? */
-		s_retbool(isstring(car(args)));
+		s_retbool(is_string(car(args)));
 	case OP_PROC:		/* procedure? */
 		/*--
 		 * continuation should be procedure by the example
 		 * (call-with-current-continuation procedure?) ==> #t
 		 * in R^3 report sec. 6.9
 		 */
-		s_retbool(isproc(car(args)) || isclosure(car(args))
-			  || iscontinuation(car(args)));
+		s_retbool(isproc(car(args)) || is_closure(car(args))
+			  || is_continuation(car(args)));
 	case OP_PAIR:		/* pair? */
-		s_retbool(ispair(car(args)));
+		s_retbool(is_pair(car(args)));
 	case OP_EQ:		/* eq? */
 		s_retbool(car(args) == cadr(args));
 	case OP_EQV:		/* eqv? */
@@ -1711,7 +1707,7 @@ LOOP:
 
 	case OP_FORCE:		/* force */
 		code = car(args);
-		if (ispromise(code)) {
+		if (is_promise(code)) {
 			args = NIL;
 			s_goto(OP_APPLY);
 		} else {
@@ -1733,7 +1729,7 @@ LOOP:
 		s_return(T);
 
 	case OP_ERR0:	/* error */
-		if (!isstring(car(args))) {
+		if (!is_string(car(args))) {
 			Error_0("error -- first argument must be string");
 		}
 		tmpfp = outfp;
@@ -1798,8 +1794,8 @@ LOOP:
 		s_return(T);
 
 	case OP_GCVERB:		/* gc-verbose */
-	{	int	was = gc_verbose;
-		
+	{
+		int was = gc_verbose;
 		gc_verbose = (car(args) != F);
 		s_retbool(was);
 	}
@@ -1897,7 +1893,7 @@ LOOP:
 
 	/* ========== printing part ========== */
 	case OP_P0LIST:
-		if (!ispair(args)) {
+		if (!is_pair(args)) {
 			printatom(args, print_flag);
 			s_return(T);
 		} else if (car(args) == QUOTE && ok_abbrev(cdr(args))) {
@@ -1924,7 +1920,7 @@ LOOP:
 		}
 
 	case OP_P1LIST:
-		if (ispair(args)) {
+		if (is_pair(args)) {
 			s_save(OP_P1LIST, cdr(args), NIL);
 			fprintf(outfp, " ");
 			args = car(args);
@@ -1939,20 +1935,20 @@ LOOP:
 		}
 
 	case OP_LIST_LENGTH:	/* list-length */	/* a.k */
-		for (x = car(args), v = 0; ispair(x); x = cdr(x))
+		for (x = car(args), v = 0; is_pair(x); x = cdr(x))
 			++v;
 		s_return(mk_number(v));
 
 	case OP_ASSQ:		/* assq */	/* a.k */
 		x = car(args);
-		for (y = cadr(args); ispair(y); y = cdr(y)) {
-			if (!ispair(car(y))) {
+		for (y = cadr(args); is_pair(y); y = cdr(y)) {
+			if (!is_pair(car(y))) {
 				Error_0("Unable to handle non pair element");
 			}
 			if (x == caar(y))
 				break;
 		}
-		if (ispair(y)) {
+		if (is_pair(y)) {
 			s_return(car(y));
 		} else {
 			s_return(F);
@@ -1965,7 +1961,7 @@ LOOP:
 		s_goto(OP_P0_WIDTH);
 
 	case OP_P0_WIDTH:
-		if (!ispair(args)) {
+		if (!is_pair(args)) {
 			w += printatom(args, print_flag);
 			s_return(mk_number(w));
 		} else if (car(args) == QUOTE
@@ -1996,7 +1992,7 @@ LOOP:
 		}
 
 	case OP_P1_WIDTH:
-		if (ispair(args)) {
+		if (is_pair(args)) {
 			s_save(OP_P1_WIDTH, cdr(args), NIL);
 			++w;
 			args = car(args);
@@ -2012,10 +2008,10 @@ LOOP:
 		args = car(args);
 		if (args == NIL) {
 			s_return(F);
-		} else if (isclosure(args)) {
+		} else if (is_closure(args)) {
 			s_return(cons(LAMBDA, closure_code(value)));
 #ifdef USE_MACRO
-		} else if (ismacro(args)) {
+		} else if (is_macro(args)) {
 			s_return(cons(LAMBDA, closure_code(value)));
 #endif
 		} else {
@@ -2030,13 +2026,13 @@ LOOP:
 		if (car(args) == NIL) {
 			s_return(F);
 		}
-		s_retbool(isclosure(car(args)));
+		s_retbool(is_closure(car(args)));
 #ifdef USE_MACRO
 	case OP_MACROP:		/* macro? */
 		if (car(args) == NIL) {
 			s_return(F);
 		}
-		s_retbool(ismacro(car(args)));
+		s_retbool(is_macro(car(args)));
 #endif
 
 	default:
@@ -2168,7 +2164,7 @@ void init_procs()
 	mk_proc(OP_GCVERB, "gc-verbose");
 	mk_proc(OP_LIST_LENGTH, "length");	/* a.k */
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
-	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */	
+	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */
 	mk_proc(OP_GET_CLOSURE, "get-closure-code");	/* a.k */
 	mk_proc(OP_CLOSUREP, "closure?");	/* a.k */
 #ifdef USE_MACRO
@@ -2195,6 +2191,9 @@ void init_globals()
 #endif
 #ifndef USE_SCHEME_STACK
 	dump_base = mk_dumpstack(NIL);
+	dump = dump_base;
+#else
+	dump = NIL;
 #endif
 }
 
@@ -2215,36 +2214,31 @@ void init_scheme()
 
 /* ========== Error ==========  */
 
-void FatalError(char *fmt)
+void FatalError(char *s)
 {
-	fprintf(stderr, "Fatal error: ");
-	fprintf(stderr, fmt);
-	fprintf(stderr, "\n");
+	fprintf(stderr, "Fatal error: %s\n", s);
 	exit(1);
 }
 
 #ifdef USE_SETJMP
-void Error(char *fmt)
+void Error(char *s)
 {
-	fprintf(stderr, "Error: ");
-	fprintf(stderr, fmt);
-	fprintf(stderr, "\n");
+	fprintf(stderr, "Error: %s\n", s);
 	flushinput();
 	longjmp(error_jmp, OP_T0LVL);
 }
-
 #endif
 
 /* ========== Main ========== */
 
-void main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 	short op = (short)OP_LOAD;
 
 	if (argc > 1) {
 		if ((srcfp = fopen(argv[1], "r")) == NULL) {
 			fprintf(stderr, "Unable to open %s\n", argv[1]);
-			exit(1);
+			return 1;
 		}
 	} else {
 		srcfp = stdin;
@@ -2257,5 +2251,6 @@ void main(int argc, char *argv[])
 	op = (short)setjmp(error_jmp);
 #endif
 	Eval_Cycle(op);
-}
 
+	return 0;
+}
