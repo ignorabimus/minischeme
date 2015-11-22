@@ -13,9 +13,6 @@
  */
 /*--
  *
- *  This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w1
- *
  *  This version has been modified by R.C. Secrist.
  *
  *  Mini-Scheme is now maintained by Akira KIDA.
@@ -25,45 +22,11 @@
  *
  *  Please send suggestions, bug reports and/or requests to:
  *		<SDI00379@niftyserve.or.jp>
+ *
+ *  This version has been modified by Tatsuya WATANABE.
+ *	current version is 0.85w1 (2015)
  *--
- */ 
-
-/*
- * Here is System declaration.
- * Please define exactly one symbol in the following section.
  */
-/* #define LSC		*/	/* LightSpeed C for Macintosh */
-/* #define LSC4		*/	/* THINK C version 4.0 for Macintosh */
-/* #define MPW2		*/	/* Macintosh Programmer's Workshop v2.0x */
-/* #define BSD		*/	/* 4.x BSD */
-/* #define MSC		*/	/* Microsoft C Compiler v.4.00 - 7.00 */
-/* #define TURBOC	*/	/* Turbo C compiler v.2.0, or TC++ 1.0  */
-/* #define SYSV		*/	/* System-V, or POSIX */
-/* #define VAXC		*/	/* VAX/VMS VAXC 2.x or later */ /* (automatic) */
-
-#ifdef __BORLANDC__	/* Borland C++ - MS-DOS */
-#define TURBOC
-#endif
-
-#ifdef __TURBOC__	/* Turbo C V1.5 - MS-DOS */
-#define TURBOC
-#endif
-
-#ifdef mips		/* DECstation running OSF/1 */
-#define BSD
-#endif
-
-#ifdef __osf__		/* Alpha AXP running OSF/1 */
-#define BSD
-#endif
-
-#ifdef __DECC		/* Alpha AXP running VMS */
-#define VAXC
-#endif
-
-#ifdef _AIX		/* RS/6000 running AIX */
-#define BSD
-#endif
 
 /*
  * Define or undefine following symbols as you need.
@@ -91,18 +54,9 @@
  *  Basic memory allocation units
  */
 
-#ifdef TURBOC             	/* rcs */
-#define CELL_SEGSIZE  2048
-#define CELL_NSEGMENT  100
-#define STR_SEGSIZE   2048
-#define STR_NSEGMENT   100
-#else
-#define CELL_SEGSIZE    5000	/* # of cells in one segment */
-#define CELL_NSEGMENT   100	/* # of segments for cells */
-#define STR_SEGSIZE     2500	/* bytes of one string segment */
+#define CELL_SEGSIZE 500000	/* # of cells in one segment */
+#define STR_SEGSIZE    2500	/* bytes of one string segment */
 #define STR_NSEGMENT    100	/* # of segments for strings */
-#endif
-
 
 
 #define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w1.\n"
@@ -114,94 +68,12 @@
 #include <setjmp.h>
 #endif
 
-
-/* System dependency */
-#ifdef LSC
-#include <strings.h>
-#include <unix.h>
-#define malloc(x)	NewPtr((long)(x))
-#define prompt "> "
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 5
-#endif
-
-#ifdef LSC4
 #include <string.h>
 #include <stdlib.h>
-#define malloc(x)	NewPtr((long)(x))
 #define prompt "> "
 #define InitFile "init.scm"
-#define FIRST_CELLSEGS 5
-#endif
-
-#ifdef MPW2
-#include <strings.h>
-#include <memory.h>
-#define malloc(x)	NewPtr((long)(x))
-#define prompt "> [enter at next line]\n"
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 5
-#endif
-
-#ifdef BSD
-#include <strings.h>
-#include <signal.h>
-#define prompt "> "
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 10
-#endif
-
-#ifdef MSC
-#include <string.h>
-#include <stdlib.h>
-#include <malloc.h>
-#include <process.h>
-#define prompt "> "
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 3
+#ifdef _WIN32
 #define snprintf _snprintf
-#endif
-
-#ifdef TURBOC
-#include <string.h>
-#include <stdlib.h>
-#define prompt "> "
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 3
-#endif
-
-#ifdef SYSV
-#include <string.h>
-#include <malloc.h>
-#if __STDC__
-# include <stdlib.h>
-#endif
-#define prompt "> "
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 10
-#endif
-
-#ifdef	VAXC
-#include <string.h>
-#include <stdlib.h>
-#define prompt "> "
-#define InitFile "init.scm"
-#define FIRST_CELLSEGS 10
-#endif
-
-#ifdef __GNUC__
-/*
- * If we use gcc, AVOID_HACK_LOOP is unnecessary
- */
-#undef AVOID_HACK_LOOP
-#endif
-
-#ifndef	FIRST_CELLSEGS
-#error Please define your system type.
-/*
- * We refrain this to raise an error anyway even if on pre-ANSI system.
- */
-error Please define your system type.
 #endif
 
 /* cell structure */
@@ -236,9 +108,6 @@ typedef struct cell *pointer;
 # define T_MACRO       256	/* 0000000100000000 */
 #endif
 #define T_PROMISE      512	/* 0000001000000000 */
-#ifndef USE_SCHEME_STACK
-# define T_DUMPSTACK  1024	/* 0000010000000000 */
-#endif
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -282,11 +151,7 @@ typedef struct cell *pointer;
 #define ispromise(p)    (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
 
-#ifndef USE_SCHEME_STACK
-# define isdumpstack(p)  (type(p)&T_DUMPSTACK)
-#endif
-
-#define isatom(p)       (type(p)&T_ATOM)
+#define isatom(p)      (type(p)&T_ATOM)
 #define setatom(p)      type(p) |= T_ATOM
 #define clratom(p)      type(p) &= CLRATOM
 
@@ -305,8 +170,7 @@ typedef struct cell *pointer;
 #define cddddr(p)       cdr(cdr(cdr(cdr(p))))
 
 /* arrays for segments */
-pointer cell_seg[CELL_NSEGMENT];
-int     last_cell_seg = -1;
+pointer cell_seg;
 char   *str_seg[STR_NSEGMENT];
 int     str_seglast = -1;
 
@@ -365,31 +229,26 @@ pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
 
 /* allocate new cell segment */
-int alloc_cellseg(int n)
+int alloc_cellseg()
 {
 	register pointer p;
 	register long i;
-	register int k;
 
-	for (k = 0; k < n; k++) {
-		if (last_cell_seg >= CELL_NSEGMENT - 1)
-			return k;
-		p = (pointer) malloc(CELL_SEGSIZE * sizeof(struct cell));
-		if (p == (pointer) 0)
-			return k;
-		cell_seg[++last_cell_seg] = p;
-		fcells += CELL_SEGSIZE;
-		for (i = 0; i < CELL_SEGSIZE - 1; i++, p++) {
-			type(p) = 0;
-			car(p) = NIL;
-			cdr(p) = p + 1;
-		}
+	p = (pointer)malloc(CELL_SEGSIZE * sizeof(struct cell));
+	if (p == (pointer)0)
+		return 0;
+	free_cell = cell_seg = p;
+	fcells += CELL_SEGSIZE;
+	for (i = 0; i < CELL_SEGSIZE - 1; i++, p++) {
 		type(p) = 0;
 		car(p) = NIL;
-		cdr(p) = free_cell;
-		free_cell = cell_seg[last_cell_seg];
+		cdr(p) = p + 1;
 	}
-	return n;
+	type(p) = 0;
+	car(p) = NIL;
+	cdr(p) = NIL;
+
+	return 1;
 }
 
 /* allocate new string segment */
@@ -419,20 +278,18 @@ pointer get_cell(register pointer a, register pointer b)
 
 	if (free_cell == NIL) {
 		gc(a, b);
-		if (free_cell == NIL)
+		if (free_cell == NIL) {
 #ifdef USE_SETJMP
-			if (!alloc_cellseg(1)) {
-				args = envir = code = dump = NIL;
-				gc(NIL, NIL);
-				if (free_cell != NIL)
-					Error("run out of cells --- rerurn to top level");
-				else
-					FatalError("run out of cells --- unable to recover cells");
-			}
+			args = envir = code = dump = NIL;
+			gc(NIL, NIL);
+			if (free_cell != NIL)
+				Error("run out of cells --- rerurn to top level");
+			else
+				FatalError("run out of cells --- unable to recover cells");
 #else
-			if (!alloc_cellseg(1))
-				FatalError("run out of cells  --- unable to recover cells");
+			FatalError("run out of cells  --- unable to recover cells");
 #endif
+		}
 	}
 	x = free_cell;
 	free_cell = cdr(x);
@@ -622,7 +479,9 @@ pointer mk_dumpstack(pointer next)
 {
 	pointer x = get_consecutive_cells(3);
 
-	type(x) = T_DUMPSTACK;
+	type(x) = T_PAIR;
+	type(x + 1) = T_PAIR;
+	type(x + 2) = T_PAIR;
 	car(x) = NIL;
 	cdr(x) = next;
 	return x;
@@ -681,7 +540,6 @@ E6:	if (!t)
 void gc(register pointer a, register pointer b)
 {
 	register pointer p;
-	register short i;
 
 	if (gc_verbose)
 		printf("gc...");
@@ -720,18 +578,16 @@ void gc(register pointer a, register pointer b)
 	clrmark(NIL);
 	fcells = 0;
 	free_cell = NIL;
-	for (i = 0; i <= last_cell_seg; i++) {
-		p = cell_seg[i] + CELL_SEGSIZE;
-		while (--p >= cell_seg[i]) {
-			if (ismark(p))
-				clrmark(p);
-			else {
-				type(p) = 0;
-				cdr(p) = free_cell;
-				car(p) = NIL;
-				free_cell = p;
-				++fcells;
-			}
+	p = cell_seg + CELL_SEGSIZE;
+	while (--p >= cell_seg) {
+		if (ismark(p))
+			clrmark(p);
+		else {
+			type(p) = 0;
+			cdr(p) = free_cell;
+			car(p) = NIL;
+			free_cell = p;
+			++fcells;
 		}
 	}
 
@@ -1224,7 +1080,6 @@ enum {
 	OP_QUIT,
 	OP_GC,
 	OP_GCVERB,
-	OP_NEWSEGMENT,
 
 	OP_RDSEXPR,
 	OP_RDLIST,
@@ -1949,14 +1804,6 @@ LOOP:
 		s_retbool(was);
 	}
 
-	case OP_NEWSEGMENT:	/* new-segment */
-		if (!isnumber(car(args))) {
-			Error_0("new-segment -- argument must be number");
-		}
-		fprintf(outfp, "allocate %d new segments\n",
-			alloc_cellseg((int) ivalue(car(args))));
-		s_return(T);
-
 		/* ========== reading part ========== */
 	case OP_RDSEXPR:
 		switch (tok) {
@@ -2319,7 +2166,6 @@ void init_procs()
 	mk_proc(OP_GET, "get");
 	mk_proc(OP_GC, "gc");
 	mk_proc(OP_GCVERB, "gc-verbose");
-	mk_proc(OP_NEWSEGMENT, "new-segment");
 	mk_proc(OP_LIST_LENGTH, "length");	/* a.k */
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
 	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */	
@@ -2355,7 +2201,7 @@ void init_globals()
 /* initialization of Mini-Scheme */
 void init_scheme()
 {
-	if (alloc_cellseg(FIRST_CELLSEGS) != FIRST_CELLSEGS)
+	if (alloc_cellseg() == 0)
 		FatalError("Unable to allocate initial cell segments");
 	if (!alloc_strseg(1))
 		FatalError("Unable to allocate initial string segments");
