@@ -374,13 +374,13 @@ pointer find_consecutive_cells(int n)
 }
 #endif
 
-pointer get_consecutive_cells(int n)
+pointer get_consecutive_cells(int n, pointer *a)
 {
 	pointer x;
 
 	x = find_consecutive_cells(n);
 	if (x == NIL) {
-		gc(&NIL, &NIL);
+		gc(a, &NIL);
 		x = find_consecutive_cells(n);
 		if (x == NIL) {
 			FatalError("run out of cells  --- unable to recover consecutive cells");
@@ -536,7 +536,7 @@ pointer mk_const(char *name)
 /* get dump stack */
 pointer mk_dumpstack(pointer next)
 {
-	pointer x = get_consecutive_cells(3);
+	pointer x = get_consecutive_cells(3, &next);
 
 	type(x) = T_PAIR;
 	type(x + 1) = T_NUMBER;
