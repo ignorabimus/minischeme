@@ -36,6 +36,7 @@
 #define USE_SETJMP	/* undef this if you do not want to use setjmp() */
 #define USE_QQUOTE	/* undef this if you do not need quasiquote */
 #define USE_MACRO	/* undef this if you do not need macro */
+#define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
 
 
 #ifdef USE_QQUOTE
@@ -88,6 +89,9 @@ struct cell {
 			struct cell *_car;
 			struct cell *_cdr;
 		} _cons;
+#ifdef USE_COPYING_GC
+		struct cell *_forwarded;
+#endif
 	} _object;
 };
 
@@ -109,6 +113,9 @@ typedef struct cell *pointer;
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
 #define UNMARK       32767	/* 0111111111111111 */
+#ifdef USE_COPYING_GC
+# define T_FORWARDED 32768	/* 1000000000000000 */	/* only for gc */
+#endif
 
 /* macros for cell operations */
 #define type(p)         ((p)->_flag)
@@ -209,7 +216,7 @@ jmp_buf error_jmp;
 #endif
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
 
-void gc(register pointer a, register pointer b);
+void gc(register pointer *a, register pointer *b);
 void FatalError(char *s);
 void Error(char *s);
 
@@ -224,7 +231,33 @@ void Error(char *s);
 pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
 
+#ifdef USE_COPYING_GC
+pointer *sink[2];
+pointer **psink = sink;
+#define push_sink(x) (*psink++ = (x))
+#define pop_sink() (--psink)
+#else
+#define push_sink(x)
+#define pop_sink()
+#endif
+
 /* allocate new cell segment */
+#ifdef USE_COPYING_GC
+pointer from_space;
+pointer to_space;
+
+int alloc_cellseg()
+{
+	cell_seg = (pointer)malloc(CELL_SEGSIZE * sizeof(struct cell) * 2);
+	if (cell_seg == (pointer)0)
+		return 0;
+	fcells = CELL_SEGSIZE;
+	free_cell = from_space = cell_seg;
+	to_space = cell_seg + CELL_SEGSIZE;
+
+	return 1;
+}
+#else
 int alloc_cellseg()
 {
 	register pointer p;
@@ -246,6 +279,7 @@ int alloc_cellseg()
 
 	return 1;
 }
+#endif
 
 /* allocate new string segment */
 int alloc_strseg(int n)
@@ -268,17 +302,19 @@ int alloc_strseg(int n)
 }
 
 /* get new cell.  parameter a, b is marked by gc. */
-pointer get_cell(register pointer a, register pointer b)
+pointer get_cell(register pointer *a, register pointer *b)
 {
+#ifndef USE_COPYING_GC
 	register pointer x;
+#endif
 
-	if (free_cell == NIL) {
+	if (fcells == 0) {
 		gc(a, b);
-		if (free_cell == NIL) {
+		if (fcells == 0) {
 #ifdef USE_SETJMP
 			args = envir = code = dump = NIL;
-			gc(NIL, NIL);
-			if (free_cell != NIL)
+			gc(&NIL, &NIL);
+			if (fcells != 0)
 				Error("run out of cells --- rerurn to top level");
 			else
 				FatalError("run out of cells --- unable to recover cells");
@@ -287,13 +323,32 @@ pointer get_cell(register pointer a, register pointer b)
 #endif
 		}
 	}
+
+#ifdef USE_COPYING_GC
+	--fcells;
+	return free_cell++;
+#else
 	x = free_cell;
 	free_cell = cdr(x);
 	--fcells;
 	return x;
+#endif
 }
 
 #ifndef USE_SCHEME_STACK
+#ifdef USE_COPYING_GC
+pointer find_consecutive_cells(int n)
+{
+	if (fcells >= n) {
+		pointer p = free_cell;
+
+		free_cell += n;
+		fcells -= n;
+		return p;
+	}
+	return NIL;
+}
+#else
 pointer find_consecutive_cells(int n)
 {
 	pointer *pp = &free_cell;
@@ -317,6 +372,7 @@ pointer find_consecutive_cells(int n)
 	}
 	return NIL;
 }
+#endif
 
 pointer get_consecutive_cells(int n)
 {
@@ -324,7 +380,7 @@ pointer get_consecutive_cells(int n)
 
 	x = find_consecutive_cells(n);
 	if (x == NIL) {
-		gc(NIL, NIL);
+		gc(&NIL, &NIL);
 		x = find_consecutive_cells(n);
 		if (x == NIL) {
 			FatalError("run out of cells  --- unable to recover consecutive cells");
@@ -332,12 +388,12 @@ pointer get_consecutive_cells(int n)
 	}
 	return x;
 }
-#endif
+#endif /* USE_SCHEME_STACK */
 
 /* get new cons cell */
-pointer cons(register pointer a, register pointer b)
+pointer cons(pointer a, pointer b)
 {
-	register pointer x = get_cell(a, b);
+	register pointer x = get_cell(&a, &b);
 
 	type(x) = T_PAIR;
 	car(x) = a;
@@ -348,7 +404,7 @@ pointer cons(register pointer a, register pointer b)
 /* get number atom */
 pointer mk_number(register long num)
 {
-	register pointer x = get_cell(NIL, NIL);
+	register pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
 	ivalue(x) = num;
@@ -385,7 +441,7 @@ FOUND:
 /* get new string */
 pointer mk_string(char *str)
 {
-	register pointer x = get_cell(NIL, NIL);
+	register pointer x = get_cell(&NIL, &NIL);
 
 	strvalue(x) = store_string(str);
 	type(x) = (T_STRING | T_ATOM);
@@ -413,7 +469,7 @@ pointer mk_symbol(char *name)
 	x = cons(mk_string(name), NIL);
 	type(x) = T_SYMBOL;
 	oblist = cons(x, oblist);
-	return x;
+	return car(oblist);
 }
 
 /* get new uninterned-symbol */
@@ -483,8 +539,8 @@ pointer mk_dumpstack(pointer next)
 	pointer x = get_consecutive_cells(3);
 
 	type(x) = T_PAIR;
-	type(x + 1) = T_PAIR;
-	type(x + 2) = T_PAIR;
+	type(x + 1) = T_NUMBER;
+	type(x + 2) = T_NUMBER;
 	car(x) = NIL;
 	cdr(x) = next;
 	return x;
@@ -492,6 +548,117 @@ pointer mk_dumpstack(pointer next)
 #endif
 
 /* ========== garbage collector ========== */
+#ifdef USE_COPYING_GC
+pointer next;
+
+pointer forward(pointer x)
+{
+	if (x < from_space || from_space + CELL_SEGSIZE <= x) {
+		return x;
+	}
+
+	if (type(x) == T_FORWARDED) {
+		return x->_object._forwarded;
+	}
+
+	*next = *x;
+	type(x) = T_FORWARDED;
+	x->_object._forwarded = next;
+	return next++;
+}
+
+void gc(register pointer *a, register pointer *b)
+{
+	register pointer scan, **pp;
+#ifndef USE_SCHEME_STACK
+	register pointer p;
+#endif
+
+	if (gc_verbose)
+		printf("gc...");
+
+	scan = next = to_space;
+
+	/* forward system globals */
+	oblist = forward(oblist);
+	global_env = forward(global_env);
+
+	/* forward special symbols */
+	LAMBDA = forward(LAMBDA);
+	QUOTE = forward(QUOTE);
+#ifdef USE_QQUOTE
+	QQUOTE = forward(QQUOTE);
+	UNQUOTE = forward(UNQUOTE);
+	UNQUOTESP = forward(UNQUOTESP);
+#endif
+
+	/* forward current registers */
+	args = forward(args);
+	envir = forward(envir);
+	code = forward(code);
+#ifndef USE_SCHEME_STACK
+	for (p = dump_base; p != dump; p = dump_prev(p)) {
+		register pointer q = forward(p);
+		forward(p + 1);
+		forward(p + 2);
+		dump_args(q) = forward(dump_args(q));
+		dump_envir(q) = forward(dump_envir(q));
+		dump_code(q) = forward(dump_code(q));
+	}
+	for ( ; p != NIL; p = dump_prev(p)) {
+		forward(p);
+		forward(p + 1);
+		forward(p + 2);
+	}
+	dump_base = forward(dump_base);
+#endif
+	dump = forward(dump);
+
+	for (pp = sink; pp != psink; pp++) {
+		**pp = forward(**pp);
+	}
+
+	/* forward variables a, b */
+	*a = forward(*a);
+	*b = forward(*b);
+
+	while (scan < next) {
+		switch (type(scan) & 0xff) {
+		case T_STRING:
+		case T_NUMBER:
+		case T_PROC:
+			break;
+		case T_SYMBOL:
+		case T_SYNTAX | T_SYMBOL:
+		case T_PAIR:
+		case T_CLOSURE:
+		case T_CONTINUATION:
+			car(scan) = forward(car(scan));
+			cdr(scan) = forward(cdr(scan));
+			break;
+		default:
+			fprintf(stderr, "Error: Unknown type %d\n", type(scan));
+			exit(1);
+		}
+		++scan;
+	}
+
+	fcells = CELL_SEGSIZE - (scan - to_space);
+	free_cell = scan;
+
+	if (from_space == cell_seg) {
+		from_space = cell_seg + CELL_SEGSIZE;
+		to_space = cell_seg;
+	} else {
+		from_space = cell_seg;
+		to_space = cell_seg + CELL_SEGSIZE;
+	}
+
+	if (gc_verbose)
+		printf(" done %ld cells are recovered.\n", fcells);
+}
+
+#else /* USE_COPYING_GC */
 
 /*--
  *  We use algorithm E (Kunuth, The Art of Computer Programming Vol.1,
@@ -540,7 +707,7 @@ E6:	if (!t)
 
 
 /* garbage collection. parameter a, b is marked. */
-void gc(register pointer a, register pointer b)
+void gc(register pointer *a, register pointer *b)
 {
 	register pointer p;
 
@@ -574,8 +741,8 @@ void gc(register pointer a, register pointer b)
 #endif
 
 	/* mark variables a, b */
-	mark(a);
-	mark(b);
+	mark(*a);
+	mark(*b);
 
 	/* garbage collect */
 	clrmark(NIL);
@@ -597,7 +764,7 @@ void gc(register pointer a, register pointer b)
 	if (gc_verbose)
 		printf(" done %ld cells are recovered.\n", fcells);
 }
-
+#endif /* USE_COPYING_GC */
 
 /* ========== Rootines for Reading ========== */
 
@@ -816,9 +983,9 @@ int printatom(pointer l, int f)
 /* ========== Rootines for Evaluation Cycle ========== */
 
 /* make closure. c is code. e is environment */
-pointer mk_closure(register pointer c, register pointer e)
+pointer mk_closure(pointer c, pointer e)
 {
-	register pointer x = get_cell(c, e);
+	register pointer x = get_cell(&c, &e);
 
 	type(x) = T_CLOSURE;
 	car(x) = c;
@@ -827,9 +994,9 @@ pointer mk_closure(register pointer c, register pointer e)
 }
 
 /* make continuation. */
-pointer mk_continuation(register pointer d)
+pointer mk_continuation(pointer d)
 {
-	register pointer x = get_cell(NIL, d);
+	register pointer x = get_cell(&NIL, &d);
 
 	type(x) = T_CONTINUATION;
 	cont_dump(x) = d;
@@ -837,12 +1004,14 @@ pointer mk_continuation(register pointer d)
 }
 
 /* reverse list -- make new cells */
-pointer reverse(register pointer a) /* a must be checked by gc */
+pointer reverse(pointer a) /* a must be checked by gc */
 {
 	register pointer p = NIL;
 
+	push_sink(&a);
 	for ( ; is_pair(a); a = cdr(a))
 		p = cons(car(a), p);
+	pop_sink();
 	return p;
 }
 
@@ -957,19 +1126,22 @@ pointer s_clone_save(pointer d) {
 
 	if (d == dump_base) return NIL;
 
-	p = cons(dump_code(dump_next(d)), s_clone_save(dump_next(d)));
+	p = s_clone_save(dump_next(d));
+	p = cons(dump_code(dump_next(d)), p);
 	p = cons(dump_envir(dump_next(d)), p);
 	args = cons(dump_args(dump_next(d)), p);
-	p = cons(mk_number((long)dump_op(dump_next(d))), args);
-	return p;
+	p = mk_number((long)dump_op(dump_next(d)));
+	return cons(p, args);
 }
 
 #else
 
 #define s_save(a, b, c)  (                     \
-	dump = cons(envir, cons((c), dump)),       \
+	dump = cons((c), dump),                    \
+	dump = cons(envir, dump),                  \
 	dump = cons((b), dump),                    \
-	dump = cons(mk_number((long)(a)), dump))
+	x = mk_number((long)(a)),                  \
+	dump = cons(x, dump))
 
 #define s_return(a) BEGIN                      \
 	value = (a);                               \
@@ -1099,20 +1271,17 @@ enum {
 	OP_MACROP,
 };
 
-static FILE *tmpfp;
-static int tok;
-static int print_flag;
-static pointer value;
-static short operator;
-
 /* kernel of this intepreter */
-pointer Eval_Cycle(short op)
+pointer Eval_Cycle(short operator)
 {
-	register pointer x, y;
+	FILE *tmpfp;
+	int tok;
+	int print_flag;
+	pointer value;
+	pointer x, y;
 	register long v;
-	static long w;
+	long w;
 
-	operator = op;
 LOOP:
 	switch (operator) {
 	case OP_LOAD:		/* load */
@@ -1199,8 +1368,10 @@ LOOP:
 #ifdef USE_MACRO
 	case OP_E0ARGS:	/* eval arguments */
 		if (is_macro(value)) {	/* macro expansion */
+			push_sink(&value);
 			s_save(OP_DOMACRO, NIL, NIL);
 			args = cons(code, NIL);
+			pop_sink();
 			code = value;
 			s_goto(OP_APPLY);
 		} else {
@@ -1229,23 +1400,28 @@ LOOP:
 		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */
 			envir = cons(NIL, closure_env(code));
-			for (x = car(closure_code(code)), y = args;
-			     is_pair(x); x = cdr(x), y = cdr(y)) {
-				if (y == NIL) {
+			push_sink(&x);
+			for (x = car(closure_code(code));
+			     is_pair(x); x = cdr(x), args = cdr(args)) {
+				if (args == NIL) {
+					pop_sink();
 					Error_0("Few arguments");
 				} else {
-					car(envir) = cons(cons(car(x), car(y)), car(envir));
+					y = cons(car(x), car(args));
+					car(envir) = cons(y, car(envir));
 				}
 			}
+			pop_sink();
 			if (x == NIL) {
 				/*--
-				 * if (y != NIL) {
+				 * if (args != NIL) {
 				 * 	Error_0("Many arguments");
 				 * }
 				 */
-			} else if (is_symbol(x))
-				car(envir) = cons(cons(x, y), car(envir));
-			else {
+			} else if (is_symbol(x)) {
+				x = cons(x, args);
+				car(envir) = cons(x, car(envir));
+			} else {
 				Error_0("Syntax error in closure");
 			}
 			code = cdr(closure_code(code));
@@ -1279,8 +1455,10 @@ LOOP:
 
 	case OP_DEF0:	/* define */
 		if (is_pair(car(code))) {
+			y = cons(cdar(code), cdr(code));
+			y = cons(LAMBDA, y);
 			x = caar(code);
-			code = cons(LAMBDA, cons(cdar(code), cdr(code)));
+			code = y;
 		} else {
 			x = car(code);
 			code = cadr(code);
@@ -1297,8 +1475,10 @@ LOOP:
 				break;
 		if (x != NIL)
 			cdar(x) = value;
-		else
-			car(envir) = cons(cons(code, value), car(envir));
+		else {
+			x = cons(code, value);
+			car(envir) = cons(x, car(envir));
+		}
 		s_return(code);
 
 	case OP_SET0:		/* set! */
@@ -1368,17 +1548,25 @@ LOOP:
 
 	case OP_LET2:		/* let */
 		envir = cons(NIL, envir);
-		for (x = is_symbol(car(code)) ? cadr(code) : car(code), y = args;
-		     y != NIL; x = cdr(x), y = cdr(y))
-			car(envir) = cons(cons(caar(x), car(y)), car(envir));
+		push_sink(&x);
+		for (x = is_symbol(car(code)) ? cadr(code) : car(code);
+			args != NIL; x = cdr(x), args = cdr(args)) {
+			y = cons(caar(x), car(args));
+			car(envir) = cons(y, car(envir));
+		}
 		if (is_symbol(car(code))) {	/* named let */
 			for (x = cadr(code), args = NIL; x != NIL; x = cdr(x))
 				args = cons(caar(x), args);
-			x = mk_closure(cons(reverse(args), cddr(code)), envir);
-			car(envir) = cons(cons(car(code), x), car(envir));
+			pop_sink();
+			y = reverse(args);
+			y = cons(y, cddr(code));
+			y = mk_closure(y, envir);
+			y = cons(car(code), y);
+			car(envir) = cons(y, car(envir));
 			code = cddr(code);
 			args = NIL;
 		} else {
+			pop_sink();
 			code = cdr(code);
 			args = NIL;
 		}
@@ -1400,7 +1588,8 @@ LOOP:
 		s_goto(OP_LET2AST);
 
 	case OP_LET2AST:	/* let* (caluculate parameters) */
-		car(envir) = cons(cons(caar(code), value), car(envir));
+		x = cons(caar(code), value);
+		car(envir) = cons(x, car(envir));
 		code = cdr(code);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET2AST, args, code);
@@ -1435,8 +1624,12 @@ LOOP:
 		}
 
 	case OP_LET2REC:	/* letrec */
-		for (x = car(code), y = args; y != NIL; x = cdr(x), y = cdr(y))
-			car(envir) = cons(cons(caar(x), car(y)), car(envir));
+		push_sink(&x);
+		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
+			y = cons(caar(x), car(args));
+			car(envir) = cons(y, car(envir));
+		}
+		pop_sink();
 		code = cdr(code);
 		args = NIL;
 		s_goto(OP_BEGIN);
@@ -1466,7 +1659,8 @@ LOOP:
 		}
 
 	case OP_DELAY:		/* delay */
-		x = mk_closure(cons(NIL, code), envir);
+		x = cons(NIL, code);
+		x = mk_closure(x, envir);
 		setpromise(x);
 		s_return(x);
 
@@ -1515,7 +1709,8 @@ LOOP:
 
 	case OP_C1STREAM:	/* cons-stream */
 		args = value;	/* save value to register args for gc */
-		x = mk_closure(cons(NIL, code), envir);
+		x = cons(NIL, code);
+		x = mk_closure(x, envir);
 		setpromise(x);
 		s_return(cons(args, x));
 
@@ -1536,8 +1731,10 @@ LOOP:
 				break;
 		if (x != NIL)
 			cdar(x) = value;
-		else
-			car(envir) = cons(cons(code, value), car(envir));
+		else {
+			x = cons(code, value);
+			car(envir) = cons(x, car(envir));
+		}
 		s_return(code);
 #endif
 
@@ -1769,9 +1966,10 @@ LOOP:
 				break;
 		if (x != NIL)
 			cdar(x) = caddr(args);
-		else
-			symprop(car(args)) = cons(cons(y, caddr(args)),
-						  symprop(car(args)));
+		else {
+			x = cons(y, caddr(args));
+			symprop(car(args)) = cons(x, symprop(car(args)));
+		}
 		s_return(T);
 
 	case OP_GET:		/* get */
@@ -1791,7 +1989,7 @@ LOOP:
 		break;
 
 	case OP_GC:		/* gc */
-		gc(NIL, NIL);
+		gc(&NIL, &NIL);
 		s_return(T);
 
 	case OP_GCVERB:		/* gc-verbose */
@@ -1879,17 +2077,21 @@ LOOP:
 		}
 
 	case OP_RDQUOTE:
-		s_return(cons(QUOTE, cons(value, NIL)));
+		x = cons(value, NIL);
+		s_return(cons(QUOTE, x));
 
 #ifdef USE_QQUOTE
 	case OP_RDQQUOTE:
-		s_return(cons(QQUOTE, cons(value, NIL)));
+		x = cons(value, NIL);
+		s_return(cons(QQUOTE, x));
 
 	case OP_RDUNQUOTE:
-		s_return(cons(UNQUOTE, cons(value, NIL)));
+		x = cons(value, NIL);
+		s_return(cons(UNQUOTE, x));
 
 	case OP_RDUQTSP:
-		s_return(cons(UNQUOTESP, cons(value, NIL)));
+		x = cons(value, NIL);
+		s_return(cons(UNQUOTESP, x));
 #endif
 
 	/* ========== printing part ========== */
@@ -2061,10 +2263,11 @@ void mk_proc(unsigned short op, char *name)
 	pointer x, y;
 
 	x = mk_symbol(name);
-	y = get_cell(NIL, NIL);
+	y = get_cell(&x, &NIL);
 	type(y) = (T_PROC | T_ATOM);
 	ivalue(y) = (long) op;
-	car(global_env) = cons(cons(x, y), car(global_env));
+	x = cons(x, y);
+	car(global_env) = cons(x, car(global_env));
 }
 
 
@@ -2087,8 +2290,8 @@ void init_vars_global()
 	/* init global_env */
 	global_env = cons(NIL, NIL);
 	/* init else */
-	x = mk_symbol("else");
-	car(global_env) = cons(cons(x, T), car(global_env));
+	x = cons(mk_symbol("else"), T);
+	car(global_env) = cons(x, car(global_env));
 }
 
 
