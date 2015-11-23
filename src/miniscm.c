@@ -32,6 +32,7 @@
  * Define or undefine following symbols as you need.
  */
 /* #define VERBOSE */	/* define this if you want verbose GC */
+/* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
 #define USE_SETJMP	/* undef this if you do not want to use setjmp() */
 #define USE_QQUOTE	/* undef this if you do not need quasiquote */
 #define USE_MACRO	/* undef this if you do not need macro */
@@ -129,7 +130,7 @@ typedef struct cell *pointer;
 #define symprop(p)      cdr(p)
 
 #define is_syntax(p)    (type(p)&T_SYNTAX)
-#define isproc(p)       (type(p)&T_PROC)
+#define is_proc(p)      (type(p)&T_PROC)
 #define syntaxname(p)   strvalue(car(p))
 #define syntaxnum(p)    keynum(car(p))
 #define procnum(p)      ivalue(p)
@@ -177,12 +178,12 @@ pointer code;			/* register for current code */
 pointer dump;			/* stack register for next evaluation */
 
 struct cell _NIL;
-pointer NIL = &_NIL;		/* special cell representing empty cell */
+pointer NIL = &_NIL;	/* special cell representing empty cell */
 struct cell _T;
 pointer T = &_T;		/* special cell representing #t */
 struct cell _F;
 pointer F = &_F;		/* special cell representing #f */
-pointer oblist = &_NIL;		/* pointer to symbol table */
+pointer oblist = &_NIL;	/* pointer to symbol table */
 pointer global_env;		/* pointer to global environment */
 
 /* global pointers to special symbols */
@@ -794,7 +795,7 @@ int printatom(pointer l, int f)
 		}
 	} else if (is_symbol(l))
 		p = symname(l);
-	else if (isproc(l)) {
+	else if (is_proc(l)) {
 		p = strbuff;
 		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
 #ifdef USE_MACRO
@@ -1223,7 +1224,7 @@ LOOP:
 		}
 
 	case OP_APPLY:		/* apply 'code' to 'args' */
-		if (isproc(code)) {
+		if (is_proc(code)) {
 			s_goto(procnum(code));	/* PROCEDURE */
 		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */
@@ -1696,7 +1697,7 @@ LOOP:
 		 * (call-with-current-continuation procedure?) ==> #t
 		 * in R^3 report sec. 6.9
 		 */
-		s_retbool(isproc(car(args)) || is_closure(car(args))
+		s_retbool(is_proc(car(args)) || is_closure(car(args))
 			  || is_continuation(car(args)));
 	case OP_PAIR:		/* pair? */
 		s_retbool(is_pair(car(args)));
@@ -2195,6 +2196,8 @@ void init_globals()
 #else
 	dump = NIL;
 #endif
+	envir = global_env;
+	code = NIL;
 }
 
 /* initialization of Mini-Scheme */
