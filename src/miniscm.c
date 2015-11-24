@@ -1121,17 +1121,19 @@ pointer s_clone(pointer d) {
 	return dump_prev(p);
 }
 
-pointer s_clone_save(pointer d) {
-	pointer p;
+pointer s_clone_save() {
+	pointer p = NIL, d;
 
-	if (d == dump_base) return NIL;
-
-	p = s_clone_save(dump_next(d));
-	p = cons(dump_code(dump_next(d)), p);
-	p = cons(dump_envir(dump_next(d)), p);
-	args = cons(dump_args(dump_next(d)), p);
-	p = mk_number((long)dump_op(dump_next(d)));
-	return cons(p, args);
+	push_sink(&d);
+	for (d = dump_base; d != dump; d = dump_prev(d)) {
+		p = cons(dump_code(d), p);
+		p = cons(dump_envir(d), p);
+		args = cons(dump_args(d), p);
+		p = mk_number((long)dump_op(d));
+		p = cons(p, args);
+	}
+	pop_sink();
+	return p;
 }
 
 #else
@@ -1584,6 +1586,9 @@ LOOP:
 
 	case OP_LET1AST:	/* let* (make new frame) */
 		envir = cons(value, envir);	/* save value for gc */
+#ifdef USE_COPYING_GC
+		value = car(envir);
+#endif
 		car(envir) = NIL;
 		s_goto(OP_LET2AST);
 
@@ -1785,7 +1790,7 @@ LOOP:
 	case OP_CONTINUATION:	/* call-with-current-continuation */
 		code = car(args);
 #ifndef USE_SCHEME_STACK
-		args = cons(mk_continuation(s_clone_save(dump)), NIL);
+		args = cons(mk_continuation(s_clone_save()), NIL);
 #else
 		args = cons(mk_continuation(dump), NIL);
 #endif
