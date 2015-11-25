@@ -1721,12 +1721,20 @@ LOOP:
 
 #ifdef USE_MACRO
 	case OP_0MACRO:	/* macro */
-		x = car(code);
-		code = cadr(code);
-		if (!is_symbol(x)) {
-			Error_0("Variable is not symbol");
+		if (is_pair(x = car(code))) {
+			if (!is_symbol(car(x))) {
+				Error_0("Variable is not symbol");
+			}
+			s_save(OP_1MACRO, NIL, car(x));
+			y = cons(cdar(code), cdr(code));
+			code = cons(LAMBDA, y);
+		} else {
+			if (!is_symbol(x)) {
+				Error_0("Variable is not symbol");
+			}
+			s_save(OP_1MACRO, NIL, x);
+			code = cadr(code);
 		}
-		s_save(OP_1MACRO, NIL, x);
 		s_goto(OP_EVAL);
 
 	case OP_1MACRO:	/* macro */

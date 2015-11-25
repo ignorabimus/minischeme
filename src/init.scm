@@ -148,3 +148,13 @@
                         `,vars)))))
       do-macro)))
 
+(define (macro-expand form)
+  ((eval (get-closure-code (eval (car form)))) form))
+
+(macro (define-macro dform)
+  (let ((form (gensym)))
+    (if (symbol? (cadr dform))
+      `(macro (,(cadr dform) ,form)
+         (apply ,@(cddr dform) (cdr ,form)))
+      `(macro (,(caadr dform) ,form)
+         (apply (lambda ,(cdadr dform) ,@(cddr dform)) (cdr ,form))))))
