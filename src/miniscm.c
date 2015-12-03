@@ -1085,7 +1085,7 @@ int eqv(register pointer a, register pointer b)
 /* control macros for Eval_Cycle */
 #define s_goto(a) BEGIN                        \
 	operator = (short)(a);                     \
-	goto LOOP; END
+	goto a; END
 
 #ifndef USE_SCHEME_STACK
 
@@ -1286,55 +1286,8 @@ pointer Eval_Cycle(short operator)
 
 LOOP:
 	switch (operator) {
-	case OP_LOAD:		/* load */
-		if (!is_string(car(args))) {
-			Error_0("load -- argument is not string");
-		}
-		if ((infp = fopen(strvalue(car(args)), "r")) == NULL) {
-			infp = srcfp;
-			Error_1("Unable to open", car(args));
-		}
-		if (infp == stdin) {
-			fprintf(outfp, "loading %s", strvalue(car(args)));
-		}
-		s_goto(OP_T0LVL);
-
-	case OP_T0LVL:	/* top level */
-		if (infp == stdin) {
-			fprintf(outfp, "\n");
-		}
-#ifndef USE_SCHEME_STACK
-		dump = dump_base;
-#else
-		dump = NIL;
-#endif
-		envir = global_env;
-		s_save(OP_VALUEPRINT, NIL, NIL);
-		s_save(OP_T1LVL, NIL, NIL);
-		if (infp == stdin) {
-			printf(prompt);
-		}
-		s_goto(OP_READ);
-
-	case OP_T1LVL:	/* top level */
-		code = value;
-		s_goto(OP_EVAL);
-
-	case OP_READ:		/* read */
-		tok = token();
-		s_goto(OP_RDSEXPR);
-
-	case OP_VALUEPRINT:	/* print evalution result */
-		print_flag = 1;
-		args = value;
-		if (infp == stdin) {
-			s_save(OP_T0LVL, NIL, NIL);
-			s_goto(OP_P0LIST);
-		} else {
-			s_goto(OP_T0LVL);
-		}
-
 	case OP_EVAL:		/* main part of evalution */
+OP_EVAL:
 		if (is_symbol(code)) {	/* symbol */
 			for (x = envir; x != NIL; x = cdr(x)) {
 				register pointer z = NIL;
@@ -1353,7 +1306,8 @@ LOOP:
 		} else if (is_pair(code)) {
 			if (is_syntax(x = car(code))) {	/* SYNTAX */
 				code = cdr(code);
-				s_goto(syntaxnum(x));
+				operator = (short)syntaxnum(x);
+				goto LOOP;
 			} else {/* first, eval top element and eval arguments */
 #ifdef USE_MACRO
 				s_save(OP_E0ARGS, NIL, code);
@@ -1383,6 +1337,7 @@ LOOP:
 #endif
 
 	case OP_E1ARGS:	/* eval arguments */
+OP_E1ARGS:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_E1ARGS, args, cdr(code));
@@ -1397,8 +1352,10 @@ LOOP:
 		}
 
 	case OP_APPLY:		/* apply 'code' to 'args' */
+OP_APPLY:
 		if (is_proc(code)) {
-			s_goto(procnum(code));	/* PROCEDURE */
+			operator = (short)procnum(code);	/* PROCEDURE */
+			goto LOOP;
 		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */
 			envir = cons(NIL, closure_env(code));
@@ -1438,6 +1395,60 @@ LOOP:
 			s_return(args != NIL ? car(args) : NIL);
 		} else {
 			Error_0("Illegal function");
+		}
+	default:
+		break;
+	}
+
+	switch (operator) {
+	case OP_LOAD:		/* load */
+		if (!is_string(car(args))) {
+			Error_0("load -- argument is not string");
+		}
+		if ((infp = fopen(strvalue(car(args)), "r")) == NULL) {
+			infp = srcfp;
+			Error_1("Unable to open", car(args));
+		}
+		if (infp == stdin) {
+			fprintf(outfp, "loading %s", strvalue(car(args)));
+		}
+		s_goto(OP_T0LVL);
+
+	case OP_T0LVL:	/* top level */
+OP_T0LVL:
+		if (infp == stdin) {
+			fprintf(outfp, "\n");
+		}
+#ifndef USE_SCHEME_STACK
+		dump = dump_base;
+#else
+		dump = NIL;
+#endif
+		envir = global_env;
+		s_save(OP_VALUEPRINT, NIL, NIL);
+		s_save(OP_T1LVL, NIL, NIL);
+		if (infp == stdin) {
+			printf(prompt);
+		}
+		s_goto(OP_READ);
+
+	case OP_T1LVL:	/* top level */
+		code = value;
+		s_goto(OP_EVAL);
+
+	case OP_READ:		/* read */
+OP_READ:
+		tok = token();
+		s_goto(OP_RDSEXPR);
+
+	case OP_VALUEPRINT:	/* print evalution result */
+		print_flag = 1;
+		args = value;
+		if (infp == stdin) {
+			s_save(OP_T0LVL, NIL, NIL);
+			s_goto(OP_P0LIST);
+		} else {
+			s_goto(OP_T0LVL);
 		}
 
 #ifdef USE_MACRO
@@ -1506,6 +1517,7 @@ LOOP:
 		Error_1("Unbounded variable", code);
 
 	case OP_BEGIN:		/* begin */
+OP_BEGIN:
 		if (!is_pair(code)) {
 			s_return(code);
 		}
@@ -1535,6 +1547,7 @@ LOOP:
 		s_goto(OP_LET1);
 
 	case OP_LET1:		/* let (caluculate parameters) */
+OP_LET1:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1, args, cdr(code));
@@ -1549,6 +1562,7 @@ LOOP:
 		}
 
 	case OP_LET2:		/* let */
+OP_LET2:
 		envir = cons(NIL, envir);
 		push_sink(&x);
 		for (x = is_symbol(car(code)) ? cadr(code) : car(code);
@@ -1593,6 +1607,7 @@ LOOP:
 		s_goto(OP_LET2AST);
 
 	case OP_LET2AST:	/* let* (caluculate parameters) */
+OP_LET2AST:
 		x = cons(caar(code), value);
 		car(envir) = cons(x, car(envir));
 		code = cdr(code);
@@ -1615,6 +1630,7 @@ LOOP:
 		s_goto(OP_LET1REC);
 
 	case OP_LET1REC:	/* letrec (caluculate parameters) */
+OP_LET1REC:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1REC, args, cdr(code));
@@ -1629,6 +1645,7 @@ LOOP:
 		}
 
 	case OP_LET2REC:	/* letrec */
+OP_LET2REC:
 		push_sink(&x);
 		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
 			y = cons(caar(x), car(args));
@@ -1951,6 +1968,7 @@ LOOP:
 		s_goto(OP_ERR1);
 
 	case OP_ERR1:	/* error */
+OP_ERR1:
 		fprintf(outfp, " ");
 		if (args != NIL) {
 			s_save(OP_ERR1, cdr(args), NIL);
@@ -2014,6 +2032,7 @@ LOOP:
 
 		/* ========== reading part ========== */
 	case OP_RDSEXPR:
+OP_RDSEXPR:
 		switch (tok) {
 		case TOK_COMMENT:
 			while (inchar() != '\n')
@@ -2109,6 +2128,7 @@ LOOP:
 
 	/* ========== printing part ========== */
 	case OP_P0LIST:
+OP_P0LIST:
 		if (!is_pair(args)) {
 			printatom(args, print_flag);
 			s_return(T);
@@ -2177,6 +2197,7 @@ LOOP:
 		s_goto(OP_P0_WIDTH);
 
 	case OP_P0_WIDTH:
+OP_P0_WIDTH:
 		if (!is_pair(args)) {
 			w += printatom(args, print_flag);
 			s_return(mk_number(w));
