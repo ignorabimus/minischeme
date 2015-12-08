@@ -68,6 +68,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <float.h>
 #define prompt "> "
 #define InitFile "init.scm"
 #ifdef _WIN32
@@ -77,6 +78,7 @@
 /* cell structure */
 struct cell {
 	unsigned short _flag;
+	unsigned char  _isfixnum;
 	union {
 		struct {
 			char   *_svalue;
@@ -84,6 +86,7 @@ struct cell {
 		} _string;
 		struct {
 			long    _ivalue;
+			long    _rvalue;
 		} _number;
 		struct {
 			struct cell *_car;
@@ -126,6 +129,10 @@ typedef struct cell *pointer;
 
 #define is_number(p)    (type(p)&T_NUMBER)
 #define ivalue(p)       ((p)->_object._number._ivalue)
+#define rvalue(p)       (*(double *)&(p)->_object._number._ivalue)
+#define nvalue(p)       ((p)->_isfixnum ? ivalue(p) : rvalue(p))
+#define set_num_integer(p)   ((p)->_isfixnum = 1)
+#define set_num_real(p)      ((p)->_isfixnum = 0)
 
 #define is_pair(p)      (type(p)&T_PAIR)
 #define car(p)          ((p)->_object._cons._car)
@@ -192,6 +199,8 @@ struct cell _F;
 pointer F = &_F;		/* special cell representing #f */
 pointer oblist = &_NIL;	/* pointer to symbol table */
 pointer global_env;		/* pointer to global environment */
+struct cell _ZERO;		/* special cell representing integer 0 */
+struct cell _ONE;		/* special cell representing integer 1 */
 
 /* global pointers to special symbols */
 pointer LAMBDA;			/* pointer to syntax lambda */
@@ -401,14 +410,30 @@ pointer cons(pointer a, pointer b)
 	return x;
 }
 
-/* get number atom */
-pointer mk_number(register long num)
+pointer mk_integer(register long num)
 {
 	register pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
 	ivalue(x) = num;
+	set_num_integer(x);
 	return x;
+}
+
+pointer mk_real(register double num)
+{
+	register pointer x = get_cell(&NIL, &NIL);
+
+	type(x) = (T_NUMBER | T_ATOM);
+	rvalue(x) = num;
+	set_num_real(x);
+	return x;
+}
+
+/* get number atom */
+pointer mk_number(struct cell *v)
+{
+	return v->_isfixnum ? mk_integer(ivalue(v)) : mk_real(rvalue(v));
 }
 
 /* allocate name to string area */
@@ -494,17 +519,55 @@ pointer gensym()
 /* make symbol or number atom from string */
 pointer mk_atom(char *q)
 {
-	char    c, *p;
+	char c, *p;
+	int has_dec_point = 0;
+	int has_fp_exp = 0;
 
 	p = q;
-	if (!isdigit(c = *p++)) {
-		if ((c != '+' && c != '-') || !isdigit(*p))
+	c = *p++;
+	if ((c == '+') || (c == '-')) {
+		c = *p++;
+		if (c == '.') {
+			has_dec_point = 1;
+			c = *p++;
+		}
+		if (!isdigit(c)) {
 			return mk_symbol(q);
+		}
+	} else if (c == '.') {
+		has_dec_point = 1;
+		c = *p++;
+		if (!isdigit(c)) {
+			return mk_symbol(q);
+		}
+	} else if (!isdigit(c)) {
+		return mk_symbol(q);
 	}
-	for ( ; (c = *p) != 0; ++p)
-		if (!isdigit(c))
+
+	for ( ; (c = *p) != 0; ++p) {
+		if (!isdigit(c)) {
+			if (c == '.') {
+				if (!has_dec_point) {
+					has_dec_point = 1;
+					continue;
+				}
+			} else if ((c == 'e') || (c == 'E')) {
+				if (!has_fp_exp) {
+					has_fp_exp = 1;
+					has_dec_point = 1;
+					p++;
+					if ((*p == '-') || (*p == '+') || isdigit(*p)) {
+					continue;
+					}
+				}
+			}
 			return mk_symbol(q);
-	return mk_number(atol(q));
+		}
+	}
+	if (has_dec_point) {
+		return mk_real(atof(q));
+	}
+	return mk_integer(atol(q));
 }
 
 /* make constant */
@@ -520,14 +583,14 @@ pointer mk_const(char *name)
 	else if (*name == 'o') {/* #o (octal) */
 		sprintf(tmp, "0%s", &name[1]);
 		sscanf(tmp, "%lo", &x);
-		return mk_number(x);
+		return mk_integer(x);
 	} else if (*name == 'd') {	/* #d (decimal) */
 		sscanf(&name[1], "%ld", &x);
-		return mk_number(x);
+		return mk_integer(x);
 	} else if (*name == 'x') {	/* #x (hex) */
 		sprintf(tmp, "0x%s", &name[1]);
 		sscanf(tmp, "%lx", &x);
-		return mk_number(x);
+		return mk_integer(x);
 	} else
 		return NIL;
 }
@@ -952,7 +1015,17 @@ int printatom(pointer l, int f)
 		p = "#f";
 	else if (is_number(l)) {
 		p = strbuff;
-		sprintf(p, "%ld", ivalue(l));
+		if (l->_isfixnum) {
+			sprintf(p, "%ld", ivalue(l));
+		} else {
+			sprintf(p, "%.10g", rvalue(l));
+			f = strcspn(p, ".e");
+			if (p[f] == 0) {
+				p[f] = '.';
+				p[f+1] = '0';
+				p[f+2] = 0;
+			}
+		}
 	} else if (is_string(l)) {
 		if (!f)
 			p = strvalue(l);
@@ -1129,7 +1202,7 @@ pointer s_clone_save() {
 		p = cons(dump_code(d), p);
 		p = cons(dump_envir(d), p);
 		args = cons(dump_args(d), p);
-		p = mk_number((long)dump_op(d));
+		p = mk_integer((long)dump_op(d));
 		p = cons(p, args);
 	}
 	pop_sink();
@@ -1142,7 +1215,7 @@ pointer s_clone_save() {
 	dump = cons((c), dump),                    \
 	dump = cons(envir, dump),                  \
 	dump = cons((b), dump),                    \
-	x = mk_number((long)(a)),                  \
+	x = mk_integer((long)(a)),                 \
 	dump = cons(x, dump))
 
 #define s_return(a) BEGIN                      \
@@ -1281,7 +1354,7 @@ pointer Eval_Cycle(short operator)
 	int print_flag;
 	pointer value;
 	pointer x, y;
-	register long v;
+	struct cell v;
 	long w;
 
 LOOP:
@@ -1822,39 +1895,104 @@ OP_LET2REC:
 		s_goto(OP_APPLY);
 
 	case OP_ADD:		/* + */
-		for (x = args, v = 0; x != NIL; x = cdr(x))
-			v += ivalue(car(x));
-		s_return(mk_number(v));
+		for (x = args, v = _ZERO; x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					ivalue(&v) += ivalue(car(x));
+				} else {
+					rvalue(&v) = ivalue(&v) + rvalue(car(x));
+					set_num_real(&v);
+				}
+			} else {
+				rvalue(&v) += nvalue(car(x));
+			}
+		}
+		s_return(mk_number(&v));
 
 	case OP_SUB:		/* - */
-		for (x = cdr(args), v = ivalue(car(args)); x != NIL; x = cdr(x))
-			v -= ivalue(car(x));
-		s_return(mk_number(v));
+		if (cdr(args) == NIL) {
+			v = _ZERO;
+			x = args;
+		} else {
+			v = *car(args);
+			x = cdr(args);
+		}
+		for ( ; x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					ivalue(&v) -= ivalue(car(x));
+				} else {
+					rvalue(&v) = ivalue(&v) - rvalue(car(x));
+					set_num_real(&v);
+				}
+			} else {
+				rvalue(&v) -= nvalue(car(x));
+			}
+		}
+		s_return(mk_number(&v));
 
 	case OP_MUL:		/* * */
-		for (x = args, v = 1; x != NIL; x = cdr(x))
-			v *= ivalue(car(x));
-		s_return(mk_number(v));
+		for (x = args, v = _ONE; x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					ivalue(&v) *= ivalue(car(x));
+				} else {
+					rvalue(&v) = ivalue(&v) * rvalue(car(x));
+					set_num_real(&v);
+				}
+			} else {
+				rvalue(&v) *= nvalue(car(x));
+			}
+		}
+		s_return(mk_number(&v));
 
 	case OP_DIV:		/* / */
-		for (x = cdr(args), v = ivalue(car(args)); x != NIL; x = cdr(x)) {
-			if (ivalue(car(x)) != 0)
-				v /= ivalue(car(x));
-			else {
+		if (cdr(args) == NIL) {
+			v = _ONE;
+			x = args;
+		} else {
+			v = *car(args);
+			x = cdr(args);
+		}
+		for ( ; x != NIL; x = cdr(x)) {
+			double d = nvalue(car(x));
+			if (-DBL_MIN < d && d < DBL_MIN) {
 				Error_0("Divided by zero");
 			}
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum && ivalue(&v) % ivalue(car(x)) == 0) {
+					ivalue(&v) /= ivalue(car(x));
+				} else {
+					rvalue(&v) = ivalue(&v) / d;
+					set_num_real(&v);
+				}
+			} else {
+				rvalue(&v) /= d;
+			}
 		}
-		s_return(mk_number(v));
+		s_return(mk_number(&v));
 
 	case OP_REM:		/* remainder */
-		for (x = cdr(args), v = ivalue(car(args)); x != NIL; x = cdr(x)) {
-			if (ivalue(car(x)) != 0)
-				v %= ivalue(car(x));
-			else {
-				Error_0("Divided by zero");
-			}
+		if (args == NIL || cdr(args) == NIL) {
+			Error_0("Needs 2 arguments");
 		}
-		s_return(mk_number(v));
+		v = *car(args);
+		x = cdr(args);
+		w = car(x)->_isfixnum ? ivalue(car(x)) : (long)rvalue(car(x));
+		if (w == 0) {
+			Error_0("Divided by zero");
+		}
+		if (v._isfixnum) {
+			if (car(x)->_isfixnum) {
+				ivalue(&v) %= ivalue(car(x));
+			} else {
+				rvalue(&v) = ivalue(&v) % w;
+				set_num_real(&v);
+			}
+		} else {
+			rvalue(&v) = (long)rvalue(&v) % w;
+		}
+		s_return(mk_number(&v));
 
 	case OP_CAR:		/* car */
 		if (is_pair(car(args))) {
@@ -1897,21 +2035,21 @@ OP_LET2REC:
 	case OP_NULL:		/* null? */
 		s_retbool(car(args) == NIL);
 	case OP_ZEROP:		/* zero? */
-		s_retbool(ivalue(car(args)) == 0);
+		s_retbool(nvalue(car(args)) == 0);
 	case OP_POSP:		/* positive? */
-		s_retbool(ivalue(car(args)) > 0);
+		s_retbool(nvalue(car(args)) > 0);
 	case OP_NEGP:		/* negative? */
-		s_retbool(ivalue(car(args)) < 0);
+		s_retbool(nvalue(car(args)) < 0);
 	case OP_NEQ:		/* = */
-		s_retbool(ivalue(car(args)) == ivalue(cadr(args)));
+		s_retbool(nvalue(car(args)) == nvalue(cadr(args)));
 	case OP_LESS:		/* < */
-		s_retbool(ivalue(car(args)) < ivalue(cadr(args)));
+		s_retbool(nvalue(car(args)) < nvalue(cadr(args)));
 	case OP_GRE:		/* > */
-		s_retbool(ivalue(car(args)) > ivalue(cadr(args)));
+		s_retbool(nvalue(car(args)) > nvalue(cadr(args)));
 	case OP_LEQ:		/* <= */
-		s_retbool(ivalue(car(args)) <= ivalue(cadr(args)));
+		s_retbool(nvalue(car(args)) <= nvalue(cadr(args)));
 	case OP_GEQ:		/* >= */
-		s_retbool(ivalue(car(args)) >= ivalue(cadr(args)));
+		s_retbool(nvalue(car(args)) >= nvalue(cadr(args)));
 	case OP_SYMBOL:	/* symbol? */
 		s_retbool(is_symbol(car(args)));
 	case OP_NUMBER:	/* number? */
@@ -2171,9 +2309,9 @@ OP_P0LIST:
 		}
 
 	case OP_LIST_LENGTH:	/* list-length */	/* a.k */
-		for (x = car(args), v = 0; is_pair(x); x = cdr(x))
-			++v;
-		s_return(mk_number(v));
+		for (x = car(args), w = 0; is_pair(x); x = cdr(x))
+			++w;
+		s_return(mk_integer(w));
 
 	case OP_ASSQ:		/* assq */	/* a.k */
 		x = car(args);
@@ -2200,7 +2338,7 @@ OP_P0LIST:
 OP_P0_WIDTH:
 		if (!is_pair(args)) {
 			w += printatom(args, print_flag);
-			s_return(mk_number(w));
+			s_return(mk_integer(w));
 		} else if (car(args) == QUOTE
 			   && ok_abbrev(cdr(args))) {
 			++w;
@@ -2238,7 +2376,7 @@ OP_P0_WIDTH:
 			if (args != NIL)
 				w += 3 + printatom(args, print_flag);
 			++w;
-			s_return(mk_number(w));
+			s_return(mk_integer(w));
 		}
 
 	case OP_GET_CLOSURE:	/* get-closure-code */	/* a.k */
@@ -2300,6 +2438,7 @@ void mk_proc(unsigned short op, char *name)
 	y = get_cell(&x, &NIL);
 	type(y) = (T_PROC | T_ATOM);
 	ivalue(y) = (long) op;
+	set_num_integer(y);
 	x = cons(x, y);
 	car(global_env) = cons(x, car(global_env));
 }
@@ -2326,6 +2465,12 @@ void init_vars_global()
 	/* init else */
 	x = cons(mk_symbol("else"), T);
 	car(global_env) = cons(x, car(global_env));
+	type(&_ZERO) = T_NUMBER;
+	set_num_integer(&_ZERO);
+	ivalue(&_ZERO) = 0;
+	type(&_ONE) = T_NUMBER;
+	set_num_integer(&_ONE);
+	ivalue(&_ONE) = 1;
 }
 
 
