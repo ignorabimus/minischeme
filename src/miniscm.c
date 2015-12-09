@@ -131,6 +131,7 @@ typedef struct cell *pointer;
 #define ivalue(p)       ((p)->_object._number._ivalue)
 #define rvalue(p)       (*(double *)&(p)->_object._number._ivalue)
 #define nvalue(p)       ((p)->_isfixnum ? ivalue(p) : rvalue(p))
+#define is_integer(p)   (is_number(p) && ((p)->_isfixnum || floor(rvalue(p) + 0.5) == rvalue(p)))
 #define set_num_integer(p)   ((p)->_isfixnum = 1)
 #define set_num_real(p)      ((p)->_isfixnum = 0)
 
@@ -1287,7 +1288,9 @@ enum {
 	OP_SUB,
 	OP_MUL,
 	OP_DIV,
+	OP_QUO,
 	OP_REM,
+	OP_MOD,
 	OP_CAR,
 	OP_CDR,
 	OP_CONS,
@@ -1307,6 +1310,8 @@ enum {
 	OP_SYMBOL,
 	OP_NUMBER,
 	OP_STRING,
+	OP_INTEGER,
+	OP_REAL,
 	OP_PROC,
 	OP_PAIR,
 	OP_EQ,
@@ -1972,25 +1977,78 @@ OP_LET2REC:
 		}
 		s_return(mk_number(&v));
 
+	case OP_QUO:		/* quotient */
+		if (args == NIL || cdr(args) == NIL) {
+			Error_0("Needs 2 arguments");
+		}
+		v = *car(args);
+		x = cadr(args);
+		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
+		if (w == 0) {
+			Error_0("Divided by zero");
+		}
+		if (v._isfixnum) {
+			if (x->_isfixnum) {
+				ivalue(&v) /= w;
+			} else {
+				rvalue(&v) = ivalue(&v) / w;
+				set_num_real(&v);
+			}
+		} else {
+			rvalue(&v) = (long)rvalue(&v) / w;
+		}
+		s_return(mk_number(&v));
+
 	case OP_REM:		/* remainder */
 		if (args == NIL || cdr(args) == NIL) {
 			Error_0("Needs 2 arguments");
 		}
 		v = *car(args);
-		x = cdr(args);
-		w = car(x)->_isfixnum ? ivalue(car(x)) : (long)rvalue(car(x));
+		x = cadr(args);
+		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
 		if (v._isfixnum) {
-			if (car(x)->_isfixnum) {
-				ivalue(&v) %= ivalue(car(x));
+			if (x->_isfixnum) {
+				ivalue(&v) %= w;
 			} else {
 				rvalue(&v) = ivalue(&v) % w;
 				set_num_real(&v);
 			}
 		} else {
 			rvalue(&v) = (long)rvalue(&v) % w;
+		}
+		s_return(mk_number(&v));
+
+	case OP_MOD:		/* modulo */
+		if (args == NIL || cdr(args) == NIL) {
+			Error_0("Needs 2 arguments");
+		}
+		v = *car(args);
+		x = cadr(args);
+		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
+		if (w == 0) {
+			Error_0("Divided by zero");
+		}
+		if (v._isfixnum) {
+			if (x->_isfixnum) {
+				ivalue(&v) %= w;
+				if (ivalue(&v) * w < 0) {
+					ivalue(&v) += w;
+				}
+			} else {
+				rvalue(&v) = ivalue(&v) % w;
+				set_num_real(&v);
+				if (rvalue(&v) * w < 0) {
+					rvalue(&v) += w;
+				}
+			}
+		} else {
+			rvalue(&v) = (long)rvalue(&v) % w;
+			if (rvalue(&v) * w < 0) {
+				rvalue(&v) += w;
+			}
 		}
 		s_return(mk_number(&v));
 
@@ -2050,12 +2108,16 @@ OP_LET2REC:
 		s_retbool(nvalue(car(args)) <= nvalue(cadr(args)));
 	case OP_GEQ:		/* >= */
 		s_retbool(nvalue(car(args)) >= nvalue(cadr(args)));
-	case OP_SYMBOL:	/* symbol? */
+	case OP_SYMBOL:		/* symbol? */
 		s_retbool(is_symbol(car(args)));
-	case OP_NUMBER:	/* number? */
+	case OP_NUMBER:		/* number? */
 		s_retbool(is_number(car(args)));
-	case OP_STRING:	/* string? */
+	case OP_STRING:		/* string? */
 		s_retbool(is_string(car(args)));
+	case OP_INTEGER:	/* integer? */
+		s_retbool(is_integer(car(args)));
+	case OP_REAL:		/* real? */
+		s_retbool(is_number(car(args)));
 	case OP_PROC:		/* procedure? */
 		/*--
 		 * continuation should be procedure by the example
@@ -2514,12 +2576,16 @@ void init_procs()
 	mk_proc(OP_SUB, "-");
 	mk_proc(OP_MUL, "*");
 	mk_proc(OP_DIV, "/");
+	mk_proc(OP_QUO, "quotient");
 	mk_proc(OP_REM, "remainder");
+	mk_proc(OP_MOD, "modulo");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
 	mk_proc(OP_NUMBER, "number?");
 	mk_proc(OP_STRING, "string?");
+	mk_proc(OP_INTEGER, "integer?");
+	mk_proc(OP_REAL, "real?");
 	mk_proc(OP_PROC, "procedure?");
 	mk_proc(OP_PAIR, "pair?");
 	mk_proc(OP_EQV, "eqv?");
