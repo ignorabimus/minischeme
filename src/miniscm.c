@@ -73,6 +73,7 @@
 #define InitFile "init.scm"
 #ifdef _WIN32
 #define snprintf _snprintf
+#define stricmp _stricmp
 #endif
 
 /* cell structure */
@@ -108,10 +109,11 @@ typedef struct cell *pointer;
 #define T_PAIR          32	/* 0000000000100000 */
 #define T_CLOSURE       64	/* 0000000001000000 */
 #define T_CONTINUATION 128	/* 0000000010000000 */
+#define T_CHARACTER    256	/* 0000000100000000 */
 #ifdef USE_MACRO
-# define T_MACRO       256	/* 0000000100000000 */
+# define T_MACRO       512	/* 0000001000000000 */
 #endif
-#define T_PROMISE      512	/* 0000001000000000 */
+#define T_PROMISE     1024	/* 0000010000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -159,6 +161,8 @@ typedef struct cell *pointer;
 
 #define is_continuation(p) (type(p)&T_CONTINUATION)
 #define cont_dump(p)    cdr(p)
+
+#define is_character(p) (type(p)&T_CHARACTER)
 
 #define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
@@ -411,6 +415,16 @@ pointer cons(pointer a, pointer b)
 	return x;
 }
 
+pointer mk_character(register int c)
+{
+	register pointer x = get_cell(&NIL, &NIL);
+
+	type(x) = (T_CHARACTER | T_ATOM);
+	ivalue(x) = c;
+	set_num_integer(x);
+	return x;
+}
+
 pointer mk_integer(register long num)
 {
 	register pointer x = get_cell(&NIL, &NIL);
@@ -592,6 +606,27 @@ pointer mk_const(char *name)
 		sprintf(tmp, "0x%s", &name[1]);
 		sscanf(tmp, "%lx", &x);
 		return mk_integer(x);
+	} else if (*name == '\\') { /* #\w (character) */
+		if (stricmp(name + 1, "space") == 0) {
+			return mk_character(' ');
+		} else if (stricmp(name + 1, "newline") == 0) {
+			return mk_character('\n');
+		} else if (stricmp(name + 1, "return") == 0) {
+			return mk_character('\r');
+		} else if (stricmp(name + 1, "tab") == 0) {
+			return mk_character('\t');
+		} else if (name[1] == 'x' && name[2] != 0) {
+			int c = 0;
+			if (sscanf(name + 2, "%x", (unsigned int *)&c) == 1 && c < UCHAR_MAX) {
+				return mk_character(c);
+			} else {
+				return NIL;
+			}
+		} else if (name[2] == 0) {
+			return mk_character(name[1]);
+		} else {
+			return NIL;
+		}
 	} else
 		return NIL;
 }
@@ -687,10 +722,11 @@ void gc(register pointer *a, register pointer *b)
 	*b = forward(*b);
 
 	while (scan < next) {
-		switch (type(scan) & 0xff) {
+		switch (type(scan) & 0x01ff) {
 		case T_STRING:
 		case T_NUMBER:
 		case T_PROC:
+		case T_CHARACTER:
 			break;
 		case T_SYMBOL:
 		case T_SYNTAX | T_SYMBOL:
@@ -914,10 +950,14 @@ char *readstr(char *delim)
 {
 	char   *p = strbuff;
 
-	while (isdelim(delim, (*p++ = inchar())))
+	while (p - strbuff < sizeof(strbuff) && isdelim(delim, (*p++ = inchar())))
 		;
-	backchar();
-	*--p = '\0';
+	if (p == strbuff + 2 && p[-2] == '\\') {
+		*p = 0;
+	} else {
+		backchar();
+		*--p = '\0';
+	}
 	return strbuff;
 }
 
@@ -1034,6 +1074,35 @@ int printatom(pointer l, int f)
 			p = strbuff;
 			strunquote(p, strvalue(l));
 		}
+	} else if (is_character(l)) {
+		int c = ivalue(l);
+		p = strbuff;
+		if (!f) {
+			p[0] = c;
+			p[1] = 0;
+		} else {
+			switch (c) {
+			case ' ':
+				sprintf(p, "#\\space");
+				break;
+			case '\n':
+				sprintf(p, "#\\newline");
+				break;
+			case '\r':
+				sprintf(p, "#\\return");
+				break;
+			case '\t':
+				sprintf(p, "#\\tab");
+				break;
+			default:
+				if (c < 32) {
+					sprintf(p, "#\\x%x", c);
+				} else {
+					sprintf(p, "#\\%c", c);
+				}
+				break;
+			}
+		}
 	} else if (is_symbol(l))
 		p = symname(l);
 	else if (is_proc(l)) {
@@ -1130,6 +1199,11 @@ int eqv(register pointer a, register pointer b)
 			return 0;
 	} else if (is_number(a)) {
 		if (is_number(b))
+			return (ivalue(a) == ivalue(b));
+		else
+			return 0;
+	} else if (is_character(a)) {
+		if (is_character(b))
 			return (ivalue(a) == ivalue(b));
 		else
 			return 0;
@@ -1312,6 +1386,7 @@ enum {
 	OP_STRING,
 	OP_INTEGER,
 	OP_REAL,
+	OP_CHAR,
 	OP_PROC,
 	OP_PAIR,
 	OP_EQ,
@@ -2118,6 +2193,8 @@ OP_LET2REC:
 		s_retbool(is_integer(car(args)));
 	case OP_REAL:		/* real? */
 		s_retbool(is_number(car(args)));
+	case OP_CHAR:		/* char? */
+		s_retbool(is_character(car(args)));
 	case OP_PROC:		/* procedure? */
 		/*--
 		 * continuation should be procedure by the example
@@ -2586,6 +2663,7 @@ void init_procs()
 	mk_proc(OP_STRING, "string?");
 	mk_proc(OP_INTEGER, "integer?");
 	mk_proc(OP_REAL, "real?");
+	mk_proc(OP_CHAR, "char?");
 	mk_proc(OP_PROC, "procedure?");
 	mk_proc(OP_PAIR, "pair?");
 	mk_proc(OP_EQV, "eqv?");
