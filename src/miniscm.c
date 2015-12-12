@@ -114,6 +114,7 @@ typedef struct cell *pointer;
 # define T_MACRO       512	/* 0000001000000000 */
 #endif
 #define T_PROMISE     1024	/* 0000010000000000 */
+#define T_RESULTREADY 2048	/* 0000100000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -166,6 +167,8 @@ typedef struct cell *pointer;
 
 #define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
+#define is_resultready(p) (type(p) & T_RESULTREADY)
+#define setresultready(p) type(p) |= T_RESULTREADY
 
 #define is_atom(p)      (type(p)&T_ATOM)
 #define setatom(p)      type(p) |= T_ATOM
@@ -1112,10 +1115,21 @@ int printatom(pointer l, int f)
 	} else if (is_macro(l)) {
 		p = "#<MACRO>";
 #endif
-	} else if (is_closure(l))
-		p = "#<CLOSURE>";
-	else if (is_continuation(l))
+	} else if (is_closure(l)) {
+		if (is_promise(l)) {
+			if (is_resultready(l)) {
+				p = "#<PROMISE (FORCED)>";
+			} else {
+				p = "#<PROMISE>";
+			}
+		} else {
+			p = "#<CLOSURE>";
+		}
+	} else if (is_continuation(l)) {
 		p = "#<CONTINUATION>";
+	} else {
+		p = "#<ERROR>";
+	}
 	if (f < 0)
 		return strlen(p);
 	fputs(p, outfp);
@@ -1396,6 +1410,7 @@ enum {
 	OP_EQ,
 	OP_EQV,
 	OP_FORCE,
+	OP_FORCED,
 	OP_WRITE,
 	OP_DISPLAY,
 	OP_NEWLINE,
@@ -2229,11 +2244,21 @@ OP_LET2REC:
 	case OP_FORCE:		/* force */
 		code = car(args);
 		if (is_promise(code)) {
+			if (is_resultready(code)) {
+				s_return(caar(code));
+			}
+			s_save(OP_FORCED, NIL, code);
 			args = NIL;
 			s_goto(OP_APPLY);
 		} else {
 			s_return(code);
 		}
+
+	case OP_FORCED:		/* force */
+		setresultready(code);
+		car(code) = cons(value, NIL);
+		cdr(code) = NIL;
+		s_return(value);
 
 	case OP_WRITE:		/* write */
 		print_flag = 1;
