@@ -1370,6 +1370,10 @@ enum {
 	OP_CONS,
 	OP_SETCAR,
 	OP_SETCDR,
+	OP_CHAR2INT,
+	OP_INT2CHAR,
+	OP_CHARUPCASE,
+	OP_CHARDNCASE,
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
@@ -2161,6 +2165,18 @@ OP_LET2REC:
 			Error_0("Unable to set-cdr! for non-cons cell");
 		}
 
+	case OP_CHAR2INT:	/* char->integer */
+		s_return(mk_integer(ivalue(car(args))));
+
+	case OP_INT2CHAR:	/* integer->char */
+		s_return(mk_character((unsigned char)ivalue(car(args))));
+
+	case OP_CHARUPCASE:	/* char-upcase */
+		s_return(mk_character(toupper((unsigned char)ivalue(car(args)))));
+
+	case OP_CHARDNCASE:	/* char-downcase */
+		s_return(mk_character(tolower((unsigned char)ivalue(car(args)))));
+
 	case OP_NOT:		/* not */
 		s_retbool(isfalse(car(args)));
 	case OP_BOOL:		/* boolean? */
@@ -2656,6 +2672,10 @@ void init_procs()
 	mk_proc(OP_QUO, "quotient");
 	mk_proc(OP_REM, "remainder");
 	mk_proc(OP_MOD, "modulo");
+	mk_proc(OP_CHAR2INT, "char->integer");
+	mk_proc(OP_INT2CHAR, "integer->char");
+	mk_proc(OP_CHARUPCASE, "char-upcase");
+	mk_proc(OP_CHARDNCASE, "char-downcase");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
