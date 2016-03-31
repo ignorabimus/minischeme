@@ -20,11 +20,8 @@
  *  This is a revised and modified version by Akira KIDA.
  *	current version is 0.85k4 (15 May 1994)
  *
- *  Please send suggestions, bug reports and/or requests to:
- *		<SDI00379@niftyserve.or.jp>
- *
  *  This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w1 (2015)
+ *	current version is 0.85w2 (2016)
  *--
  */
 
@@ -57,7 +54,7 @@
 #define STR_NSEGMENT    100	/* # of segments for strings */
 
 
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w1.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w2.\n"
 
 
 #include <stdio.h>
@@ -90,6 +87,10 @@ struct cell {
 			long    _rvalue;
 		} _number;
 		struct {
+			FILE   *_file;
+			struct cell *_next;
+		} _port;
+		struct {
 			struct cell *_car;
 			struct cell *_cdr;
 		} _cons;
@@ -110,11 +111,12 @@ typedef struct cell *pointer;
 #define T_CLOSURE       64	/* 0000000001000000 */
 #define T_CONTINUATION 128	/* 0000000010000000 */
 #define T_CHARACTER    256	/* 0000000100000000 */
+#define T_PORT         512	/* 0000001000000000 */
 #ifdef USE_MACRO
-# define T_MACRO       512	/* 0000001000000000 */
+# define T_MACRO      1024	/* 0000010000000000 */
 #endif
-#define T_PROMISE     1024	/* 0000010000000000 */
-#define T_RESULTREADY 2048	/* 0000100000000000 */
+#define T_PROMISE     2048	/* 0000100000000000 */
+#define T_RESULTREADY 4096	/* 0001000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -165,6 +167,16 @@ typedef struct cell *pointer;
 
 #define is_character(p) (type(p)&T_CHARACTER)
 
+enum {
+	port_input = 1,
+	port_output = 2,
+};
+#define is_port(p)      (type(p) & T_PORT)
+#define is_inport(p)    (is_port(p) && ((p)->_isfixnum & port_input))
+#define is_outport(p)   (is_port(p) && ((p)->_isfixnum & port_output))
+#define port_file(p)    ((p)->_object._port._file)
+#define port_next(p)    ((p)->_object._port._next)
+
 #define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
 #define is_resultready(p) (type(p) & T_RESULTREADY)
@@ -205,10 +217,16 @@ struct cell _T;
 pointer T = &_T;		/* special cell representing #t */
 struct cell _F;
 pointer F = &_F;		/* special cell representing #f */
+struct cell _EOF_OBJ;
+pointer EOF_OBJ = &_EOF_OBJ;	/* special cell representing end-of-file */
 pointer oblist = &_NIL;	/* pointer to symbol table */
 pointer global_env;		/* pointer to global environment */
 struct cell _ZERO;		/* special cell representing integer 0 */
 struct cell _ONE;		/* special cell representing integer 1 */
+
+pointer inport = &_NIL;		/* pointer to current-input-port */
+pointer outport = &_NIL;	/* pointer to current-output-port */
+pointer port_list = &_NIL;	/* pointer to port table */
 
 /* global pointers to special symbols */
 pointer LAMBDA;			/* pointer to syntax lambda */
@@ -224,8 +242,6 @@ pointer free_cell = &_NIL;	/* pointer to top of free cells */
 long    fcells = 0;		/* # of free cells */
 
 FILE   *srcfp;			/* source file */
-FILE   *infp;			/* input file */
-FILE   *outfp;			/* output file */
 
 #ifdef USE_SETJMP
 jmp_buf error_jmp;
@@ -634,6 +650,18 @@ pointer mk_const(char *name)
 		return NIL;
 }
 
+pointer mk_port(FILE *fp, int prop)
+{
+	pointer x = get_cell(&NIL, &NIL);
+
+	type(x) = (T_PORT | T_ATOM);
+	x->_isfixnum = prop;
+	x->_object._port._file = fp;
+	port_next(x) = port_list;
+	port_list = x;
+	return x;
+}
+
 #ifndef USE_SCHEME_STACK
 /* get dump stack */
 pointer mk_dumpstack(pointer next)
@@ -672,9 +700,7 @@ pointer forward(pointer x)
 void gc(register pointer *a, register pointer *b)
 {
 	register pointer scan, **pp;
-#ifndef USE_SCHEME_STACK
 	register pointer p;
-#endif
 
 	if (gc_verbose)
 		printf("gc...");
@@ -684,6 +710,8 @@ void gc(register pointer *a, register pointer *b)
 	/* forward system globals */
 	oblist = forward(oblist);
 	global_env = forward(global_env);
+	inport = forward(inport);
+	outport = forward(outport);
 
 	/* forward special symbols */
 	LAMBDA = forward(LAMBDA);
@@ -725,11 +753,12 @@ void gc(register pointer *a, register pointer *b)
 	*b = forward(*b);
 
 	while (scan < next) {
-		switch (type(scan) & 0x01ff) {
+		switch (type(scan) & 0x03ff) {
 		case T_STRING:
 		case T_NUMBER:
 		case T_PROC:
 		case T_CHARACTER:
+		case T_PORT:
 			break;
 		case T_SYMBOL:
 		case T_SYNTAX | T_SYMBOL:
@@ -744,6 +773,17 @@ void gc(register pointer *a, register pointer *b)
 			exit(1);
 		}
 		++scan;
+	}
+
+	for (p = port_list, port_list = NIL; p != NIL; p = port_next(p)) {
+		if (type(p) == T_FORWARDED) {
+			port_next(p->_object._forwarded) = port_list;
+			port_list = p->_object._forwarded;
+		} else {
+			if (p->_object._port._file != NULL) {
+				fclose(p->_object._port._file);
+			}
+		}
 	}
 
 	fcells = CELL_SEGSIZE - (scan - to_space);
@@ -820,6 +860,8 @@ void gc(register pointer *a, register pointer *b)
 	/* mark system globals */
 	mark(oblist);
 	mark(global_env);
+	mark(inport);
+	mark(outport);
 
 	/* mark current registers */
 	mark(args);
@@ -856,6 +898,9 @@ void gc(register pointer *a, register pointer *b)
 		if (is_mark(p))
 			clrmark(p);
 		else {
+			if (is_port(p) && p->_object._port._file != NULL) {
+				fclose(p->_object._port._file);
+			}
 			type(p) = 0;
 			cdr(p) = free_cell;
 			car(p) = NIL;
@@ -869,8 +914,39 @@ void gc(register pointer *a, register pointer *b)
 }
 #endif /* USE_COPYING_GC */
 
+/* ========== Rootines for Ports ========== */
+
+pointer port_from_filename(const char *filename, int prop)
+{
+	FILE *fp = NULL;
+
+	if (prop == port_input) {
+		fp = fopen(filename, "r");
+	} else if (prop == port_output) {
+		fp = fopen(filename, "w");
+	} else if (prop == (port_input | port_output)) {
+		fp = fopen(filename, "a+");
+	}
+	if (fp == NULL) {
+		return NIL;
+	}
+	return mk_port(fp, prop);
+}
+
+void port_close(pointer p, int flag)
+{
+	p->_isfixnum &= ~flag;
+	if ((p->_isfixnum & (port_input | port_output)) == 0) {
+		if (port_file(p) != NULL) {
+			fclose(port_file(p));
+			port_file(p) = NULL;
+		}
+	}
+}
+
 /* ========== Rootines for Reading ========== */
 
+#define TOK_EOF     (-1)
 #define TOK_LPAREN  0
 #define TOK_RPAREN  1
 #define TOK_DOT     2
@@ -885,52 +961,41 @@ void gc(register pointer *a, register pointer *b)
 #endif
 #define TOK_SHARP   10
 
-#define LINESIZE 1024
-char    linebuff[LINESIZE];
 char    strbuff[256];
-char   *currentline = linebuff;
-char   *endline = linebuff;
 
 /* get new character from input file */
-char inchar()
+int inchar()
 {
-	if (currentline >= endline) {	/* input buffer is empty */
-		if (feof(infp)) {
-			fclose(infp);
-			infp = srcfp;
-			if (infp == stdin) {
-				printf(prompt);
-			}
-		}
-		strcpy(linebuff, "\n");
-		if (fgets(currentline = linebuff, LINESIZE, infp) == NULL) {
-			if (infp == stdin) {
-				fprintf(stderr, "Good-bye\n");
-				exit(0);
-			}
-			if (infp == srcfp) {
-				exit(0);
-			}
-		}
-		endline = linebuff + strlen(linebuff);
-	}
-	return *currentline++;
-}
+	int c;
 
-/* clear input buffer */
-void clearinput()
-{
-	currentline = endline = linebuff;
+	if (feof(port_file(inport))) {
+		fclose(port_file(inport));
+		port_file(inport) = srcfp;
+		if (port_file(inport) == stdin) {
+			printf(prompt);
+		}
+	}
+
+	c = fgetc(port_file(inport));
+	if (c == EOF) {
+		if (port_file(inport) == stdin) {
+			fprintf(stderr, "Good-bye\n");
+			exit(0);
+		}
+		if (port_file(inport) == srcfp) {
+			exit(0);
+		}
+	}
+	return c;
 }
 
 /* back to standard input */
 void flushinput()
 {
-	if (infp != stdin) {
-		fclose(infp);
-		infp = stdin;
+	if (port_file(inport) != stdin) {
+		fclose(port_file(inport));
+		port_file(inport) = stdin;
 	}
-	clearinput();
 }
 
 /* check c is delimiter */
@@ -943,9 +1008,11 @@ int isdelim(char *s, char c)
 }
 
 /* back character to input buffer */
-void backchar()
+void backchar(int c)
 {
-	currentline--;
+	if (c != EOF) {
+		ungetc(c, port_file(inport));
+	}
 }
 
 /* read chacters to delimiter */
@@ -958,8 +1025,8 @@ char *readstr(char *delim)
 	if (p == strbuff + 2 && p[-2] == '\\') {
 		*p = 0;
 	} else {
-		backchar();
-		*--p = '\0';
+		backchar(*--p);
+		*p = '\0';
 	}
 	return strbuff;
 }
@@ -982,18 +1049,24 @@ char *readstrexp()
 }
 
 /* skip white characters */
-void skipspace()
+int skipspace()
 {
-	while (isspace(inchar()))
+	int c;
+
+	while (isspace(c = inchar()))
 		;
-	backchar();
+	backchar(c);
+	return c;
 }
 
 /* get token */
 int token()
 {
-	skipspace();
-	switch (inchar()) {
+	int c = skipspace();
+	if (c == EOF) {
+		return TOK_EOF;
+	}
+	switch (c = inchar()) {
 	case '(':
 		return TOK_LPAREN;
 	case ')':
@@ -1003,24 +1076,29 @@ int token()
 	case '\'':
 		return TOK_QUOTE;
 	case ';':
-		return TOK_COMMENT;
+		while ((c = inchar()) != '\n' && c != EOF)
+			;
+		if (c == EOF) {
+			return TOK_EOF;
+		}
+		return token();
 	case '"':
 		return TOK_DQUOTE;
 #ifdef USE_QQUOTE
 	case BACKQUOTE:
 		return TOK_BQUOTE;
 	case ',':
-		if (inchar() == '@')
+		if ((c = inchar()) == '@')
 			return TOK_ATMARK;
 		else {
-			backchar();
+			backchar(c);
 			return TOK_COMMA;
 		}
 #endif
 	case '#':
 		return TOK_SHARP;
 	default:
-		backchar();
+		backchar(c);
 		return TOK_ATOM;
 	}
 }
@@ -1111,6 +1189,8 @@ int printatom(pointer l, int f)
 	else if (is_proc(l)) {
 		p = strbuff;
 		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
+	} else if (is_port(l)) {
+		p = "#<PORT>";
 #ifdef USE_MACRO
 	} else if (is_macro(l)) {
 		p = "#<MACRO>";
@@ -1132,7 +1212,7 @@ int printatom(pointer l, int f)
 	}
 	if (f < 0)
 		return strlen(p);
-	fputs(p, outfp);
+	fputs(p, port_file(outport));
 	return 0;
 }
 
@@ -1391,6 +1471,7 @@ enum {
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
+	OP_EOFOBJP,
 	OP_ZEROP,
 	OP_POSP,
 	OP_NEGP,
@@ -1407,6 +1488,9 @@ enum {
 	OP_CHAR,
 	OP_PROC,
 	OP_PAIR,
+	OP_PORTP,
+	OP_INPORTP,
+	OP_OUTPORTP,
 	OP_EQ,
 	OP_EQV,
 	OP_FORCE,
@@ -1423,7 +1507,19 @@ enum {
 	OP_QUIT,
 	OP_GC,
 	OP_GCVERB,
+	OP_CURR_INPORT,
+	OP_CURR_OUTPORT,
+	OP_OPEN_INFILE,
+	OP_OPEN_OUTFILE,
+	OP_OPEN_INOUTFILE,
+	OP_CLOSE_INPORT,
+	OP_CLOSE_OUTPORT,
 
+	OP_READ_CHAR,
+	OP_PEEK_CHAR,
+	OP_CHAR_READY,
+	OP_SET_INPORT,
+	OP_SET_OUTPORT,
 	OP_RDSEXPR,
 	OP_RDLIST,
 	OP_RDDOT,
@@ -1577,19 +1673,19 @@ OP_APPLY:
 		if (!is_string(car(args))) {
 			Error_0("load -- argument is not string");
 		}
-		if ((infp = fopen(strvalue(car(args)), "r")) == NULL) {
-			infp = srcfp;
+		if ((port_file(inport) = fopen(strvalue(car(args)), "r")) == NULL) {
+			port_file(inport) = srcfp;
 			Error_1("Unable to open", car(args));
 		}
-		if (infp == stdin) {
-			fprintf(outfp, "loading %s", strvalue(car(args)));
+		if (port_file(inport) == stdin) {
+			fprintf(port_file(outport), "loading %s", strvalue(car(args)));
 		}
 		s_goto(OP_T0LVL);
 
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
-		if (infp == stdin) {
-			fprintf(outfp, "\n");
+		if (port_file(inport) == stdin) {
+			fprintf(port_file(outport), "\n");
 		}
 #ifndef USE_SCHEME_STACK
 		dump = dump_base;
@@ -1599,7 +1695,7 @@ OP_T0LVL:
 		envir = global_env;
 		s_save(OP_VALUEPRINT, NIL, NIL);
 		s_save(OP_T1LVL, NIL, NIL);
-		if (infp == stdin) {
+		if (port_file(inport) == stdin) {
 			printf(prompt);
 		}
 		s_goto(OP_READ);
@@ -1611,12 +1707,15 @@ OP_T0LVL:
 	case OP_READ:		/* read */
 OP_READ:
 		tok = token();
+		if (tok == TOK_EOF) {
+			s_return(EOF_OBJ);
+		}
 		s_goto(OP_RDSEXPR);
 
 	case OP_VALUEPRINT:	/* print evalution result */
 		print_flag = 1;
 		args = value;
-		if (infp == stdin) {
+		if (port_file(inport) == stdin) {
 			s_save(OP_T0LVL, NIL, NIL);
 			s_goto(OP_P0LIST);
 		} else {
@@ -2198,6 +2297,8 @@ OP_LET2REC:
 		s_retbool(car(args) == F || car(args) == T);
 	case OP_NULL:		/* null? */
 		s_retbool(car(args) == NIL);
+	case OP_EOFOBJP:	/* eof-object? */
+		s_retbool(car(args) == EOF_OBJ);
 	case OP_ZEROP:		/* zero? */
 		s_retbool(nvalue(car(args)) == 0);
 	case OP_POSP:		/* positive? */
@@ -2236,6 +2337,12 @@ OP_LET2REC:
 			  || is_continuation(car(args)));
 	case OP_PAIR:		/* pair? */
 		s_retbool(is_pair(car(args)));
+	case OP_PORTP:		/* port? */
+		s_retbool(is_port(car(args)));
+	case OP_INPORTP:	/* input-port? */
+		s_retbool(is_inport(car(args)));
+	case OP_OUTPORTP:	/* output-port? */
+		s_retbool(is_outport(car(args)));
 	case OP_EQ:		/* eq? */
 		s_retbool(car(args) == cadr(args));
 	case OP_EQV:		/* eqv? */
@@ -2261,42 +2368,52 @@ OP_LET2REC:
 		s_return(value);
 
 	case OP_WRITE:		/* write */
-		print_flag = 1;
-		args = car(args);
-		s_goto(OP_P0LIST);
-
 	case OP_DISPLAY:	/* display */
-		print_flag = 0;
+		if (is_pair(cdr(args))) {
+			if (cadr(args) != outport) {
+				x = cons(outport, NIL);
+				s_save(OP_SET_OUTPORT, x, NIL);
+				outport = cadr(args);
+			}
+		}
 		args = car(args);
+		print_flag = (operator == OP_WRITE) ? 1 : 0;
 		s_goto(OP_P0LIST);
 
 	case OP_NEWLINE:	/* newline */
-		fprintf(outfp, "\n");
+		if (is_pair(args)) {
+			if (car(args) != outport) {
+				x = cons(outport, NIL);
+				s_save(OP_SET_OUTPORT, x, NIL);
+				outport = car(args);
+			}
+		}
+		fprintf(port_file(outport), "\n");
 		s_return(T);
 
 	case OP_ERR0:	/* error */
 		if (!is_string(car(args))) {
 			Error_0("error -- first argument must be string");
 		}
-		tmpfp = outfp;
-		outfp = stderr;
-		fprintf(outfp, "Error: ");
-		fprintf(outfp, "%s", strvalue(car(args)));
+		tmpfp = port_file(outport);
+		port_file(outport) = stderr;
+		fprintf(port_file(outport), "Error: ");
+		fprintf(port_file(outport), "%s", strvalue(car(args)));
 		args = cdr(args);
 		s_goto(OP_ERR1);
 
 	case OP_ERR1:	/* error */
 OP_ERR1:
-		fprintf(outfp, " ");
+		fprintf(port_file(outport), " ");
 		if (args != NIL) {
 			s_save(OP_ERR1, cdr(args), NIL);
 			args = car(args);
 			print_flag = 1;
 			s_goto(OP_P0LIST);
 		} else {
-			fprintf(outfp, "\n");
+			fprintf(port_file(outport), "\n");
 			flushinput();
-			outfp = tmpfp;
+			port_file(outport) = tmpfp;
 			s_goto(OP_T0LVL);
 		}
 
@@ -2348,15 +2465,74 @@ OP_ERR1:
 		s_retbool(was);
 	}
 
+	case OP_CURR_INPORT:	/* current-input-port */
+		s_return(inport);
+
+	case OP_CURR_OUTPORT:	/* current-output-port */
+		s_return(outport);
+
+	case OP_OPEN_INFILE:	/* open-input-file */
+		x = port_from_filename(strvalue(car(args)), port_input);
+		if (x == NIL) {
+			s_return(F);
+		}
+		s_return(x);
+
+	case OP_OPEN_OUTFILE:	/* open-output-file */
+		x = port_from_filename(strvalue(car(args)), port_output);
+		if (x == NIL) {
+			s_return(F);
+		}
+		s_return(x);
+
+	case OP_OPEN_INOUTFILE:	/* open-input-output-file */
+		x = port_from_filename(strvalue(car(args)), port_input | port_output);
+		if (x == NIL) {
+			s_return(F);
+		}
+		s_return(x);
+
+	case OP_CLOSE_INPORT: /* close-input-port */
+		port_close(car(args), port_input);
+		s_return(T);
+
+	case OP_CLOSE_OUTPORT: /* close-output-port */
+		port_close(car(args), port_output);
+		s_return(T);
+
 		/* ========== reading part ========== */
+	case OP_READ_CHAR:		/* read-char */
+	case OP_PEEK_CHAR:		/* peek-char */
+		if (is_pair(args)) {
+			if (car(args) != inport) {
+				x = inport;
+				x = cons(x, NIL);
+				s_save(OP_SET_INPORT, x, NIL);
+				inport = car(args);
+			}
+		}
+		w = inchar();
+		if (w == EOF) {
+			s_return(EOF_OBJ);
+		}
+		if (operator == OP_PEEK_CHAR) {
+			backchar(w);
+		}
+		s_return(mk_character(w));
+
+	case OP_SET_INPORT:		/* set-input-port */
+		inport = car(args);
+		s_return(value);
+
+	case OP_SET_OUTPORT:	/* set-output-port */
+		outport = car(args);
+		s_return(value);
+
 	case OP_RDSEXPR:
 OP_RDSEXPR:
 		switch (tok) {
-		case TOK_COMMENT:
-			while (inchar() != '\n')
-				;
-			tok = token();
-			s_goto(OP_RDSEXPR);
+		case TOK_EOF:
+			s_return(EOF_OBJ);
 		case TOK_LPAREN:
 			tok = token();
 			if (tok == TOK_RPAREN) {
@@ -2403,12 +2579,9 @@ OP_RDSEXPR:
 	case OP_RDLIST:
 		args = cons(value, args);
 		tok = token();
-		if (tok == TOK_COMMENT) {
-			while (inchar() != '\n')
-				;
-			tok = token();
-		}
-		if (tok == TOK_RPAREN) {
+		if (tok == TOK_EOF) {
+			s_return(EOF_OBJ);
+		} else if (tok == TOK_RPAREN) {
 			s_return(non_alloc_rev(NIL, args));
 		} else if (tok == TOK_DOT) {
 			s_save(OP_RDDOT, args, NIL);
@@ -2451,23 +2624,23 @@ OP_P0LIST:
 			printatom(args, print_flag);
 			s_return(T);
 		} else if (car(args) == QUOTE && ok_abbrev(cdr(args))) {
-			fprintf(outfp, "'");
+			fprintf(port_file(outport), "'");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else if (car(args) == QQUOTE && ok_abbrev(cdr(args))) {
-			fprintf(outfp, "`");
+			fprintf(port_file(outport), "`");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else if (car(args) == UNQUOTE && ok_abbrev(cdr(args))) {
-			fprintf(outfp, ",");
+			fprintf(port_file(outport), ",");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else if (car(args) == UNQUOTESP && ok_abbrev(cdr(args))) {
-			fprintf(outfp, ",@");
+			fprintf(port_file(outport), ",@");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else {
-			fprintf(outfp, "(");
+			fprintf(port_file(outport), "(");
 			s_save(OP_P1LIST, cdr(args), NIL);
 			args = car(args);
 			s_goto(OP_P0LIST);
@@ -2476,19 +2649,19 @@ OP_P0LIST:
 	case OP_P1LIST:
 		if (is_pair(args)) {
 			s_save(OP_P1LIST, cdr(args), NIL);
-			fprintf(outfp, " ");
+			fprintf(port_file(outport), " ");
 			args = car(args);
 			s_goto(OP_P0LIST);
 		} else {
 			if (args != NIL) {
-				fprintf(outfp, " . ");
+				fprintf(port_file(outport), " . ");
 				printatom(args, print_flag);
 			}
-			fprintf(outfp, ")");
+			fprintf(port_file(outport), ")");
 			s_return(T);
 		}
 
-	case OP_LIST_LENGTH:	/* list-length */	/* a.k */
+	case OP_LIST_LENGTH:	/* length */	/* a.k */
 		for (x = car(args), w = 0; is_pair(x); x = cdr(x))
 			++w;
 		s_return(mk_integer(w));
@@ -2629,8 +2802,8 @@ void init_vars_global()
 	pointer x;
 
 	/* init input/output file */
-	infp = srcfp;
-	outfp = stdout;
+	inport = mk_port(srcfp, port_input);
+	outport = mk_port(stdout, port_output);
 	/* init NIL */
 	type(NIL) = (T_ATOM | MARK);
 	car(NIL) = cdr(NIL) = NIL;
@@ -2640,6 +2813,9 @@ void init_vars_global()
 	/* init F */
 	type(F) = (T_ATOM | MARK);
 	car(F) = cdr(F) = F;
+	/* init EOF_OBJ */
+	type(EOF_OBJ) = (T_ATOM | MARK);
+	car(EOF_OBJ) = cdr(EOF_OBJ) = EOF_OBJ;
 	/* init global_env */
 	global_env = cons(NIL, NIL);
 	/* init else */
@@ -2711,9 +2887,13 @@ void init_procs()
 	mk_proc(OP_CHAR, "char?");
 	mk_proc(OP_PROC, "procedure?");
 	mk_proc(OP_PAIR, "pair?");
+	mk_proc(OP_PORTP, "port?");
+	mk_proc(OP_INPORTP, "input-port?");
+	mk_proc(OP_OUTPORTP, "output-port?");
 	mk_proc(OP_EQV, "eqv?");
 	mk_proc(OP_EQ, "eq?");
 	mk_proc(OP_NULL, "null?");
+	mk_proc(OP_EOFOBJP, "eof-object?");
 	mk_proc(OP_ZEROP, "zero?");
 	mk_proc(OP_POSP, "positive?");
 	mk_proc(OP_NEGP, "negative?");
@@ -2734,6 +2914,17 @@ void init_procs()
 	mk_proc(OP_GET, "get");
 	mk_proc(OP_GC, "gc");
 	mk_proc(OP_GCVERB, "gc-verbose");
+	mk_proc(OP_CURR_INPORT, "current-input-port");
+	mk_proc(OP_CURR_OUTPORT, "current-output-port");
+	mk_proc(OP_OPEN_INFILE, "open-input-file");
+	mk_proc(OP_OPEN_OUTFILE, "open-output-file");
+	mk_proc(OP_OPEN_INOUTFILE, "open-input-output-file");
+	mk_proc(OP_CLOSE_INPORT, "close-input-port");
+	mk_proc(OP_CLOSE_OUTPORT, "close-output-port");
+	mk_proc(OP_READ_CHAR, "read-char");
+	mk_proc(OP_PEEK_CHAR, "peek-char");
+	mk_proc(OP_SET_INPORT, "set-input-port");
+	mk_proc(OP_SET_OUTPORT, "set-output-port");
 	mk_proc(OP_LIST_LENGTH, "length");	/* a.k */
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
 	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */
