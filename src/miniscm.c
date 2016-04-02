@@ -1495,6 +1495,7 @@ enum {
 	OP_EQV,
 	OP_FORCE,
 	OP_FORCED,
+	OP_WRITE_CHAR,
 	OP_WRITE,
 	OP_DISPLAY,
 	OP_NEWLINE,
@@ -2367,6 +2368,10 @@ OP_LET2REC:
 		cdr(code) = NIL;
 		s_return(value);
 
+	case OP_WRITE_CHAR:	/* write-char */
+		if (!is_character(car(args))) {
+			Error_0("write-char -- first argument must be character");
+		}
 	case OP_WRITE:		/* write */
 	case OP_DISPLAY:	/* display */
 		if (is_pair(cdr(args))) {
@@ -2903,6 +2908,7 @@ void init_procs()
 	mk_proc(OP_LEQ, "<=");
 	mk_proc(OP_GEQ, ">=");
 	mk_proc(OP_READ, "read");
+	mk_proc(OP_WRITE_CHAR, "write-char");
 	mk_proc(OP_WRITE, "write");
 	mk_proc(OP_DISPLAY, "display");
 	mk_proc(OP_NEWLINE, "newline");
