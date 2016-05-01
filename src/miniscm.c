@@ -91,6 +91,10 @@ struct cell {
 			struct cell *_next;
 		} _port;
 		struct {
+			char   *_curr;
+			size_t  _size;
+		} _port_string;
+		struct {
 			struct cell *_car;
 			struct cell *_cdr;
 		} _cons;
@@ -170,12 +174,18 @@ typedef struct cell *pointer;
 enum {
 	port_input = 1,
 	port_output = 2,
+	port_file = 4,
+	port_string = 8,
 };
 #define is_port(p)      (type(p) & T_PORT)
 #define is_inport(p)    (is_port(p) && ((p)->_isfixnum & port_input))
 #define is_outport(p)   (is_port(p) && ((p)->_isfixnum & port_output))
+#define is_fileport(p)  (is_port(p) && ((p)->_isfixnum & port_file))
+#define is_strport(p)   (is_port(p) && ((p)->_isfixnum & port_string))
 #define port_file(p)    ((p)->_object._port._file)
 #define port_next(p)    ((p)->_object._port._next)
+#define port_curr(p)    ((p + 1)->_object._port_string._curr)
+#define port_size(p)    ((p + 1)->_object._port_string._size)
 
 #define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
@@ -655,10 +665,24 @@ pointer mk_port(FILE *fp, int prop)
 	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_PORT | T_ATOM);
-	x->_isfixnum = prop;
-	x->_object._port._file = fp;
+	x->_isfixnum = prop | port_file;
+	port_file(x) = fp;
 	port_next(x) = port_list;
 	port_list = x;
+	return x;
+}
+
+pointer mk_port_string(char *str, size_t size, int prop)
+{
+	pointer x = get_consecutive_cells(2, &NIL);
+
+	type(x + 1) = type(x) = (T_PORT | T_ATOM);
+	x->_isfixnum = prop | port_string;
+	port_file(x) = (FILE *)str;
+	port_next(x) = port_list;
+	port_list = x;
+	port_curr(x) = str;
+	port_size(x) = size;
 	return x;
 }
 
@@ -694,13 +718,19 @@ pointer forward(pointer x)
 	*next = *x;
 	type(x) = T_FORWARDED;
 	x->_object._forwarded = next;
+	if (is_strport(next)) {
+		*++next = *++x;
+		type(x) = T_FORWARDED;
+		x->_object._forwarded = next;
+		return next++ - 1;
+	}
 	return next++;
 }
 
 void gc(register pointer *a, register pointer *b)
 {
 	register pointer scan, **pp;
-	register pointer p;
+	register pointer p, q;
 
 	if (gc_verbose)
 		printf("gc...");
@@ -775,14 +805,21 @@ void gc(register pointer *a, register pointer *b)
 		++scan;
 	}
 
-	for (p = port_list, port_list = NIL; p != NIL; p = port_next(p)) {
+	for (p = port_list, port_list = NIL; p != NIL; ) {
 		if (type(p) == T_FORWARDED) {
-			port_next(p->_object._forwarded) = port_list;
-			port_list = p->_object._forwarded;
+			q = p->_object._forwarded;
+			p = port_next(q);
+			port_next(q) = port_list;
+			port_list = q;
 		} else {
-			if (p->_object._port._file != NULL) {
-				fclose(p->_object._port._file);
+			if (port_file(p) != NULL) {
+				if (is_fileport(p)) {
+					fclose(port_file(p));
+				} else {
+					free(port_file(p));
+				}
 			}
+			p = port_next(p);
 		}
 	}
 
@@ -807,13 +844,14 @@ void gc(register pointer *a, register pointer *b)
  *  We use algorithm E (Kunuth, The Art of Computer Programming Vol.1,
  *  sec.3.5) for marking.
  */
-void mark(pointer a)
+void mark(register pointer p)
 {
-	register pointer t, q, p;
+	register pointer t = 0, q;
 
-	t = (pointer) 0;
-	p = a;
 E2:	setmark(p);
+	if (is_strport(p)) {
+		setmark(p + 1);
+	}
 	if (is_atom(p))
 		goto E6;
 	q = car(p);
@@ -898,8 +936,12 @@ void gc(register pointer *a, register pointer *b)
 		if (is_mark(p))
 			clrmark(p);
 		else {
-			if (is_port(p) && p->_object._port._file != NULL) {
-				fclose(p->_object._port._file);
+			if (is_port(p)) {
+				if (is_fileport(p) && port_file(p) != NULL) {
+					fclose(port_file(p));
+				} else if (is_strport(p) && port_file(p) != NULL) {
+					free(port_file(p));
+				}
 			}
 			type(p) = 0;
 			cdr(p) = free_cell;
@@ -933,12 +975,59 @@ pointer port_from_filename(const char *filename, int prop)
 	return mk_port(fp, prop);
 }
 
+#define BLOCK_SIZE 256
+
+pointer port_from_scratch()
+{
+	char *p;
+
+	p = (char *)malloc(BLOCK_SIZE);
+	if (p == NULL) {
+		return NIL;
+	}
+	memset(p, 0, BLOCK_SIZE);
+	return mk_port_string(p, BLOCK_SIZE, port_output);
+}
+
+pointer port_from_string(const char *str, size_t len, int prop)
+{
+	char *p;
+
+	p = (char *)malloc(len + 1);
+	if (p == NULL) {
+		return NIL;
+	}
+	memcpy(p, str, len);
+	p[len] = '\0';
+	return mk_port_string(p, len + 1, prop);
+}
+
+int realloc_port_string(pointer p)
+{
+	size_t new_size = port_size(p) + BLOCK_SIZE;
+	char *str = (char *)malloc(new_size);
+	if (str == NULL) {
+		return 0;
+	}
+	memcpy(str, port_file(p), port_size(p));
+	memset(str + port_size(p), 0, BLOCK_SIZE);
+	free(port_file(p));
+	port_file(p) = (FILE *)str;
+	port_curr(p) = str + port_size(p);
+	port_size(p) = new_size;
+	return 1;
+}
+
 void port_close(pointer p, int flag)
 {
 	p->_isfixnum &= ~flag;
 	if ((p->_isfixnum & (port_input | port_output)) == 0) {
 		if (port_file(p) != NULL) {
-			fclose(port_file(p));
+			if (is_fileport(p)) {
+				fclose(port_file(p));
+			} else {
+				free(port_file(p));
+			}
 			port_file(p) = NULL;
 		}
 	}
@@ -968,22 +1057,30 @@ int inchar()
 {
 	int c;
 
-	if (feof(port_file(inport))) {
-		fclose(port_file(inport));
-		port_file(inport) = srcfp;
-		if (port_file(inport) == stdin) {
-			printf(prompt);
+	if (is_fileport(inport)) {
+		if (feof(port_file(inport))) {
+			fclose(port_file(inport));
+			port_file(inport) = srcfp;
+			if (port_file(inport) == stdin) {
+				printf(prompt);
+			}
 		}
-	}
 
-	c = fgetc(port_file(inport));
-	if (c == EOF) {
-		if (port_file(inport) == stdin) {
-			fprintf(stderr, "Good-bye\n");
-			exit(0);
+		c = fgetc(port_file(inport));
+		if (c == EOF) {
+			if (port_file(inport) == stdin) {
+				fprintf(stderr, "Good-bye\n");
+				exit(0);
+			}
+			if (port_file(inport) == srcfp) {
+				exit(0);
+			}
 		}
-		if (port_file(inport) == srcfp) {
-			exit(0);
+	} else {
+		if (port_curr(inport) == (char *)port_file(inport) + port_size(inport)) {
+			c = EOF;
+		} else {
+			c = *(port_curr(inport)++);
 		}
 	}
 	return c;
@@ -992,8 +1089,11 @@ int inchar()
 /* back to standard input */
 void flushinput()
 {
-	if (port_file(inport) != stdin) {
+	if (is_fileport(inport) && port_file(inport) != stdin) {
 		fclose(port_file(inport));
+		port_file(inport) = stdin;
+	} else if (is_strport(inport)) {
+		free(port_file(inport));
 		port_file(inport) = stdin;
 	}
 }
@@ -1011,7 +1111,45 @@ int isdelim(char *s, char c)
 void backchar(int c)
 {
 	if (c != EOF) {
-		ungetc(c, port_file(inport));
+		if (is_fileport(inport)) {
+			ungetc(c, port_file(inport));
+		} else if (port_curr(inport) != (char *)port_file(inport)) {
+			--port_curr(inport);
+		}
+	}
+}
+
+void putstr(const char *s)
+{
+	if (is_fileport(outport)) {
+		fputs(s, port_file(outport));
+	} else {
+		char *endp = (char *)port_file(outport) + port_size(outport);
+		while (*s) {
+			if (port_curr(outport) < endp) {
+				*port_curr(outport)++ = *s++;
+				if (port_curr(outport) == endp) {
+					if (realloc_port_string(outport)) {
+						endp = (char *)port_file(outport) + port_size(outport);
+					}
+				}
+			}
+		}
+	}
+}
+
+void putcharacter(const int c)
+{
+	if (is_fileport(outport)) {
+		fputc(c, port_file(outport));
+	} else {
+		char *endp = (char *)port_file(outport) + port_size(outport);
+		if (port_curr(outport) < endp) {
+			*port_curr(outport)++ = c;
+			if (port_curr(outport) == endp) {
+				realloc_port_string(outport);
+			}
+		}
 	}
 }
 
@@ -1032,18 +1170,102 @@ char *readstr(char *delim)
 }
 
 /* read string expression "xxx...xxx" */
-char *readstrexp()
+pointer readstrexp()
 {
-	char    c, *p = strbuff;
+	char *p = strbuff;
+	int c, c1 = 0;
+	enum { st_ok, st_bsl, st_x1, st_x2, st_oct1, st_oct2 } state = st_ok;
 
 	for (;;) {
-		if ((c = inchar()) != '"')
-			*p++ = c;
-		else if (p > strbuff && *(p - 1) == '\\')
-			*(p - 1) = '"';
-		else {
-			*p = '\0';
-			return strbuff;
+		c = inchar();
+		if (c == EOF || p - strbuff > sizeof(strbuff) - 1) {
+			return F;
+		}
+		if (state == st_ok) {
+			switch (c) {
+			case '\\':
+				state = st_bsl;
+				break;
+			case '"':
+				*p = 0;
+				return mk_string(strbuff);
+			default:
+				*p++ = c;
+				break;
+			}
+		} else if (state == st_bsl) {
+			switch (c) {
+			case '0':
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+				state = st_oct1;
+				c1 = c - '0';
+				break;
+			case 'x':
+			case 'X':
+				state = st_x1;
+				c1 = 0;
+				break;
+			case 'n':
+				*p++ = '\n';
+				state = st_ok;
+				break;
+			case 't':
+				*p++ = '\t';
+				state = st_ok;
+				break;
+			case 'r':
+				*p++ = '\r';
+				state = st_ok;
+				break;
+			case '"':
+				*p++ = '"';
+				state = st_ok;
+				break;
+			default:
+				*p++ = c;
+				state = st_ok;
+				break;
+			}
+		} else if (state == st_x1 || state == st_x2) {
+			c = toupper(c);
+			if (c >= '0' && c <= 'F') {
+				if (c <= '9') {
+					c1 = (c1 << 4) + c - '0';
+				} else {
+					c1 = (c1 << 4) + c - 'A' + 10;
+				}
+				if (state == st_x1) {
+					state = st_x2;
+				} else {
+					*p++ = c1;
+					state = st_ok;
+				}
+			} else {
+				return F;
+			}
+		} else {
+			if (c < '0' || c > '7') {
+				*p++ = c1;
+				backchar(c);
+				state = st_ok;
+			} else {
+				if (state == st_oct2 && c1 >= 32) {
+					return F;
+				}
+				c1 = (c1 << 3) + (c - '0');
+				if (state == st_oct1) {
+					state = st_oct2;
+				} else {
+					*p++ = c1;
+					state = st_ok;
+				}
+			}
 		}
 	}
 }
@@ -1106,23 +1328,44 @@ int token()
 /* ========== Rootines for Printing ========== */
 #define	ok_abbrev(x)	(is_pair(x) && cdr(x) == NIL)
 
-void strunquote(char *p, char *s)
+void printslashstring(unsigned char *s)
 {
-	*p++ = '"';
-	for ( ; *s; ++s) {
-		if (*s == '"') {
-			*p++ = '\\';
-			*p++ = '"';
-		} else if (*s == '\n') {
-			*p++ = '\\';
-			*p++ = 'n';
-		} else
-			*p++ = *s;
-	}
-	*p++ = '"';
-	*p = '\0';
-}
+	int d;
 
+	putcharacter('"');
+	for ( ; *s; s++) {
+		if (*s == 0xff || *s == '"' || *s < ' ' || *s == '\\') {
+			putcharacter('\\');
+			switch (*s) {
+			case '"':
+				putcharacter('"');
+				break;
+			case '\n':
+				putcharacter('n');
+				break;
+			case '\t':
+				putcharacter('t');
+				break;
+			case '\r':
+				putcharacter('r');
+				break;
+			case '\\':
+				putcharacter('\\');
+				break;
+			default:
+				putcharacter('x');
+				d = *s / 16;
+				putcharacter(d < 10 ? d + '0' : d - 10 + 'A');
+				d = *s % 16;
+				putcharacter(d < 10 ? d + '0' : d - 10 + 'A');
+				break;
+			}
+		} else {
+			putcharacter(*s);
+		}
+	}
+	putcharacter('"');
+}
 
 /* print atoms */
 int printatom(pointer l, int f)
@@ -1135,6 +1378,8 @@ int printatom(pointer l, int f)
 		p = "#t";
 	else if (l == F)
 		p = "#f";
+	else if (l == EOF_OBJ)
+		p = "#<EOF>";
 	else if (is_number(l)) {
 		p = strbuff;
 		if (l->_isfixnum) {
@@ -1149,11 +1394,11 @@ int printatom(pointer l, int f)
 			}
 		}
 	} else if (is_string(l)) {
-		if (!f)
+		if (!f) {
 			p = strvalue(l);
-		else {
-			p = strbuff;
-			strunquote(p, strvalue(l));
+		} else {
+			printslashstring(strvalue(l));
+			return 0;
 		}
 	} else if (is_character(l)) {
 		int c = ivalue(l);
@@ -1212,7 +1457,7 @@ int printatom(pointer l, int f)
 	}
 	if (f < 0)
 		return strlen(p);
-	fputs(p, port_file(outport));
+	putstr(p);
 	return 0;
 }
 
@@ -1407,7 +1652,7 @@ enum {
 	OP_LOAD = 0,
 	OP_T0LVL,
 	OP_T1LVL,
-	OP_READ,
+	OP_READ_INTERNAL,
 	OP_VALUEPRINT,
 	OP_EVAL,
 	OP_E0ARGS,
@@ -1513,9 +1758,14 @@ enum {
 	OP_OPEN_INFILE,
 	OP_OPEN_OUTFILE,
 	OP_OPEN_INOUTFILE,
+	OP_OPEN_INSTRING,
+	OP_OPEN_OUTSTRING,
+	OP_OPEN_INOUTSTRING,
+	OP_GET_OUTSTRING,
 	OP_CLOSE_INPORT,
 	OP_CLOSE_OUTPORT,
 
+	OP_READ,
 	OP_READ_CHAR,
 	OP_PEEK_CHAR,
 	OP_CHAR_READY,
@@ -1686,7 +1936,7 @@ OP_APPLY:
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
 		if (port_file(inport) == stdin) {
-			fprintf(port_file(outport), "\n");
+			putstr("\n");
 		}
 #ifndef USE_SCHEME_STACK
 		dump = dump_base;
@@ -1699,14 +1949,14 @@ OP_T0LVL:
 		if (port_file(inport) == stdin) {
 			printf(prompt);
 		}
-		s_goto(OP_READ);
+		s_goto(OP_READ_INTERNAL);
 
 	case OP_T1LVL:	/* top level */
 		code = value;
 		s_goto(OP_EVAL);
 
-	case OP_READ:		/* read */
-OP_READ:
+	case OP_READ_INTERNAL:		/* read internal */
+OP_READ_INTERNAL:
 		tok = token();
 		if (tok == TOK_EOF) {
 			s_return(EOF_OBJ);
@@ -2393,7 +2643,7 @@ OP_LET2REC:
 				outport = car(args);
 			}
 		}
-		fprintf(port_file(outport), "\n");
+		putstr("\n");
 		s_return(T);
 
 	case OP_ERR0:	/* error */
@@ -2402,21 +2652,21 @@ OP_LET2REC:
 		}
 		tmpfp = port_file(outport);
 		port_file(outport) = stderr;
-		fprintf(port_file(outport), "Error: ");
-		fprintf(port_file(outport), "%s", strvalue(car(args)));
+		fprintf(stderr, "Error: ");
+		fprintf(stderr, "%s", strvalue(car(args)));
 		args = cdr(args);
 		s_goto(OP_ERR1);
 
 	case OP_ERR1:	/* error */
 OP_ERR1:
-		fprintf(port_file(outport), " ");
+		putstr(" ");
 		if (args != NIL) {
 			s_save(OP_ERR1, cdr(args), NIL);
 			args = car(args);
 			print_flag = 1;
 			s_goto(OP_P0LIST);
 		} else {
-			fprintf(port_file(outport), "\n");
+			putstr("\n");
 			flushinput();
 			port_file(outport) = tmpfp;
 			s_goto(OP_T0LVL);
@@ -2477,6 +2727,9 @@ OP_ERR1:
 		s_return(outport);
 
 	case OP_OPEN_INFILE:	/* open-input-file */
+		if (!is_string(car(args))) {
+			Error_0("open-input-file -- first argument must be string");
+		}
 		x = port_from_filename(strvalue(car(args)), port_input);
 		if (x == NIL) {
 			s_return(F);
@@ -2484,6 +2737,9 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_OUTFILE:	/* open-output-file */
+		if (!is_string(car(args))) {
+			Error_0("open-output-file -- first argument must be string");
+		}
 		x = port_from_filename(strvalue(car(args)), port_output);
 		if (x == NIL) {
 			s_return(F);
@@ -2491,11 +2747,48 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_INOUTFILE:	/* open-input-output-file */
+		if (!is_string(car(args))) {
+			Error_0("open-input-output-file -- first argument must be string");
+		}
 		x = port_from_filename(strvalue(car(args)), port_input | port_output);
 		if (x == NIL) {
 			s_return(F);
 		}
 		s_return(x);
+
+	case OP_OPEN_INSTRING:	/* open-input-string */
+		if (!is_string(car(args))) {
+			Error_0("open-input-string -- first argument must be string");
+		}
+		x = port_from_string(strvalue(car(args)), strlen(strvalue(car(args))), port_input);
+		if (x == NIL) {
+			s_return(F);
+		}
+		s_return(x);
+
+	case OP_OPEN_OUTSTRING:	/* open-output-string */
+		x = port_from_scratch();
+		if (x == NIL) {
+			s_return(F);
+		}
+		s_return(x);
+
+	case OP_OPEN_INOUTSTRING:	/* open-input-output-string */
+		if (!is_string(car(args))) {
+			Error_0("open-input-string -- first argument must be string");
+		}
+		x = port_from_string(strvalue(car(args)), strlen(strvalue(car(args))), port_input | port_output);
+		if (x == NIL) {
+			s_return(F);
+		}
+		s_return(x);
+
+	case OP_GET_OUTSTRING:	/* get-output-string */
+		x = car(args);
+		if (is_strport(x) && port_file(x) != NULL) {
+			s_return(mk_string((char *)port_file(x)));
+		}
+		s_return(F);
 
 	case OP_CLOSE_INPORT: /* close-input-port */
 		port_close(car(args), port_input);
@@ -2506,6 +2799,20 @@ OP_ERR1:
 		s_return(T);
 
 		/* ========== reading part ========== */
+	case OP_READ:			/* read */
+		if (is_pair(args)) {
+			if (!is_inport(car(args))) {
+				Error_1("read: not an input port:", car(args));
+			}
+			if (car(args) != inport) {
+				x = inport;
+				x = cons(x, NIL);
+				s_save(OP_SET_INPORT, x, NIL);
+				inport = car(args);
+			}
+		}
+		s_goto(OP_READ_INTERNAL);
+
 	case OP_READ_CHAR:		/* read-char */
 	case OP_PEEK_CHAR:		/* peek-char */
 		if (is_pair(args)) {
@@ -2569,7 +2876,7 @@ OP_RDSEXPR:
 		case TOK_ATOM:
 			s_return(mk_atom(readstr("();\t\n ")));
 		case TOK_DQUOTE:
-			s_return(mk_string(readstrexp()));
+			s_return(readstrexp());
 		case TOK_SHARP:
 			if ((x = mk_const(readstr("();\t\n "))) == NIL) {
 				Error_0("Undefined sharp expression");
@@ -2629,23 +2936,23 @@ OP_P0LIST:
 			printatom(args, print_flag);
 			s_return(T);
 		} else if (car(args) == QUOTE && ok_abbrev(cdr(args))) {
-			fprintf(port_file(outport), "'");
+			putstr("'");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else if (car(args) == QQUOTE && ok_abbrev(cdr(args))) {
-			fprintf(port_file(outport), "`");
+			putstr("`");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else if (car(args) == UNQUOTE && ok_abbrev(cdr(args))) {
-			fprintf(port_file(outport), ",");
+			putstr(",");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else if (car(args) == UNQUOTESP && ok_abbrev(cdr(args))) {
-			fprintf(port_file(outport), ",@");
+			putstr(",@");
 			args = cadr(args);
 			s_goto(OP_P0LIST);
 		} else {
-			fprintf(port_file(outport), "(");
+			putstr("(");
 			s_save(OP_P1LIST, cdr(args), NIL);
 			args = car(args);
 			s_goto(OP_P0LIST);
@@ -2654,15 +2961,15 @@ OP_P0LIST:
 	case OP_P1LIST:
 		if (is_pair(args)) {
 			s_save(OP_P1LIST, cdr(args), NIL);
-			fprintf(port_file(outport), " ");
+			putstr(" ");
 			args = car(args);
 			s_goto(OP_P0LIST);
 		} else {
 			if (args != NIL) {
-				fprintf(port_file(outport), " . ");
+				putstr(" . ");
 				printatom(args, print_flag);
 			}
-			fprintf(port_file(outport), ")");
+			putstr(")");
 			s_return(T);
 		}
 
@@ -2925,6 +3232,10 @@ void init_procs()
 	mk_proc(OP_OPEN_INFILE, "open-input-file");
 	mk_proc(OP_OPEN_OUTFILE, "open-output-file");
 	mk_proc(OP_OPEN_INOUTFILE, "open-input-output-file");
+	mk_proc(OP_OPEN_INSTRING, "open-input-string");
+	mk_proc(OP_OPEN_OUTSTRING, "open-output-string");
+	mk_proc(OP_OPEN_INOUTSTRING, "open-input-output-string");
+	mk_proc(OP_GET_OUTSTRING, "get-output-string");
 	mk_proc(OP_CLOSE_INPORT, "close-input-port");
 	mk_proc(OP_CLOSE_OUTPORT, "close-output-port");
 	mk_proc(OP_READ_CHAR, "read-char");
