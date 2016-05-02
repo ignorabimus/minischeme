@@ -80,7 +80,7 @@ struct cell {
 	union {
 		struct {
 			char   *_svalue;
-			short   _keynum;
+			size_t  _length;
 		} _string;
 		struct {
 			long    _ivalue;
@@ -134,7 +134,7 @@ typedef struct cell *pointer;
 
 #define is_string(p)    (type(p)&T_STRING)
 #define strvalue(p)     ((p)->_object._string._svalue)
-#define keynum(p)       ((p)->_object._string._keynum)
+#define strlength(p)    ((p)->_object._string._length)
 
 #define is_number(p)    (type(p)&T_NUMBER)
 #define ivalue(p)       ((p)->_object._number._ivalue)
@@ -156,7 +156,7 @@ typedef struct cell *pointer;
 #define is_syntax(p)    (type(p)&T_SYNTAX)
 #define is_proc(p)      (type(p)&T_PROC)
 #define syntaxname(p)   strvalue(car(p))
-#define syntaxnum(p)    keynum(car(p))
+#define syntaxnum(p)    strlength(car(p))
 #define procnum(p)      ivalue(p)
 
 #define is_closure(p)   (type(p)&T_CLOSURE)
@@ -481,40 +481,52 @@ pointer mk_number(struct cell *v)
 }
 
 /* allocate name to string area */
-char *store_string(char *name)
+char *store_string(size_t len, const char *str, char fill)
 {
-	register char *q;
-	register short i;
-	long    len, remain;
+	int i;
+	char *q;
+	size_t remain;
 
-	/* first check name has already listed */
-	for (i = 0; i <= str_seglast; i++)
-		for (q = str_seg[i]; *q != (char) (-1); ) {
-			if (!strcmp(q, name))
-				goto FOUND;
+	for (i = 0; i <= str_seglast; i++) {
+		for (q = str_seg[i]; *q != (char)(-1); ) {
 			while (*q++)
 				;	/* get next string */
 		}
-	len = strlen(name) + 2;
-	remain = (long) STR_SEGSIZE - ((long) q - (long) str_seg[str_seglast]);
-	if (remain < len) {
+	}
+	remain = STR_SEGSIZE - (q - str_seg[str_seglast]);
+	if (remain < len + 2) {
 		if (!alloc_strseg(1))
 			FatalError("run out of string area");
 		q = str_seg[str_seglast];
 	}
-	strcpy(q, name);
-FOUND:
+	if (str != 0) {
+		snprintf(q, len + 1, "%s", str);
+	} else {
+		memset(q, fill, len);
+		q[len] = 0;
+	}
 	return q;
 }
 
 /* get new string */
 pointer mk_string(char *str)
 {
-	register pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_cell(&NIL, &NIL);
+	size_t len = strlen(str);
 
-	strvalue(x) = store_string(str);
 	type(x) = (T_STRING | T_ATOM);
-	keynum(x) = (short) (-1);
+	strvalue(x) = store_string(len, str, 0);
+	strlength(x) = len;
+	return x;
+}
+
+pointer mk_empty_string(size_t len, char fill)
+{
+	pointer x = get_cell(&NIL, &NIL);
+
+	type(x) = (T_STRING | T_ATOM);
+	strvalue(x) = store_string(len, 0, fill);
+	strlength(x) = len;
 	return x;
 }
 
@@ -1713,6 +1725,7 @@ enum {
 	OP_INT2CHAR,
 	OP_CHARUPCASE,
 	OP_CHARDNCASE,
+	OP_MKSTRING,
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
@@ -2542,6 +2555,13 @@ OP_LET2REC:
 	case OP_CHARDNCASE:	/* char-downcase */
 		s_return(mk_character(tolower((unsigned char)ivalue(car(args)))));
 
+	case OP_MKSTRING:	/* make-string */
+		if (cdr(args) != NIL) {
+			s_return(mk_empty_string(ivalue(car(args)), (char)ivalue(cadr(args))));
+		} else {
+			s_return(mk_empty_string(ivalue(car(args)), ' '));
+		}
+
 	case OP_NOT:		/* not */
 		s_retbool(isfalse(car(args)));
 	case OP_BOOL:		/* boolean? */
@@ -3189,6 +3209,7 @@ void init_procs()
 	mk_proc(OP_INT2CHAR, "integer->char");
 	mk_proc(OP_CHARUPCASE, "char-upcase");
 	mk_proc(OP_CHARDNCASE, "char-downcase");
+	mk_proc(OP_MKSTRING, "make-string");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
