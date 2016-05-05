@@ -50,8 +50,6 @@
  */
 
 #define CELL_SEGSIZE 500000	/* # of cells in one segment */
-#define STR_SEGSIZE    2500	/* bytes of one string segment */
-#define STR_NSEGMENT    100	/* # of segments for strings */
 
 
 #define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w2.\n"
@@ -88,12 +86,8 @@ struct cell {
 		} _number;
 		struct {
 			FILE   *_file;
-			struct cell *_next;
-		} _port;
-		struct {
-			char   *_curr;
 			size_t  _size;
-		} _port_string;
+		} _port;
 		struct {
 			struct cell *_car;
 			struct cell *_cdr;
@@ -183,9 +177,8 @@ enum {
 #define is_fileport(p)  (is_port(p) && ((p)->_isfixnum & port_file))
 #define is_strport(p)   (is_port(p) && ((p)->_isfixnum & port_string))
 #define port_file(p)    ((p)->_object._port._file)
-#define port_next(p)    ((p)->_object._port._next)
-#define port_curr(p)    ((p + 1)->_object._port_string._curr)
-#define port_size(p)    ((p + 1)->_object._port_string._size)
+#define port_size(p)    ((p)->_object._port._size)
+#define port_curr(p)    ((char *)cdr((p) + 1))
 
 #define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
@@ -212,8 +205,6 @@ enum {
 
 /* arrays for segments */
 pointer cell_seg;
-char   *str_seg[STR_NSEGMENT];
-int     str_seglast = -1;
 
 /* We use 4 registers. */
 pointer args;			/* register for arguments of function */
@@ -236,7 +227,9 @@ struct cell _ONE;		/* special cell representing integer 1 */
 
 pointer inport = &_NIL;		/* pointer to current-input-port */
 pointer outport = &_NIL;	/* pointer to current-output-port */
-pointer port_list = &_NIL;	/* pointer to port table */
+
+pointer gcell_list = &_NIL;	/* pointer to cell table */
+#define gcell_next(p) car((p) + 1)
 
 /* global pointers to special symbols */
 pointer LAMBDA;			/* pointer to syntax lambda */
@@ -323,26 +316,6 @@ int alloc_cellseg()
 	return 1;
 }
 #endif
-
-/* allocate new string segment */
-int alloc_strseg(int n)
-{
-	register char *p;
-	register long i;
-	register int k;
-
-	for (k = 0; k < n; k++) {
-		if (str_seglast >= STR_NSEGMENT)
-			return k;
-		p = (char *) malloc(STR_SEGSIZE * sizeof(char));
-		if (p == (char *) 0)
-			return k;
-		str_seg[++str_seglast] = p;
-		for (i = 0; i < STR_SEGSIZE; i++)
-			*p++ = (char) (-1);
-	}
-	return n;
-}
 
 /* get new cell.  parameter a, b is marked by gc. */
 pointer get_cell(register pointer *a, register pointer *b)
@@ -483,21 +456,9 @@ pointer mk_number(struct cell *v)
 /* allocate name to string area */
 char *store_string(size_t len, const char *str, char fill)
 {
-	int i;
-	char *q;
-	size_t remain;
-
-	for (i = 0; i <= str_seglast; i++) {
-		for (q = str_seg[i]; *q != (char)(-1); ) {
-			while (*q++)
-				;	/* get next string */
-		}
-	}
-	remain = STR_SEGSIZE - (q - str_seg[str_seglast]);
-	if (remain < len + 2) {
-		if (!alloc_strseg(1))
-			FatalError("run out of string area");
-		q = str_seg[str_seglast];
+	char *q = (char *)malloc(len + 1);
+	if (q == NULL) {
+		FatalError("Unable to allocate string area");
 	}
 	if (str != 0) {
 		snprintf(q, len + 1, "%s", str);
@@ -511,22 +472,27 @@ char *store_string(size_t len, const char *str, char fill)
 /* get new string */
 pointer mk_string(char *str)
 {
-	pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_consecutive_cells(2, &NIL);
+
 	size_t len = strlen(str);
 
-	type(x) = (T_STRING | T_ATOM);
+	type(x + 1) = type(x) = (T_STRING | T_ATOM);
 	strvalue(x) = store_string(len, str, 0);
 	strlength(x) = len;
+	gcell_next(x) = gcell_list;
+	gcell_list = x;
 	return x;
 }
 
 pointer mk_empty_string(size_t len, char fill)
 {
-	pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_consecutive_cells(2, &NIL);
 
-	type(x) = (T_STRING | T_ATOM);
+	type(x + 1) = type(x) = (T_STRING | T_ATOM);
 	strvalue(x) = store_string(len, 0, fill);
 	strlength(x) = len;
+	gcell_next(x) = gcell_list;
+	gcell_list = x;
 	return x;
 }
 
@@ -674,13 +640,13 @@ pointer mk_const(char *name)
 
 pointer mk_port(FILE *fp, int prop)
 {
-	pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_consecutive_cells(2, &NIL);
 
-	type(x) = (T_PORT | T_ATOM);
+	type(x + 1) = type(x) = (T_PORT | T_ATOM);
 	x->_isfixnum = prop | port_file;
 	port_file(x) = fp;
-	port_next(x) = port_list;
-	port_list = x;
+	gcell_next(x) = gcell_list;
+	gcell_list = x;
 	return x;
 }
 
@@ -691,10 +657,10 @@ pointer mk_port_string(char *str, size_t size, int prop)
 	type(x + 1) = type(x) = (T_PORT | T_ATOM);
 	x->_isfixnum = prop | port_string;
 	port_file(x) = (FILE *)str;
-	port_next(x) = port_list;
-	port_list = x;
-	port_curr(x) = str;
 	port_size(x) = size;
+	gcell_next(x) = gcell_list;
+	gcell_list = x;
+	port_curr(x) = str;
 	return x;
 }
 
@@ -730,7 +696,7 @@ pointer forward(pointer x)
 	*next = *x;
 	type(x) = T_FORWARDED;
 	x->_object._forwarded = next;
-	if (is_strport(next)) {
+	if (is_string(next) || is_port(next)) {
 		*++next = *++x;
 		type(x) = T_FORWARDED;
 		x->_object._forwarded = next;
@@ -817,21 +783,25 @@ void gc(register pointer *a, register pointer *b)
 		++scan;
 	}
 
-	for (p = port_list, port_list = NIL; p != NIL; ) {
+	for (p = gcell_list, gcell_list = NIL; p != NIL; ) {
 		if (type(p) == T_FORWARDED) {
 			q = p->_object._forwarded;
-			p = port_next(q);
-			port_next(q) = port_list;
-			port_list = q;
+			p = gcell_next(q);
+			gcell_next(q) = gcell_list;
+			gcell_list = q;
 		} else {
-			if (port_file(p) != NULL) {
+			if (is_string(p)) {
+				if (strvalue(p) != NULL) {
+					free(strvalue(p));
+				}
+			} else if (port_file(p) != NULL) {
 				if (is_fileport(p)) {
 					fclose(port_file(p));
 				} else {
 					free(port_file(p));
 				}
 			}
-			p = port_next(p);
+			p = gcell_next(p);
 		}
 	}
 
@@ -948,7 +918,11 @@ void gc(register pointer *a, register pointer *b)
 		if (is_mark(p))
 			clrmark(p);
 		else {
-			if (is_port(p)) {
+			if (is_string(p)) {
+				if (strvalue(p) != NULL) {
+					free(strvalue(p));
+				}
+			} else if (is_port(p)) {
 				if (is_fileport(p) && port_file(p) != NULL) {
 					fclose(port_file(p));
 				} else if (is_strport(p) && port_file(p) != NULL) {
@@ -3305,8 +3279,6 @@ void init_scheme()
 {
 	if (alloc_cellseg() == 0)
 		FatalError("Unable to allocate initial cell segments");
-	if (!alloc_strseg(1))
-		FatalError("Unable to allocate initial string segments");
 #ifdef VERBOSE
 	gc_verbose = 1;
 #else
