@@ -1700,6 +1700,9 @@ enum {
 	OP_CHARUPCASE,
 	OP_CHARDNCASE,
 	OP_MKSTRING,
+	OP_STRLEN,
+	OP_STRREF,
+	OP_STRSET,
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
@@ -2536,6 +2539,36 @@ OP_LET2REC:
 			s_return(mk_empty_string(ivalue(car(args)), ' '));
 		}
 
+	case OP_STRLEN:		/* string-length */
+		if (!is_string(car(args))) {
+			Error_0("string-length -- first argument must be string");
+		}
+		s_return(mk_integer(strlength(car(args))));
+
+	case OP_STRREF:		/* string-ref */
+		if (!is_string(car(args))) {
+			Error_0("string-ref -- first argument must be string");
+		}
+		w = ivalue(cadr(args));
+		if (w >= (int)strlength(car(args))) {
+			Error_1("string-ref: out of bounds:", cadr(args));
+		}
+		s_return(mk_character(((unsigned char *)strvalue(car(args)))[w]));
+
+	case OP_STRSET:		/* string-set! */
+		if (!is_string(car(args))) {
+			Error_0("string-set! -- first argument must be string");
+		}
+		w = ivalue(cadr(args));
+		if (w >= (int)strlength(car(args))) {
+			Error_1("string-set!: out of bounds:", cadr(args));
+		}
+		if (!is_character(caddr(args))) {
+			Error_0("string-set! -- third argument must be charactor");
+		}
+		strvalue(car(args))[w] = (char)ivalue(caddr(args));
+		s_return(car(args));
+
 	case OP_NOT:		/* not */
 		s_retbool(isfalse(car(args)));
 	case OP_BOOL:		/* boolean? */
@@ -3184,6 +3217,9 @@ void init_procs()
 	mk_proc(OP_CHARUPCASE, "char-upcase");
 	mk_proc(OP_CHARDNCASE, "char-downcase");
 	mk_proc(OP_MKSTRING, "make-string");
+	mk_proc(OP_STRLEN, "string-length");
+	mk_proc(OP_STRREF, "string-ref");
+	mk_proc(OP_STRSET, "string-set!");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
