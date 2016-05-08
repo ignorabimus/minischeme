@@ -1782,6 +1782,141 @@ enum {
 	OP_MACROP,
 };
 
+#define TST_NONE 0
+#define TST_ANY "\001"
+#define TST_STRING "\002"
+#define TST_SYMBOL "\003"
+#define TST_PORT "\004"
+#define TST_INPORT "\005"
+#define TST_OUTPORT "\006"
+#define TST_ENVIRONMENT "\007"
+#define TST_PAIR "\010"
+#define TST_LIST "\011"
+#define TST_CHAR "\012"
+#define TST_VECTOR "\013"
+#define TST_NUMBER "\014"
+#define TST_INTEGER "\015"
+#define TST_NATURAL "\016"
+
+char msg[256];
+
+int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
+{
+	pointer x;
+	int n = 0, i = 0;
+
+	for (x = args; is_pair(x); x = cdr(x)) {
+		++n;
+	}
+
+	if (n < min_arity) {
+		snprintf(msg, sizeof(msg), "%s: needs%s %d argument(s)",
+			name, min_arity == max_arity ? "" : " at least", min_arity);
+		return 0;
+	} else if (n > max_arity) {
+		snprintf(msg, sizeof(msg), "%s: needs%s %d argument(s)",
+			name, min_arity == max_arity ? "" : " at most", max_arity);
+		return 0;
+	} else if (arg_tests) {
+		for (x = args; i++ < n; x = cdr(x)) {
+			switch (arg_tests[0]) {
+			case '\001': /* TST_ANY */
+				break;
+			case '\002': /* TST_STRING */
+				if (!is_string(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: string", name, i);
+					return 0;
+				}
+				break;
+			case '\003': /* TST_SYMBOL */
+				if (!is_symbol(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: symbol", name, i);
+					return 0;
+				}
+				break;
+			case '\004': /* TST_PORT */
+				if (!is_port(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: port", name, i);
+					return 0;
+				}
+				break;
+			case '\005': /* TST_INPORT */
+				if (!is_inport(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: input port", name, i);
+					return 0;
+				}
+				break;
+			case '\006': /* TST_OUTPORT */
+				if (!is_outport(car(x))) {
+					snprintf(msg, 256, "%s: argument %d must be: output port", name, i);
+					return 0;
+				}
+				break;
+			case '\007': /* TST_ENVIRONMENT */
+#if 0
+				if (!is_environment(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: environment", name, i);
+					return 0;
+				}
+#endif
+				break;
+			case '\010': /* TST_PAIR */
+				if (!is_pair(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: pair", name, i);
+					return 0;
+				}
+				break;
+			case '\011': /* TST_LIST */
+				if (!is_pair(car(x)) && car(x) != NIL) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: pair or '()", name, i);
+					return 0;
+				}
+				break;
+			case '\012': // TST_CHAR */
+				if (!is_character(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: character", name, i);
+					return 0;
+				}
+				break;
+			case '\013': /* TST_VECTOR */
+#if 0
+				if (!is_vector(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: vector", name, i);
+					return 0;
+				}
+#endif
+				break;
+			case '\014': /* TST_NUMBER */
+				if (!is_number(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: number", name, i);
+					return 0;
+				}
+				break;
+			case '\015': /* TST_INTEGER */
+				if (!is_integer(car(x))) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: integer", name, i);
+					return 0;
+				}
+				break;
+			case '\016': /* TST_NATURAL */
+				if (!is_integer(car(x)) || ivalue(car(x)) < 0) {
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: non-negative integer", name, i);
+					return 0;
+				}
+				break;
+			default:
+				break;
+			}
+
+			if (arg_tests[1] != 0) { /* last test is replicated as necessary */
+				arg_tests++;
+			}
+		}
+	}
+
+	return 1;
+}
+
 /* kernel of this intepreter */
 pointer Eval_Cycle(short operator)
 {
@@ -1911,9 +2046,7 @@ OP_APPLY:
 
 	switch (operator) {
 	case OP_LOAD:		/* load */
-		if (!is_string(car(args))) {
-			Error_0("load -- argument is not string");
-		}
+		if (!validargs("load", 1, 1, TST_STRING)) Error_0(msg);
 		if ((port_file(inport) = fopen(strvalue(car(args)), "r")) == NULL) {
 			port_file(inport) = srcfp;
 			Error_1("Unable to open", car(args));
@@ -1970,6 +2103,7 @@ OP_READ_INTERNAL:
 #endif
 
 	case OP_GENSYM:
+		if (!validargs("gensym", 0, 0, TST_NONE)) Error_0(msg);
 		s_return(gensym());
 
 	case OP_LAMBDA:	/* lambda */
@@ -2315,16 +2449,19 @@ OP_LET2REC:
 			s_return(NIL);
 		}
 	case OP_PAPPLY:	/* apply */
+		if (!validargs("apply", 1, 65535, TST_NONE)) Error_0(msg);
 		code = car(args);
 		args = cadr(args);
 		s_goto(OP_APPLY);
 
 	case OP_PEVAL:	/* eval */
+		if (!validargs("eval", 1, 1, TST_ANY)) Error_0(msg);
 		code = car(args);
 		args = NIL;
 		s_goto(OP_EVAL);
 
 	case OP_CONTINUATION:	/* call-with-current-continuation */
+		if (!validargs("call-with-current-continuation", 1, 1, TST_NONE)) Error_0(msg);
 		code = car(args);
 #ifndef USE_SCHEME_STACK
 		args = cons(mk_continuation(s_clone_save()), NIL);
@@ -2334,6 +2471,7 @@ OP_LET2REC:
 		s_goto(OP_APPLY);
 
 	case OP_ADD:		/* + */
+		if (!validargs("+", 0, 65535, TST_NUMBER)) Error_0(msg);
 		for (x = args, v = _ZERO; x != NIL; x = cdr(x)) {
 			if (v._isfixnum) {
 				if (car(x)->_isfixnum) {
@@ -2349,6 +2487,7 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_SUB:		/* - */
+		if (!validargs("-", 1, 65535, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
 			v = _ZERO;
 			x = args;
@@ -2371,6 +2510,7 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_MUL:		/* * */
+		if (!validargs("*", 0, 65535, TST_NUMBER)) Error_0(msg);
 		for (x = args, v = _ONE; x != NIL; x = cdr(x)) {
 			if (v._isfixnum) {
 				if (car(x)->_isfixnum) {
@@ -2386,6 +2526,7 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_DIV:		/* / */
+		if (!validargs("/", 1, 65535, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
 			v = _ONE;
 			x = args;
@@ -2412,9 +2553,7 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_QUO:		/* quotient */
-		if (args == NIL || cdr(args) == NIL) {
-			Error_0("Needs 2 arguments");
-		}
+		if (!validargs("quotient", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
 		x = cadr(args);
 		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
@@ -2434,9 +2573,7 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_REM:		/* remainder */
-		if (args == NIL || cdr(args) == NIL) {
-			Error_0("Needs 2 arguments");
-		}
+		if (!validargs("remainder", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
 		x = cadr(args);
 		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
@@ -2456,9 +2593,7 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_MOD:		/* modulo */
-		if (args == NIL || cdr(args) == NIL) {
-			Error_0("Needs 2 arguments");
-		}
+		if (!validargs("modulo", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
 		x = cadr(args);
 		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
@@ -2487,52 +2622,46 @@ OP_LET2REC:
 		s_return(mk_number(&v));
 
 	case OP_CAR:		/* car */
-		if (is_pair(car(args))) {
-			s_return(caar(args));
-		} else {
-			Error_0("Unable to car for non-cons cell");
-		}
+		if (!validargs("car", 1, 1, TST_PAIR)) Error_0(msg);
+		s_return(caar(args));
 
 	case OP_CDR:		/* cdr */
-		if (is_pair(car(args))) {
-			s_return(cdar(args));
-		} else {
-			Error_0("Unable to cdr for non-cons cell");
-		}
+		if (!validargs("cdr", 1, 1, TST_PAIR)) Error_0(msg);
+		s_return(cdar(args));
 
 	case OP_CONS:		/* cons */
+		if (!validargs("cons", 2, 2, TST_NONE)) Error_0(msg);
 		cdr(args) = cadr(args);
 		s_return(args);
 
 	case OP_SETCAR:	/* set-car! */
-		if (is_pair(car(args))) {
-			caar(args) = cadr(args);
-			s_return(car(args));
-		} else {
-			Error_0("Unable to set-car! for non-cons cell");
-		}
+		if (!validargs("set-car!", 2, 2, TST_PAIR TST_ANY)) Error_0(msg);
+		caar(args) = cadr(args);
+		s_return(car(args));
 
 	case OP_SETCDR:	/* set-cdr! */
-		if (is_pair(car(args))) {
-			cdar(args) = cadr(args);
-			s_return(car(args));
-		} else {
-			Error_0("Unable to set-cdr! for non-cons cell");
-		}
+		if (!validargs("set-cdr!", 2, 2, TST_PAIR TST_ANY)) Error_0(msg);
+		cdar(args) = cadr(args);
+		s_return(car(args));
 
 	case OP_CHAR2INT:	/* char->integer */
+		if (!validargs("char->integer", 1, 1, TST_CHAR)) Error_0(msg);
 		s_return(mk_integer(ivalue(car(args))));
 
 	case OP_INT2CHAR:	/* integer->char */
+		if (!validargs("integer->char", 1, 1, TST_NATURAL)) Error_0(msg);
 		s_return(mk_character((unsigned char)ivalue(car(args))));
 
 	case OP_CHARUPCASE:	/* char-upcase */
+		if (!validargs("char-upcase", 1, 1, TST_CHAR)) Error_0(msg);
 		s_return(mk_character(toupper((unsigned char)ivalue(car(args)))));
 
 	case OP_CHARDNCASE:	/* char-downcase */
+		if (!validargs("char-downcase", 1, 1, TST_CHAR)) Error_0(msg);
 		s_return(mk_character(tolower((unsigned char)ivalue(car(args)))));
 
 	case OP_MKSTRING:	/* make-string */
+		if (!validargs("make-string", 1, 2, TST_NATURAL TST_CHAR)) Error_0(msg);
 		if (cdr(args) != NIL) {
 			s_return(mk_empty_string(ivalue(car(args)), (char)ivalue(cadr(args))));
 		} else {
@@ -2540,15 +2669,11 @@ OP_LET2REC:
 		}
 
 	case OP_STRLEN:		/* string-length */
-		if (!is_string(car(args))) {
-			Error_0("string-length -- first argument must be string");
-		}
+		if (!validargs("string-length", 1, 1, TST_STRING)) Error_0(msg);
 		s_return(mk_integer(strlength(car(args))));
 
 	case OP_STRREF:		/* string-ref */
-		if (!is_string(car(args))) {
-			Error_0("string-ref -- first argument must be string");
-		}
+		if (!validargs("string-ref", 2, 2, TST_STRING TST_NATURAL)) Error_0(msg);
 		w = ivalue(cadr(args));
 		if (w >= (int)strlength(car(args))) {
 			Error_1("string-ref: out of bounds:", cadr(args));
@@ -2556,56 +2681,70 @@ OP_LET2REC:
 		s_return(mk_character(((unsigned char *)strvalue(car(args)))[w]));
 
 	case OP_STRSET:		/* string-set! */
-		if (!is_string(car(args))) {
-			Error_0("string-set! -- first argument must be string");
-		}
+		if (!validargs("string-set!", 3, 3, TST_STRING TST_NATURAL TST_CHAR)) Error_0(msg);
 		w = ivalue(cadr(args));
 		if (w >= (int)strlength(car(args))) {
 			Error_1("string-set!: out of bounds:", cadr(args));
-		}
-		if (!is_character(caddr(args))) {
-			Error_0("string-set! -- third argument must be charactor");
 		}
 		strvalue(car(args))[w] = (char)ivalue(caddr(args));
 		s_return(car(args));
 
 	case OP_NOT:		/* not */
+		if (!validargs("not", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(isfalse(car(args)));
 	case OP_BOOL:		/* boolean? */
+		if (!validargs("boolean?", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(car(args) == F || car(args) == T);
 	case OP_NULL:		/* null? */
+		if (!validargs("null?", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(car(args) == NIL);
 	case OP_EOFOBJP:	/* eof-object? */
+		if (!validargs("eof-object?", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(car(args) == EOF_OBJ);
 	case OP_ZEROP:		/* zero? */
+		if (!validargs("zero?", 1, 1, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) == 0);
 	case OP_POSP:		/* positive? */
+		if (!validargs("positive?", 1, 1, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) > 0);
 	case OP_NEGP:		/* negative? */
+		if (!validargs("negative?", 1, 1, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) < 0);
 	case OP_NEQ:		/* = */
+		if (!validargs("=", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) == nvalue(cadr(args)));
 	case OP_LESS:		/* < */
+		if (!validargs("<", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) < nvalue(cadr(args)));
 	case OP_GRE:		/* > */
+		if (!validargs(">", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) > nvalue(cadr(args)));
 	case OP_LEQ:		/* <= */
+		if (!validargs("<=", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) <= nvalue(cadr(args)));
 	case OP_GEQ:		/* >= */
+		if (!validargs(">=", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) >= nvalue(cadr(args)));
 	case OP_SYMBOL:		/* symbol? */
+		if (!validargs("symbol?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_symbol(car(args)));
 	case OP_NUMBER:		/* number? */
+		if (!validargs("number?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_number(car(args)));
 	case OP_STRING:		/* string? */
+		if (!validargs("string?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_string(car(args)));
 	case OP_INTEGER:	/* integer? */
+		if (!validargs("integer?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_integer(car(args)));
 	case OP_REAL:		/* real? */
+		if (!validargs("real?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_number(car(args)));
 	case OP_CHAR:		/* char? */
+		if (!validargs("char?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_character(car(args)));
 	case OP_PROC:		/* procedure? */
+		if (!validargs("procedure?", 1, 1, TST_ANY)) Error_0(msg);
 		/*--
 		 * continuation should be procedure by the example
 		 * (call-with-current-continuation procedure?) ==> #t
@@ -2614,19 +2753,26 @@ OP_LET2REC:
 		s_retbool(is_proc(car(args)) || is_closure(car(args))
 			  || is_continuation(car(args)));
 	case OP_PAIR:		/* pair? */
+		if (!validargs("pair?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_pair(car(args)));
 	case OP_PORTP:		/* port? */
+		if (!validargs("port?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_port(car(args)));
 	case OP_INPORTP:	/* input-port? */
+		if (!validargs("input-port?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_inport(car(args)));
 	case OP_OUTPORTP:	/* output-port? */
+		if (!validargs("output-port?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_outport(car(args)));
 	case OP_EQ:		/* eq? */
+		if (!validargs("eq?", 2, 2, TST_ANY)) Error_0(msg);
 		s_retbool(car(args) == cadr(args));
 	case OP_EQV:		/* eqv? */
+		if (!validargs("eqv?", 2, 2, TST_ANY)) Error_0(msg);
 		s_retbool(eqv(car(args), cadr(args)));
 
 	case OP_FORCE:		/* force */
+		if (!validargs("force", 1, 1, TST_ANY)) Error_0(msg);
 		code = car(args);
 		if (is_promise(code)) {
 			if (is_resultready(code)) {
@@ -2646,11 +2792,21 @@ OP_LET2REC:
 		s_return(value);
 
 	case OP_WRITE_CHAR:	/* write-char */
-		if (!is_character(car(args))) {
-			Error_0("write-char -- first argument must be character");
-		}
 	case OP_WRITE:		/* write */
 	case OP_DISPLAY:	/* display */
+		switch (operator) {
+		case OP_WRITE_CHAR:
+			if (!validargs("write-char", 1, 2, TST_CHAR TST_OUTPORT)) Error_0(msg);
+			break;
+		case OP_WRITE:
+			if (!validargs("write", 1, 2, TST_ANY TST_OUTPORT)) Error_0(msg);
+			break;
+		case OP_DISPLAY:
+			if (!validargs("display", 1, 2, TST_ANY TST_OUTPORT)) Error_0(msg);
+			break;
+		default:
+			break;
+		}
 		if (is_pair(cdr(args))) {
 			if (cadr(args) != outport) {
 				x = cons(outport, NIL);
@@ -2663,6 +2819,7 @@ OP_LET2REC:
 		s_goto(OP_P0LIST);
 
 	case OP_NEWLINE:	/* newline */
+		if (!validargs("newline", 0, 1, TST_OUTPORT)) Error_0(msg);
 		if (is_pair(args)) {
 			if (car(args) != outport) {
 				x = cons(outport, NIL);
@@ -2674,9 +2831,7 @@ OP_LET2REC:
 		s_return(T);
 
 	case OP_ERR0:	/* error */
-		if (!is_string(car(args))) {
-			Error_0("error -- first argument must be string");
-		}
+		if (!validargs("error", 1, 65535, TST_NONE)) Error_0(msg);
 		tmpfp = port_file(outport);
 		port_file(outport) = stderr;
 		fprintf(stderr, "Error: ");
@@ -2700,12 +2855,15 @@ OP_ERR1:
 		}
 
 	case OP_REVERSE:	/* reverse */
+		if (!validargs("reverse", 1, 1, TST_LIST)) Error_0(msg);
 		s_return(reverse(car(args)));
 
 	case OP_APPEND:	/* append */
+		if (!validargs("append", 0, 65535, TST_NONE)) Error_0(msg);
 		s_return(append(car(args), cadr(args)));
 
 	case OP_PUT:		/* put */
+		if (!validargs("put", 3, 3, TST_NONE)) Error_0(msg);
 		if (!hasprop(car(args)) || !hasprop(cadr(args))) {
 			Error_0("Illegal use of put");
 		}
@@ -2721,6 +2879,7 @@ OP_ERR1:
 		s_return(T);
 
 	case OP_GET:		/* get */
+		if (!validargs("get", 2, 2, TST_NONE)) Error_0(msg);
 		if (!hasprop(car(args)) || !hasprop(cadr(args))) {
 			Error_0("Illegal use of get");
 		}
@@ -2734,29 +2893,30 @@ OP_ERR1:
 		}
 
 	case OP_QUIT:		/* quit */
+		if (!validargs("quit", 0, 0, TST_NONE)) Error_0(msg);
 		break;
 
 	case OP_GC:		/* gc */
+		if (!validargs("gc", 0, 0, TST_NONE)) Error_0(msg);
 		gc(&NIL, &NIL);
 		s_return(T);
 
 	case OP_GCVERB:		/* gc-verbose */
-	{
-		int was = gc_verbose;
+		if (!validargs("gc-verbose", 0, 1, TST_NONE)) Error_0(msg);
+		w = gc_verbose;
 		gc_verbose = (car(args) != F);
-		s_retbool(was);
-	}
+		s_retbool(w);
 
 	case OP_CURR_INPORT:	/* current-input-port */
+		if (!validargs("current-input-port", 0, 0, TST_NONE)) Error_0(msg);
 		s_return(inport);
 
 	case OP_CURR_OUTPORT:	/* current-output-port */
+		if (!validargs("current-output-port", 0, 0, TST_NONE)) Error_0(msg);
 		s_return(outport);
 
 	case OP_OPEN_INFILE:	/* open-input-file */
-		if (!is_string(car(args))) {
-			Error_0("open-input-file -- first argument must be string");
-		}
+		if (!validargs("open-input-file", 1, 1, TST_STRING)) Error_0(msg);
 		x = port_from_filename(strvalue(car(args)), port_input);
 		if (x == NIL) {
 			s_return(F);
@@ -2764,9 +2924,7 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_OUTFILE:	/* open-output-file */
-		if (!is_string(car(args))) {
-			Error_0("open-output-file -- first argument must be string");
-		}
+		if (!validargs("open-output-file", 1, 1, TST_STRING)) Error_0(msg);
 		x = port_from_filename(strvalue(car(args)), port_output);
 		if (x == NIL) {
 			s_return(F);
@@ -2774,9 +2932,7 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_INOUTFILE:	/* open-input-output-file */
-		if (!is_string(car(args))) {
-			Error_0("open-input-output-file -- first argument must be string");
-		}
+		if (!validargs("open-input-output-file", 1, 1, TST_STRING)) Error_0(msg);
 		x = port_from_filename(strvalue(car(args)), port_input | port_output);
 		if (x == NIL) {
 			s_return(F);
@@ -2784,9 +2940,7 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_INSTRING:	/* open-input-string */
-		if (!is_string(car(args))) {
-			Error_0("open-input-string -- first argument must be string");
-		}
+		if (!validargs("open-input-string", 1, 1, TST_STRING)) Error_0(msg);
 		x = port_from_string(strvalue(car(args)), strlen(strvalue(car(args))), port_input);
 		if (x == NIL) {
 			s_return(F);
@@ -2794,6 +2948,7 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_OUTSTRING:	/* open-output-string */
+		if (!validargs("open-output-string", 0, 0, TST_NONE)) Error_0(msg);
 		x = port_from_scratch();
 		if (x == NIL) {
 			s_return(F);
@@ -2801,9 +2956,7 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_OPEN_INOUTSTRING:	/* open-input-output-string */
-		if (!is_string(car(args))) {
-			Error_0("open-input-string -- first argument must be string");
-		}
+		if (!validargs("open-input-output-string", 1, 1, TST_STRING)) Error_0(msg);
 		x = port_from_string(strvalue(car(args)), strlen(strvalue(car(args))), port_input | port_output);
 		if (x == NIL) {
 			s_return(F);
@@ -2811,6 +2964,7 @@ OP_ERR1:
 		s_return(x);
 
 	case OP_GET_OUTSTRING:	/* get-output-string */
+		if (!validargs("get-output-string", 1, 1, TST_OUTPORT)) Error_0(msg);
 		x = car(args);
 		if (is_strport(x) && port_file(x) != NULL) {
 			s_return(mk_string((char *)port_file(x)));
@@ -2818,15 +2972,18 @@ OP_ERR1:
 		s_return(F);
 
 	case OP_CLOSE_INPORT: /* close-input-port */
+		if (!validargs("close-input-port", 1, 1, TST_INPORT)) Error_0(msg);
 		port_close(car(args), port_input);
 		s_return(T);
 
 	case OP_CLOSE_OUTPORT: /* close-output-port */
+		if (!validargs("close-output-port", 1, 1, TST_OUTPORT)) Error_0(msg);
 		port_close(car(args), port_output);
 		s_return(T);
 
 		/* ========== reading part ========== */
 	case OP_READ:			/* read */
+		if (!validargs("read", 0, 1, TST_INPORT)) Error_0(msg);
 		if (is_pair(args)) {
 			if (!is_inport(car(args))) {
 				Error_1("read: not an input port:", car(args));
@@ -2842,6 +2999,16 @@ OP_ERR1:
 
 	case OP_READ_CHAR:		/* read-char */
 	case OP_PEEK_CHAR:		/* peek-char */
+		switch (operator) {
+		case OP_READ_CHAR:
+			if (!validargs("read-char", 0, 1, TST_INPORT)) Error_0(msg);
+			break;
+		case OP_PEEK_CHAR:
+			if (!validargs("peek-char", 0, 1, TST_INPORT)) Error_0(msg);
+			break;
+		default:
+			break;
+		}
 		if (is_pair(args)) {
 			if (car(args) != inport) {
 				x = inport;
@@ -2860,10 +3027,12 @@ OP_ERR1:
 		s_return(mk_character(w));
 
 	case OP_SET_INPORT:		/* set-input-port */
+		if (!validargs("set-input-port", 1, 1, TST_INPORT)) Error_0(msg);
 		inport = car(args);
 		s_return(value);
 
 	case OP_SET_OUTPORT:	/* set-output-port */
+		if (!validargs("set-output-port", 1, 1, TST_OUTPORT)) Error_0(msg);
 		outport = car(args);
 		s_return(value);
 
@@ -3001,11 +3170,13 @@ OP_P0LIST:
 		}
 
 	case OP_LIST_LENGTH:	/* length */	/* a.k */
+		if (!validargs("length", 1, 1, TST_LIST)) Error_0(msg);
 		for (x = car(args), w = 0; is_pair(x); x = cdr(x))
 			++w;
 		s_return(mk_integer(w));
 
 	case OP_ASSQ:		/* assq */	/* a.k */
+		if (!validargs("assq", 2, 2, TST_NONE)) Error_0(msg);
 		x = car(args);
 		for (y = cadr(args); is_pair(y); y = cdr(y)) {
 			if (!is_pair(car(y))) {
@@ -3072,6 +3243,7 @@ OP_P0_WIDTH:
 		}
 
 	case OP_GET_CLOSURE:	/* get-closure-code */	/* a.k */
+		if (!validargs("get-closure-code", 1, 1, TST_NONE)) Error_0(msg);
 		args = car(args);
 		if (args == NIL) {
 			s_return(F);
@@ -3086,6 +3258,7 @@ OP_P0_WIDTH:
 		}
 
 	case OP_CLOSUREP:		/* closure? */
+		if (!validargs("closure?", 1, 1, TST_NONE)) Error_0(msg);
 		/*
 		 * Note, macro object is also a closure.
 		 * Therefore, (closure? <#MACRO>) ==> #t
@@ -3096,6 +3269,7 @@ OP_P0_WIDTH:
 		s_retbool(is_closure(car(args)));
 #ifdef USE_MACRO
 	case OP_MACROP:		/* macro? */
+		if (!validargs("macro?", 1, 1, TST_NONE)) Error_0(msg);
 		if (car(args) == NIL) {
 			s_return(F);
 		}
