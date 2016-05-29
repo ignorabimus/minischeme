@@ -110,11 +110,12 @@ typedef struct cell *pointer;
 #define T_CONTINUATION 128	/* 0000000010000000 */
 #define T_CHARACTER    256	/* 0000000100000000 */
 #define T_PORT         512	/* 0000001000000000 */
+#define T_VECTOR      1024	/* 0000010000000000 */
 #ifdef USE_MACRO
-# define T_MACRO      1024	/* 0000010000000000 */
+# define T_MACRO      2048	/* 0000100000000000 */
 #endif
-#define T_PROMISE     2048	/* 0000100000000000 */
-#define T_RESULTREADY 4096	/* 0001000000000000 */
+#define T_PROMISE     4096	/* 0001000000000000 */
+#define T_RESULTREADY 8192	/* 0010000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -179,6 +180,8 @@ enum {
 #define port_file(p)    ((p)->_object._port._file)
 #define port_size(p)    ((p)->_object._port._size)
 #define port_curr(p)    ((char *)cdr((p) + 1))
+
+#define is_vector(p)    (type(p)&T_VECTOR)
 
 #define is_promise(p)   (type(p)&T_PROMISE)
 #define setpromise(p)   type(p) |= T_PROMISE
@@ -664,6 +667,50 @@ pointer mk_port_string(char *str, size_t size, int prop)
 	return x;
 }
 
+void fill_vector(pointer v, pointer a, int n)
+{
+	int i;
+
+	for (i = 1; i < n; i++) {
+		type(v + i) = T_PAIR;
+		cdr(v + i) = car(v + i) = a;
+	}
+}
+
+pointer mk_vector(int len)
+{
+	int n = 1 + len / 2 + len % 2;
+	pointer x = get_consecutive_cells(n, &NIL);
+
+	type(x) = (T_VECTOR | T_ATOM);
+	ivalue(x) = len;
+	set_num_integer(x);
+	fill_vector(x, NIL, n);
+	return x;
+}
+
+pointer vector_elem(pointer v, int i)
+{
+	pointer x = v + 1 + i / 2;
+
+	if (i % 2 == 0) {
+		return car(x);
+	} else {
+		return cdr(x);
+	}
+}
+
+pointer set_vector_elem(pointer v, int i, pointer a)
+{
+	pointer x = v + 1 + i / 2;
+
+	if (i % 2 == 0) {
+		return car(x) = a;
+	} else {
+		return cdr(x) = a;
+	}
+}
+
 #ifndef USE_SCHEME_STACK
 /* get dump stack */
 pointer mk_dumpstack(pointer next)
@@ -701,6 +748,15 @@ pointer forward(pointer x)
 		type(x) = T_FORWARDED;
 		x->_object._forwarded = next;
 		return next++ - 1;
+	} else if (is_vector(next)) {
+		int i;
+		int n = ivalue(next) / 2 + ivalue(next) % 2;
+		for (i = 0; i < n; i++) {
+			*++next = *++x;
+			type(x) = T_FORWARDED;
+			x->_object._forwarded = next;
+		}
+		return next++ - n;
 	}
 	return next++;
 }
@@ -761,12 +817,13 @@ void gc(register pointer *a, register pointer *b)
 	*b = forward(*b);
 
 	while (scan < next) {
-		switch (type(scan) & 0x03ff) {
+		switch (type(scan) & 0x07ff) {
 		case T_STRING:
 		case T_NUMBER:
 		case T_PROC:
 		case T_CHARACTER:
 		case T_PORT:
+		case T_VECTOR:
 			break;
 		case T_SYMBOL:
 		case T_SYNTAX | T_SYMBOL:
@@ -833,6 +890,12 @@ void mark(register pointer p)
 E2:	setmark(p);
 	if (is_strport(p)) {
 		setmark(p + 1);
+	} else if (is_vector(p)) {
+		int i;
+		int n = 1 + ivalue(p) / 2 + ivalue(p) % 2;
+		for (i = 1; i < n; i++) {
+			mark(p + i);
+		}
 	}
 	if (is_atom(p))
 		goto E6;
@@ -1035,6 +1098,7 @@ void port_close(pointer p, int flag)
 # define TOK_ATMARK  9
 #endif
 #define TOK_SHARP   10
+#define TOK_VEC     11
 
 char    strbuff[256];
 
@@ -1304,7 +1368,12 @@ int token()
 		}
 #endif
 	case '#':
-		return TOK_SHARP;
+		if ((c = inchar()) == '(') {
+			return TOK_VEC;
+		} else {
+			backchar(c);
+			return TOK_SHARP;
+		}
 	default:
 		backchar(c);
 		return TOK_ATOM;
@@ -1703,6 +1772,11 @@ enum {
 	OP_STRLEN,
 	OP_STRREF,
 	OP_STRSET,
+	OP_VECTOR,
+	OP_MKVECTOR,
+	OP_VECLEN,
+	OP_VECREF,
+	OP_VECSET,
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
@@ -1726,6 +1800,7 @@ enum {
 	OP_PORTP,
 	OP_INPORTP,
 	OP_OUTPORTP,
+	OP_VECTORP,
 	OP_EQ,
 	OP_EQV,
 	OP_FORCE,
@@ -1766,11 +1841,14 @@ enum {
 	OP_RDDOT,
 	OP_RDQUOTE,
 	OP_RDQQUOTE,
+	OP_RDQQUOTEVEC,
 	OP_RDUNQUOTE,
 	OP_RDUQTSP,
+	OP_RDVEC,
 
 	OP_P0LIST,
 	OP_P1LIST,
+	OP_PVECFROM,
 
 	OP_LIST_LENGTH,
 	OP_ASSQ,
@@ -1879,12 +1957,10 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 				}
 				break;
 			case '\013': /* TST_VECTOR */
-#if 0
 				if (!is_vector(car(x))) {
 					snprintf(msg, sizeof(msg), "%s: argument %d must be: vector", name, i);
 					return 0;
 				}
-#endif
 				break;
 			case '\014': /* TST_NUMBER */
 				if (!is_number(car(x))) {
@@ -2689,6 +2765,47 @@ OP_LET2REC:
 		strvalue(car(args))[w] = (char)ivalue(caddr(args));
 		s_return(car(args));
 
+	case OP_VECTOR:		/* vector */
+OP_VECTOR:
+		if (!validargs("vector", 0, 65535, TST_NONE)) Error_0(msg);
+		for (x = args, w = 0; is_pair(x); x = cdr(x))
+			++w;
+		y = mk_vector(w);
+		for (x = args, w = 0; is_pair(x); x = cdr(x)) {
+			set_vector_elem(y, w++, car(x));
+		}
+		s_return(y);
+
+	case OP_MKVECTOR:	/* make-vector */
+		if (!validargs("make-vector", 1, 2, TST_NATURAL TST_ANY)) Error_0(msg);
+		w = ivalue(car(args));
+		x = mk_vector(w);
+		if (cdr(args) != NIL) {
+			fill_vector(x, cadr(args), w);
+		}
+		s_return(x);
+
+	case OP_VECLEN:		/* vector-length */
+		if (!validargs("vector-length", 1, 1, TST_VECTOR)) Error_0(msg);
+		s_return(mk_integer(ivalue(car(args))));
+
+	case OP_VECREF:		/* vector-ref */
+		if (!validargs("vector-ref", 2, 2, TST_VECTOR TST_NATURAL)) Error_0(msg);
+		w = ivalue(cadr(args));
+		if (w >= ivalue(car(args))) {
+		   Error_1("vector-ref: out of bounds:", cadr(args));
+		}
+		s_return(vector_elem(car(args), w));
+
+	case OP_VECSET:		/* vector-set! */
+		if (!validargs("vector-set!", 3, 3, TST_VECTOR TST_NATURAL TST_ANY)) Error_0(msg);
+		w = ivalue(cadr(args));
+		if (w >= ivalue(car(args))) {
+		   Error_1("vector-set!: out of bounds:", cadr(args));
+		}
+		set_vector_elem(car(args), w, caddr(args));
+		s_return(car(args));
+
 	case OP_NOT:		/* not */
 		if (!validargs("not", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(isfalse(car(args)));
@@ -2764,6 +2881,9 @@ OP_LET2REC:
 	case OP_OUTPORTP:	/* output-port? */
 		if (!validargs("output-port?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_outport(car(args)));
+	case OP_VECTORP:	/* vector? */
+		if (!validargs("vector?", 1, 1, TST_ANY)) Error_0(msg);
+		s_retbool(is_vector(car(args)));
 	case OP_EQ:		/* eq? */
 		if (!validargs("eq?", 2, 2, TST_ANY)) Error_0(msg);
 		s_retbool(car(args) == cadr(args));
@@ -3041,6 +3161,9 @@ OP_RDSEXPR:
 		switch (tok) {
 		case TOK_EOF:
 			s_return(EOF_OBJ);
+		case TOK_VEC:
+			s_save(OP_RDVEC, NIL, NIL);
+			/* fall through */
 		case TOK_LPAREN:
 			tok = token();
 			if (tok == TOK_RPAREN) {
@@ -3057,8 +3180,13 @@ OP_RDSEXPR:
 			s_goto(OP_RDSEXPR);
 #ifdef USE_QQUOTE
 		case TOK_BQUOTE:
-			s_save(OP_RDQQUOTE, NIL, NIL);
 			tok = token();
+			if (tok == TOK_VEC) {
+				s_save(OP_RDQQUOTEVEC, NIL, NIL);
+				tok = TOK_LPAREN;
+			} else {
+				s_save(OP_RDQQUOTE, NIL, NIL);
+			}
 			s_goto(OP_RDSEXPR);
 		case TOK_COMMA:
 			s_save(OP_RDUNQUOTE, NIL, NIL);
@@ -3116,6 +3244,16 @@ OP_RDSEXPR:
 		x = cons(value, NIL);
 		s_return(cons(QQUOTE, x));
 
+	case OP_RDQQUOTEVEC:
+		x = cons(value, NIL);
+		x = cons(QQUOTE, x);
+		x = cons(x, NIL);
+		push_sink(&x);
+		x = cons(mk_symbol("vector"), x);
+		x = cons(mk_symbol("apply"), x);
+		pop_sink();
+		s_return(x);
+
 	case OP_RDUNQUOTE:
 		x = cons(value, NIL);
 		s_return(cons(UNQUOTE, x));
@@ -3124,11 +3262,18 @@ OP_RDSEXPR:
 		x = cons(value, NIL);
 		s_return(cons(UNQUOTESP, x));
 #endif
+	case OP_RDVEC:
+		args = value;
+		s_goto(OP_VECTOR);
 
 	/* ========== printing part ========== */
 	case OP_P0LIST:
 OP_P0LIST:
-		if (!is_pair(args)) {
+		if (is_vector(args)) {
+			putstr("#(");
+			args = cons(args, mk_integer(0));
+			s_goto(OP_PVECFROM);
+		} else if (!is_pair(args)) {
 			printatom(args, print_flag);
 			s_return(T);
 		} else if (car(args) == QUOTE && ok_abbrev(cdr(args))) {
@@ -3160,6 +3305,10 @@ OP_P0LIST:
 			putstr(" ");
 			args = car(args);
 			s_goto(OP_P0LIST);
+		} else if (is_vector(args)) {
+			s_save(OP_P1LIST, NIL, NIL);
+			putstr(" . ");
+			s_goto(OP_P0LIST);
 		} else {
 			if (args != NIL) {
 				putstr(" . ");
@@ -3167,6 +3316,22 @@ OP_P0LIST:
 			}
 			putstr(")");
 			s_return(T);
+		}
+
+	case OP_PVECFROM:
+OP_PVECFROM:
+		w = ivalue(cdr(args));
+		x = car(args);
+		if (w == ivalue(x)) {
+			putstr(")");
+			s_return(T);
+		} else {
+			ivalue(cdr(args)) = w + 1;
+			y = args;
+			args = vector_elem(x, w);
+			s_save(OP_PVECFROM, y, NIL);
+			if (w > 0) putstr(" ");
+			s_goto(OP_P0LIST);
 		}
 
 	case OP_LIST_LENGTH:	/* length */	/* a.k */
@@ -3394,6 +3559,11 @@ void init_procs()
 	mk_proc(OP_STRLEN, "string-length");
 	mk_proc(OP_STRREF, "string-ref");
 	mk_proc(OP_STRSET, "string-set!");
+	mk_proc(OP_VECTOR, "vector");
+	mk_proc(OP_MKVECTOR, "make-vector");
+	mk_proc(OP_VECLEN, "vector-length");
+	mk_proc(OP_VECREF, "vector-ref");
+	mk_proc(OP_VECSET, "vector-set!");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
@@ -3407,6 +3577,7 @@ void init_procs()
 	mk_proc(OP_PORTP, "port?");
 	mk_proc(OP_INPORTP, "input-port?");
 	mk_proc(OP_OUTPORTP, "output-port?");
+	mk_proc(OP_VECTORP, "vector?");
 	mk_proc(OP_EQV, "eqv?");
 	mk_proc(OP_EQ, "eq?");
 	mk_proc(OP_NULL, "null?");
