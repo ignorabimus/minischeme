@@ -231,8 +231,10 @@ struct cell _ONE;		/* special cell representing integer 1 */
 pointer inport = &_NIL;		/* pointer to current-input-port */
 pointer outport = &_NIL;	/* pointer to current-output-port */
 
+#ifdef USE_COPYING_GC
 pointer gcell_list = &_NIL;	/* pointer to cell table */
 #define gcell_next(p) car((p) + 1)
+#endif
 
 /* global pointers to special symbols */
 pointer LAMBDA;			/* pointer to syntax lambda */
@@ -479,11 +481,14 @@ pointer mk_string(char *str)
 
 	size_t len = strlen(str);
 
-	type(x + 1) = type(x) = (T_STRING | T_ATOM);
+	type(x) = (T_STRING | T_ATOM);
 	strvalue(x) = store_string(len, str, 0);
 	strlength(x) = len;
+#ifdef USE_COPYING_GC
+	type(x + 1) = (T_STRING | T_ATOM);
 	gcell_next(x) = gcell_list;
 	gcell_list = x;
+#endif
 	return x;
 }
 
@@ -491,11 +496,14 @@ pointer mk_empty_string(size_t len, char fill)
 {
 	pointer x = get_consecutive_cells(2, &NIL);
 
-	type(x + 1) = type(x) = (T_STRING | T_ATOM);
+	type(x) = (T_STRING | T_ATOM);
 	strvalue(x) = store_string(len, 0, fill);
 	strlength(x) = len;
+#ifdef USE_COPYING_GC
+	type(x + 1) = (T_STRING | T_ATOM);
 	gcell_next(x) = gcell_list;
 	gcell_list = x;
+#endif
 	return x;
 }
 
@@ -648,8 +656,10 @@ pointer mk_port(FILE *fp, int prop)
 	type(x + 1) = type(x) = (T_PORT | T_ATOM);
 	x->_isfixnum = prop | port_file;
 	port_file(x) = fp;
+#ifdef USE_COPYING_GC
 	gcell_next(x) = gcell_list;
 	gcell_list = x;
+#endif
 	return x;
 }
 
@@ -661,8 +671,10 @@ pointer mk_port_string(char *str, size_t size, int prop)
 	x->_isfixnum = prop | port_string;
 	port_file(x) = (FILE *)str;
 	port_size(x) = size;
+#ifdef USE_COPYING_GC
 	gcell_next(x) = gcell_list;
 	gcell_list = x;
+#endif
 	port_curr(x) = str;
 	return x;
 }
@@ -888,7 +900,7 @@ void mark(register pointer p)
 	register pointer t = 0, q;
 
 E2:	setmark(p);
-	if (is_strport(p)) {
+	if (is_port(p)) {
 		setmark(p + 1);
 	} else if (is_vector(p)) {
 		int i;
@@ -986,6 +998,12 @@ void gc(register pointer *a, register pointer *b)
 					free(strvalue(p));
 				}
 			} else if (is_port(p)) {
+				type(p) = 0;
+				cdr(p) = free_cell;
+				car(p) = NIL;
+				free_cell = p;
+				++fcells;
+				--p;
 				if (is_fileport(p) && port_file(p) != NULL) {
 					fclose(port_file(p));
 				} else if (is_strport(p) && port_file(p) != NULL) {
