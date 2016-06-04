@@ -1609,6 +1609,33 @@ pointer append(register pointer a, register pointer b)
 	return p;
 }
 
+/* list length */
+int list_length(pointer a)
+{
+	int i = 0;
+	pointer slow, fast;
+
+	slow = fast = a;
+	while (1) {
+		if (fast == NIL)
+			return i;
+		if (!is_pair(fast))
+			return -2 - i;
+		fast = cdr(fast);
+		++i;
+		if (fast == NIL)
+			return i;
+		if (!is_pair(fast))
+			return -2 - i;
+		++i;
+		fast = cdr(fast);
+		slow = cdr(slow);
+		if (fast == slow) {
+			return -1;
+		}
+	}
+}
+
 /* equivalence of atoms */
 int eqv(register pointer a, register pointer b)
 {
@@ -1825,6 +1852,7 @@ enum {
 	OP_CHAR,
 	OP_PROC,
 	OP_PAIR,
+	OP_LISTP,
 	OP_PORTP,
 	OP_INPORTP,
 	OP_OUTPORTP,
@@ -2828,8 +2856,10 @@ OP_LET2REC:
 	case OP_VECTOR:		/* vector */
 OP_VECTOR:
 		if (!validargs("vector", 0, 65535, TST_NONE)) Error_0(msg);
-		for (x = args, w = 0; is_pair(x); x = cdr(x))
-			++w;
+		w = list_length(args);
+		if (w < 0) {
+			Error_1("vector: not a proper list:", args);
+		}
 		y = mk_vector(w);
 		for (x = args, w = 0; is_pair(x); x = cdr(x)) {
 			set_vector_elem(y, w++, car(x));
@@ -2932,6 +2962,9 @@ OP_VECTOR:
 	case OP_PAIR:		/* pair? */
 		if (!validargs("pair?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_pair(car(args)));
+	case OP_LISTP:		/* list? */
+		if (!validargs("list?", 1, 1, TST_ANY)) Error_0(msg);
+		s_retbool(list_length(car(args)) >= 0);
 	case OP_PORTP:		/* port? */
 		if (!validargs("port?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_port(car(args)));
@@ -3408,8 +3441,10 @@ OP_PVECFROM:
 
 	case OP_LIST_LENGTH:	/* length */	/* a.k */
 		if (!validargs("length", 1, 1, TST_LIST)) Error_0(msg);
-		for (x = car(args), w = 0; is_pair(x); x = cdr(x))
-			++w;
+		w = list_length(car(args));
+		if (w < 0) {
+			Error_1("length: not a list:", car(args));
+		}
 		s_return(mk_integer(w));
 
 	case OP_ASSQ:		/* assq */	/* a.k */
@@ -3647,6 +3682,7 @@ void init_procs()
 	mk_proc(OP_CHAR, "char?");
 	mk_proc(OP_PROC, "procedure?");
 	mk_proc(OP_PAIR, "pair?");
+	mk_proc(OP_LISTP, "list?");
 	mk_proc(OP_PORTP, "port?");
 	mk_proc(OP_INPORTP, "input-port?");
 	mk_proc(OP_OUTPORTP, "output-port?");
