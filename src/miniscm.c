@@ -1850,6 +1850,16 @@ enum {
 	OP_INTEGER,
 	OP_REAL,
 	OP_CHAR,
+	OP_CHAREQU,
+	OP_CHARLSS,
+	OP_CHARGTR,
+	OP_CHARLEQ,
+	OP_CHARGEQ,
+	OP_CHARCIEQU,
+	OP_CHARCILSS,
+	OP_CHARCIGTR,
+	OP_CHARCILEQ,
+	OP_CHARCIGEQ,
 	OP_PROC,
 	OP_PAIR,
 	OP_LISTP,
@@ -2950,6 +2960,36 @@ OP_VECTOR:
 	case OP_CHAR:		/* char? */
 		if (!validargs("char?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_character(car(args)));
+	case OP_CHAREQU:	/* char=? */
+		if (!validargs("char=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(ivalue(car(args)) == ivalue(cadr(args)));
+	case OP_CHARLSS:	/* char<? */
+		if (!validargs("char<?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(ivalue(car(args)) < ivalue(cadr(args)));
+	case OP_CHARGTR:	/* char>? */
+		if (!validargs("char>?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(ivalue(car(args)) > ivalue(cadr(args)));
+	case OP_CHARLEQ:	/* char<=? */
+		if (!validargs("char<=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(ivalue(car(args)) <= ivalue(cadr(args)));
+	case OP_CHARGEQ:	/* char>=? */
+		if (!validargs("char>=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(ivalue(car(args)) >= ivalue(cadr(args)));
+	case OP_CHARCIEQU:	/* char-ci=? */
+		if (!validargs("char-ci=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(tolower((unsigned char)ivalue(car(args))) == tolower((unsigned char)ivalue(cadr(args))));
+	case OP_CHARCILSS:	/* char-ci<? */
+		if (!validargs("char-ci<?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(tolower((unsigned char)ivalue(car(args))) < tolower((unsigned char)ivalue(cadr(args))));
+	case OP_CHARCIGTR:	/* char-ci>? */
+		if (!validargs("char-ci>?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(tolower((unsigned char)ivalue(car(args))) > tolower((unsigned char)ivalue(cadr(args))));
+	case OP_CHARCILEQ:	/* char-ci<=? */
+		if (!validargs("char-ci<=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(tolower((unsigned char)ivalue(car(args))) <= tolower((unsigned char)ivalue(cadr(args))));
+	case OP_CHARCIGEQ:	/* char-ci>=? */
+		if (!validargs("char-ci>=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
+		s_retbool(tolower((unsigned char)ivalue(car(args))) >= tolower((unsigned char)ivalue(cadr(args))));
 	case OP_PROC:		/* procedure? */
 		if (!validargs("procedure?", 1, 1, TST_ANY)) Error_0(msg);
 		/*--
@@ -3680,6 +3720,16 @@ void init_procs()
 	mk_proc(OP_INTEGER, "integer?");
 	mk_proc(OP_REAL, "real?");
 	mk_proc(OP_CHAR, "char?");
+	mk_proc(OP_CHAREQU, "char=?");
+	mk_proc(OP_CHARLSS, "char<?");
+	mk_proc(OP_CHARGTR, "char>?");
+	mk_proc(OP_CHARLEQ, "char<=?");
+	mk_proc(OP_CHARGEQ, "char>=?");
+	mk_proc(OP_CHARCIEQU, "char-ci=?");
+	mk_proc(OP_CHARCILSS, "char-ci<?");
+	mk_proc(OP_CHARCIGTR, "char-ci>?");
+	mk_proc(OP_CHARCILEQ, "char-ci<=?");
+	mk_proc(OP_CHARCIGEQ, "char-ci>=?");
 	mk_proc(OP_PROC, "procedure?");
 	mk_proc(OP_PAIR, "pair?");
 	mk_proc(OP_LISTP, "list?");
