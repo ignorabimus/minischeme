@@ -74,6 +74,7 @@
 /* cell structure */
 struct cell {
 	unsigned short _flag;
+	unsigned char  _extflag;
 	unsigned char  _isfixnum;
 	union {
 		struct {
@@ -114,8 +115,7 @@ typedef struct cell *pointer;
 #ifdef USE_MACRO
 # define T_MACRO      2048	/* 0000100000000000 */
 #endif
-#define T_PROMISE     4096	/* 0001000000000000 */
-#define T_RESULTREADY 8192	/* 0010000000000000 */
+#define T_ENVIRONMENT 4096	/* 0001000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -124,8 +124,12 @@ typedef struct cell *pointer;
 # define T_FORWARDED 32768	/* 1000000000000000 */	/* only for gc */
 #endif
 
+#define T_PROMISE        1	/* 00000001 */
+#define T_RESULTREADY    2	/* 00000010 */
+
 /* macros for cell operations */
 #define type(p)         ((p)->_flag)
+#define exttype(p)      ((p)->_extflag)
 
 #define is_string(p)    (type(p)&T_STRING)
 #define strvalue(p)     ((p)->_object._string._svalue)
@@ -183,10 +187,13 @@ enum {
 
 #define is_vector(p)    (type(p)&T_VECTOR)
 
-#define is_promise(p)   (type(p)&T_PROMISE)
-#define setpromise(p)   type(p) |= T_PROMISE
-#define is_resultready(p) (type(p) & T_RESULTREADY)
-#define setresultready(p) type(p) |= T_RESULTREADY
+#define is_environment(p) (type(p) & T_ENVIRONMENT)
+#define setenvironment(p) type(p) |= T_ENVIRONMENT
+
+#define is_promise(p)   (exttype(p) & T_PROMISE)
+#define setpromise(p)   exttype(p) |= T_PROMISE
+#define is_resultready(p) (exttype(p) & T_RESULTREADY)
+#define setresultready(p) exttype(p) |= T_RESULTREADY
 
 #define is_atom(p)      (type(p)&T_ATOM)
 #define setatom(p)      type(p) |= T_ATOM
@@ -1543,6 +1550,7 @@ pointer mk_closure(pointer c, pointer e)
 	register pointer x = get_cell(&c, &e);
 
 	type(x) = T_CLOSURE;
+	exttype(x) = 0;
 	car(x) = c;
 	cdr(x) = e;
 	return x;
@@ -1735,9 +1743,11 @@ enum {
 	OP_GENSYM,
 
 	OP_LAMBDA,
+	OP_MKCLOSURE,
 	OP_QUOTE,
 	OP_DEF0,
 	OP_DEF1,
+	OP_DEFP,
 	OP_BEGIN,
 	OP_IF0,
 	OP_IF1,
@@ -1819,6 +1829,7 @@ enum {
 	OP_INPORTP,
 	OP_OUTPORTP,
 	OP_VECTORP,
+	OP_ENVP,
 	OP_EQ,
 	OP_EQV,
 	OP_FORCE,
@@ -1847,6 +1858,8 @@ enum {
 	OP_GET_OUTSTRING,
 	OP_CLOSE_INPORT,
 	OP_CLOSE_OUTPORT,
+	OP_INT_ENV,
+	OP_CURR_ENV,
 
 	OP_READ,
 	OP_READ_CHAR,
@@ -1949,12 +1962,10 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 				}
 				break;
 			case '\007': /* TST_ENVIRONMENT */
-#if 0
 				if (!is_environment(car(x))) {
 					snprintf(msg, sizeof(msg), "%s: argument %d must be: environment", name, i);
 					return 0;
 				}
-#endif
 				break;
 			case '\010': /* TST_PAIR */
 				if (!is_pair(car(x))) {
@@ -2097,6 +2108,7 @@ OP_APPLY:
 		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */
 			envir = cons(NIL, closure_env(code));
+			setenvironment(envir);
 			push_sink(&x);
 			for (x = car(closure_code(code));
 			     is_pair(x); x = cdr(x), args = cdr(args)) {
@@ -2203,6 +2215,20 @@ OP_READ_INTERNAL:
 	case OP_LAMBDA:	/* lambda */
 		s_return(mk_closure(code, envir));
 
+	case OP_MKCLOSURE:	/* make-closure */
+		if (!validargs("make-closure", 1, 2, TST_PAIR TST_ENVIRONMENT)) Error_0(msg);
+		x = car(args);
+		if (car(x) == LAMBDA) {
+			x = cdr(x);
+		}
+		if (cdr(args) == NIL) {
+			y = envir;
+		}
+		else {
+			y = cadr(args);
+		}
+		s_return(mk_closure(x, y));
+
 	case OP_QUOTE:		/* quote */
 		s_return(car(code));
 
@@ -2233,6 +2259,18 @@ OP_READ_INTERNAL:
 			car(envir) = cons(x, car(envir));
 		}
 		s_return(code);
+
+	case OP_DEFP:	/* defined? */
+		if (!validargs("defined?", 1, 2, TST_SYMBOL TST_ENVIRONMENT)) Error_0(msg);
+		if (cdr(args) != NIL) {
+			x = cadr(args);
+		} else {
+			x = envir;
+		}
+		for (x = car(x); x != NIL; x = cdr(x))
+			if (caar(x) == car(args))
+				break;
+		s_retbool(x != NIL);
 
 	case OP_SET0:		/* set! */
 		s_save(OP_SET1, NIL, car(code));
@@ -2304,6 +2342,7 @@ OP_LET1:
 	case OP_LET2:		/* let */
 OP_LET2:
 		envir = cons(NIL, envir);
+		setenvironment(envir);
 		push_sink(&x);
 		for (x = is_symbol(car(code)) ? cadr(code) : car(code);
 			args != NIL; x = cdr(x), args = cdr(args)) {
@@ -2331,6 +2370,7 @@ OP_LET2:
 	case OP_LET0AST:	/* let* */
 		if (car(code) == NIL) {
 			envir = cons(NIL, envir);
+			setenvironment(envir);
 			code = cdr(code);
 			s_goto(OP_BEGIN);
 		}
@@ -2340,6 +2380,7 @@ OP_LET2:
 
 	case OP_LET1AST:	/* let* (make new frame) */
 		envir = cons(value, envir);	/* save value for gc */
+		setenvironment(envir);
 #ifdef USE_COPYING_GC
 		value = car(envir);
 #endif
@@ -2364,6 +2405,7 @@ OP_LET2AST:
 
 	case OP_LET0REC:	/* letrec */
 		envir = cons(NIL, envir);
+		setenvironment(envir);
 		args = NIL;
 		value = code;
 		code = car(code);
@@ -2902,6 +2944,9 @@ OP_VECTOR:
 	case OP_VECTORP:	/* vector? */
 		if (!validargs("vector?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_vector(car(args)));
+	case OP_ENVP:		/* environment? */
+		if (!validargs("environment?", 1, 1, TST_ANY)) Error_0(msg);
+		s_retbool(is_environment(car(args)));
 	case OP_EQ:		/* eq? */
 		if (!validargs("eq?", 2, 2, TST_ANY)) Error_0(msg);
 		s_retbool(car(args) == cadr(args));
@@ -3119,6 +3164,14 @@ OP_ERR1:
 		port_close(car(args), port_output);
 		s_return(T);
 
+	case OP_INT_ENV:	/* interaction-environment */
+		if (!validargs("interaction-environment", 0, 0, TST_NONE)) Error_0(msg);
+		s_return(global_env);
+
+	case OP_CURR_ENV:	/* current-environment */
+		if (!validargs("current-environment", 0, 0, TST_NONE)) Error_0(msg);
+		s_return(envir);
+
 		/* ========== reading part ========== */
 	case OP_READ:			/* read */
 		if (!validargs("read", 0, 1, TST_INPORT)) Error_0(msg);
@@ -3267,10 +3320,11 @@ OP_RDSEXPR:
 		x = cons(QQUOTE, x);
 		x = cons(x, NIL);
 		push_sink(&x);
-		x = cons(mk_symbol("vector"), x);
-		x = cons(mk_symbol("apply"), x);
+		y = mk_symbol("vector");
+		x = cons(y, x);
+		y = mk_symbol("apply");
 		pop_sink();
-		s_return(x);
+		s_return(cons(y, x));
 
 	case OP_RDUNQUOTE:
 		x = cons(value, NIL);
@@ -3514,6 +3568,7 @@ void init_vars_global()
 	car(EOF_OBJ) = cdr(EOF_OBJ) = EOF_OBJ;
 	/* init global_env */
 	global_env = cons(NIL, NIL);
+	setenvironment(global_env);
 	/* init else */
 	x = cons(mk_symbol("else"), T);
 	car(global_env) = cons(x, car(global_env));
@@ -3596,6 +3651,7 @@ void init_procs()
 	mk_proc(OP_INPORTP, "input-port?");
 	mk_proc(OP_OUTPORTP, "output-port?");
 	mk_proc(OP_VECTORP, "vector?");
+	mk_proc(OP_ENVP, "environment?");
 	mk_proc(OP_EQV, "eqv?");
 	mk_proc(OP_EQ, "eq?");
 	mk_proc(OP_NULL, "null?");
@@ -3632,6 +3688,8 @@ void init_procs()
 	mk_proc(OP_GET_OUTSTRING, "get-output-string");
 	mk_proc(OP_CLOSE_INPORT, "close-input-port");
 	mk_proc(OP_CLOSE_OUTPORT, "close-output-port");
+	mk_proc(OP_INT_ENV, "interaction-environment");
+	mk_proc(OP_CURR_ENV, "current-environment");
 	mk_proc(OP_READ_CHAR, "read-char");
 	mk_proc(OP_PEEK_CHAR, "peek-char");
 	mk_proc(OP_SET_INPORT, "set-input-port");
@@ -3639,6 +3697,8 @@ void init_procs()
 	mk_proc(OP_LIST_LENGTH, "length");	/* a.k */
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
 	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */
+	mk_proc(OP_DEFP, "defined?");
+	mk_proc(OP_MKCLOSURE, "make-closure");
 	mk_proc(OP_GET_CLOSURE, "get-closure-code");	/* a.k */
 	mk_proc(OP_CLOSUREP, "closure?");	/* a.k */
 #ifdef USE_MACRO
