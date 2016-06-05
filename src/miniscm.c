@@ -1827,6 +1827,16 @@ enum {
 	OP_STRLEN,
 	OP_STRREF,
 	OP_STRSET,
+	OP_STREQU,
+	OP_STRLSS,
+	OP_STRGTR,
+	OP_STRLEQ,
+	OP_STRGEQ,
+	OP_STRCIEQU,
+	OP_STRCILSS,
+	OP_STRCIGTR,
+	OP_STRCILEQ,
+	OP_STRCIGEQ,
 	OP_VECTOR,
 	OP_MKVECTOR,
 	OP_VECLEN,
@@ -2863,6 +2873,38 @@ OP_LET2REC:
 		strvalue(car(args))[w] = (char)ivalue(caddr(args));
 		s_return(car(args));
 
+	case OP_STREQU:		/* string=? */
+		if (!validargs("string=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) == 0);
+	case OP_STRLSS:		/* string<? */
+		if (!validargs("string<?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) < 0);
+	case OP_STRGTR:		/* string>? */
+		if (!validargs("string>?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) > 0);
+	case OP_STRLEQ:		/* string<=? */
+		if (!validargs("string<=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) <= 0);
+	case OP_STRGEQ:		/* string>=? */
+		if (!validargs("string>=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) >= 0);
+
+	case OP_STRCIEQU:	/* string-ci=? */
+		if (!validargs("string-ci=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) == 0);
+	case OP_STRCILSS:		/* string-ci<? */
+		if (!validargs("string-ci<?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) < 0);
+	case OP_STRCIGTR:		/* string-ci>? */
+		if (!validargs("string-ci>?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) > 0);
+	case OP_STRCILEQ:		/* string-ci<=? */
+		if (!validargs("string-ci<=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) <= 0);
+	case OP_STRCIGEQ:		/* string-ci>=? */
+		if (!validargs("string-ci>=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
+		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) >= 0);
+
 	case OP_VECTOR:		/* vector */
 OP_VECTOR:
 		if (!validargs("vector", 0, 65535, TST_NONE)) Error_0(msg);
@@ -3707,6 +3749,16 @@ void init_procs()
 	mk_proc(OP_STRLEN, "string-length");
 	mk_proc(OP_STRREF, "string-ref");
 	mk_proc(OP_STRSET, "string-set!");
+	mk_proc(OP_STREQU, "string=?");
+	mk_proc(OP_STRLSS, "string<?");
+	mk_proc(OP_STRGTR, "string>?");
+	mk_proc(OP_STRLEQ, "string<=?");
+	mk_proc(OP_STRGEQ, "string>=?");
+	mk_proc(OP_STRCIEQU, "string-ci=?");
+	mk_proc(OP_STRCILSS, "string-ci<?");
+	mk_proc(OP_STRCIGTR, "string-ci>?");
+	mk_proc(OP_STRCILEQ, "string-ci<=?");
+	mk_proc(OP_STRCIGEQ, "string-ci>=?");
 	mk_proc(OP_VECTOR, "vector");
 	mk_proc(OP_MKVECTOR, "make-vector");
 	mk_proc(OP_VECLEN, "vector-length");
