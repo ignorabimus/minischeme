@@ -102,13 +102,6 @@
 (define (atom? x)
   (not (pair? x)))
 
-;;;;	memq
-(define (memq obj lst)
-  (cond
-    ((null? lst) #f)
-    ((eq? obj (car lst)) lst)
-    (else (memq obj (cdr lst)))))
-
 ;;;;	(do ((var init inc) ...) (endtest result ...) body ...)
 ;;
 (macro do

@@ -1963,7 +1963,12 @@ enum {
 	OP_PVECFROM,
 
 	OP_LIST_LENGTH,
+	OP_MEMQ,
+	OP_MEMV,
+	OP_MEMBER,
 	OP_ASSQ,
+	OP_ASSV,
+	OP_ASSOC,
 	OP_PRINT_WIDTH,
 	OP_P0_WIDTH,
 	OP_P1_WIDTH,
@@ -3565,21 +3570,62 @@ OP_PVECFROM:
 		}
 		s_return(mk_integer(w));
 
-	case OP_ASSQ:		/* assq */	/* a.k */
-		if (!validargs("assq", 2, 2, TST_NONE)) Error_0(msg);
+	case OP_MEMQ:		/* memq */
+		if (!validargs("memq", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
+		x = car(args);
+		for (y = cadr(args); y != NIL; y = cdr(y)) {
+			if (x == car(y)) s_return(y);
+		}
+		s_return(F);
+
+	case OP_MEMV:		/* memv */
+		if (!validargs("memv", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
+		x = car(args);
+		for (y = cadr(args); y != NIL; y = cdr(y)) {
+			if (eqv(x, car(y))) s_return(y);
+		}
+		s_return(F);
+
+	case OP_MEMBER:		/* member*/
+		if (!validargs("member", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
+		x = car(args);
+		for (y = cadr(args); y != NIL; y = cdr(y)) {
+			if (equal(x, car(y))) s_return(y);
+		}
+		s_return(F);
+
+	case OP_ASSQ:		/* assq */
+		if (!validargs("assq", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
 		x = car(args);
 		for (y = cadr(args); is_pair(y); y = cdr(y)) {
 			if (!is_pair(car(y))) {
 				Error_0("Unable to handle non pair element");
 			}
-			if (x == caar(y))
-				break;
+			if (x == caar(y)) s_return(car(y));
 		}
-		if (is_pair(y)) {
-			s_return(car(y));
-		} else {
-			s_return(F);
+		s_return(F);
+
+	case OP_ASSV:		/* assv*/
+		if (!validargs("assv", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
+		x = car(args);
+		for (y = cadr(args); is_pair(y); y = cdr(y)) {
+			if (!is_pair(car(y))) {
+				Error_0("Unable to handle non pair element");
+			}
+			if (eqv(x, caar(y))) s_return(car(y));
 		}
+		s_return(F);
+
+	case OP_ASSOC:		/* assoc */
+		if (!validargs("assoc", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
+		x = car(args);
+		for (y = cadr(args); is_pair(y); y = cdr(y)) {
+			if (!is_pair(car(y))) {
+				Error_0("Unable to handle non pair element");
+			}
+			if (equal(x, caar(y))) s_return(car(y));
+		}
+		s_return(F);
 
 	case OP_PRINT_WIDTH:	/* print-width */	/* a.k */
 		w = 0;
@@ -3870,7 +3916,12 @@ void init_procs()
 	mk_proc(OP_SET_INPORT, "set-input-port");
 	mk_proc(OP_SET_OUTPORT, "set-output-port");
 	mk_proc(OP_LIST_LENGTH, "length");	/* a.k */
+	mk_proc(OP_MEMQ, "memq");
+	mk_proc(OP_MEMV, "memv");
+	mk_proc(OP_MEMBER, "member");
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
+	mk_proc(OP_ASSV, "assv");
+	mk_proc(OP_ASSOC, "assoc");
 	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */
 	mk_proc(OP_DEFP, "defined?");
 	mk_proc(OP_MKCLOSURE, "make-closure");
