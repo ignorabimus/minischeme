@@ -1887,6 +1887,8 @@ enum {
 	OP_LEQ,
 	OP_GEQ,
 	OP_SYMBOL,
+	OP_SYM2STR,
+	OP_STR2SYM,
 	OP_NUMBER,
 	OP_STRING,
 	OP_INTEGER,
@@ -3025,6 +3027,12 @@ OP_VECTOR:
 	case OP_SYMBOL:		/* symbol? */
 		if (!validargs("symbol?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_symbol(car(args)));
+	case OP_SYM2STR:	/* symbol->string */
+		if (!validargs("symbol->string", 1, 1, TST_SYMBOL)) Error_0(msg);
+		s_return(mk_string(symname(car(args))));
+	case OP_STR2SYM:	/* string->symbol */
+		if (!validargs("string->symbol", 1, 1, TST_STRING)) Error_0(msg);
+		s_return(mk_symbol(strvalue(car(args))));
 	case OP_NUMBER:		/* number? */
 		if (!validargs("number?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_number(car(args)));
@@ -3849,6 +3857,8 @@ void init_procs()
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
+	mk_proc(OP_SYM2STR, "symbol->string");
+	mk_proc(OP_STR2SYM, "string->symbol");
 	mk_proc(OP_NUMBER, "number?");
 	mk_proc(OP_STRING, "string?");
 	mk_proc(OP_INTEGER, "integer?");
