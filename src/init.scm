@@ -109,16 +109,6 @@
     ((eq? obj (car lst)) lst)
     (else (memq obj (cdr lst)))))
 
-;;;;    equal?
-(define (equal? x y)
-  (if (pair? x)
-    (and (pair? y)
-         (equal? (car x) (car y))
-         (equal? (cdr x) (cdr y)))
-    (and (not (pair? y))
-         (eqv? x y))))
-
-
 ;;;;	(do ((var init inc) ...) (endtest result ...) body ...)
 ;;
 (macro do

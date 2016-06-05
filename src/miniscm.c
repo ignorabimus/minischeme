@@ -1658,6 +1658,38 @@ int eqv(register pointer a, register pointer b)
 		return (a == b);
 }
 
+/* equivalence of pairs, vectors and strings recursively */
+int equal(register pointer a, register pointer b)
+{
+	if (is_pair(a)) {
+		if (is_pair(b))
+			return equal(car(a), car(b)) && equal(cdr(a), cdr(b));
+		else
+			return 0;
+	} else if (is_vector(a)) {
+		if (is_vector(b))
+			if (ivalue(a) == ivalue(b)) {
+				int i;
+				for (i = 0; i < ivalue(a); i++) {
+					if (!equal(vector_elem(a, i), vector_elem(b, i)))
+						return 0;
+				}
+				return 1;
+			} else {
+				return 0;
+			}
+		else
+			return 0;
+	} else if (is_string(a)) {
+		if (is_string(b))
+			return strcmp(strvalue(a), strvalue(b)) == 0;
+		else
+			return 0;
+	} else {
+		return eqv(a, b);
+	}
+}
+
 /* true or false value macro */
 #define istrue(p)       ((p) != NIL && (p) != F)
 #define isfalse(p)      ((p) == NIL || (p) == F)
@@ -1880,6 +1912,7 @@ enum {
 	OP_ENVP,
 	OP_EQ,
 	OP_EQV,
+	OP_EQUAL,
 	OP_FORCE,
 	OP_FORCED,
 	OP_WRITE_CHAR,
@@ -3068,6 +3101,9 @@ OP_VECTOR:
 	case OP_EQV:		/* eqv? */
 		if (!validargs("eqv?", 2, 2, TST_ANY)) Error_0(msg);
 		s_retbool(eqv(car(args), cadr(args)));
+	case OP_EQUAL:		/* equal? */
+		if (!validargs("equal?", 2, 2, TST_ANY)) Error_0(msg);
+		s_retbool(equal(car(args), cadr(args)));
 
 	case OP_FORCE:		/* force */
 		if (!validargs("force", 1, 1, TST_ANY)) Error_0(msg);
@@ -3790,8 +3826,9 @@ void init_procs()
 	mk_proc(OP_OUTPORTP, "output-port?");
 	mk_proc(OP_VECTORP, "vector?");
 	mk_proc(OP_ENVP, "environment?");
-	mk_proc(OP_EQV, "eqv?");
 	mk_proc(OP_EQ, "eq?");
+	mk_proc(OP_EQV, "eqv?");
+	mk_proc(OP_EQUAL, "equal?");
 	mk_proc(OP_NULL, "null?");
 	mk_proc(OP_EOFOBJP, "eof-object?");
 	mk_proc(OP_ZEROP, "zero?");
