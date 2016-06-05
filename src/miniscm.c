@@ -1874,6 +1874,8 @@ enum {
 	OP_VECLEN,
 	OP_VECREF,
 	OP_VECSET,
+	OP_VEC2LIST,
+	OP_LIST2VEC,
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
@@ -2988,6 +2990,27 @@ OP_VECTOR:
 		set_vector_elem(car(args), w, caddr(args));
 		s_return(car(args));
 
+	case OP_VEC2LIST:		/* vector->list */
+		if (!validargs("vector->list", 1, 1, TST_VECTOR)) Error_0(msg);
+		y = NIL;
+		for (x = car(args), w = ivalue(x) - 1; w >= 0; w--) {
+			y = cons(vector_elem(x, w), y);
+		}
+		s_return(y);
+
+	case OP_LIST2VEC:		/* list->vector */
+		if (!validargs("list->vector", 1, 1, TST_LIST)) Error_0(msg);
+		x = car(args);
+		w = list_length(x);
+		if (w < 0) {
+			Error_1("list->vector: not a proper list:", x);
+		}
+		y = mk_vector(w);
+		for (w = 0; x != NIL; x = cdr(x)) {
+			set_vector_elem(y, w++, car(x));
+		}
+		s_return(y);
+
 	case OP_NOT:		/* not */
 		if (!validargs("not", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(isfalse(car(args)));
@@ -3854,6 +3877,8 @@ void init_procs()
 	mk_proc(OP_VECLEN, "vector-length");
 	mk_proc(OP_VECREF, "vector-ref");
 	mk_proc(OP_VECSET, "vector-set!");
+	mk_proc(OP_VEC2LIST, "vector->list");
+	mk_proc(OP_LIST2VEC, "list->vector");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
