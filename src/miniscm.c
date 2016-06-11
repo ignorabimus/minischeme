@@ -64,6 +64,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <float.h>
+#include <math.h>
 #define prompt "> "
 #define InitFile "init.scm"
 #ifdef _WIN32
@@ -1847,9 +1848,16 @@ enum {
 	OP_SUB,
 	OP_MUL,
 	OP_DIV,
+	OP_ABS,
 	OP_QUO,
 	OP_REM,
 	OP_MOD,
+	OP_FLOOR,
+	OP_CEILING,
+	OP_TRUNCATE,
+	OP_ROUND,
+	OP_EX2INEX,
+	OP_INEX2EX,
 	OP_CAR,
 	OP_CDR,
 	OP_CONS,
@@ -2824,6 +2832,15 @@ OP_LET2REC:
 		}
 		s_return(mk_number(&v));
 
+	case OP_ABS:		/* abs */
+		if (!validargs("abs", 1, 1, TST_NUMBER)) Error_0(msg);
+		x = car(args);
+		if (x->_isfixnum) {
+			s_return(mk_integer(abs(ivalue(x))));
+		} else {
+			s_return(mk_real(fabs(rvalue(x))));
+		}
+
 	case OP_QUO:		/* quotient */
 		if (!validargs("quotient", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
@@ -2892,6 +2909,62 @@ OP_LET2REC:
 			}
 		}
 		s_return(mk_number(&v));
+
+	case OP_FLOOR:		/* floor */
+		if (!validargs("floor", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(floor(nvalue(car(args)))));
+
+	case OP_CEILING:	/* ceiling */
+		if (!validargs("ceiling", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(ceil(nvalue(car(args)))));
+
+	case OP_TRUNCATE:	/* truncate */
+		if (!validargs("truncate", 1, 1, TST_NUMBER)) Error_0(msg);
+		x = car(args);
+		if (nvalue(x) > 0) {
+			s_return(mk_real(floor(nvalue(x))));
+		} else {
+			s_return(mk_real(ceil(nvalue(x))));
+		}
+
+	case OP_ROUND:		/* round */
+		if (!validargs("round", 1, 1, TST_NUMBER)) Error_0(msg);
+		x = car(args);
+		if (x->_isfixnum) {
+			s_return(x);
+		} else {
+			double fl = floor(rvalue(x));
+			double ce = ceil(rvalue(x));
+			double dfl = rvalue(x) - fl;
+			double dce = ce - rvalue(x);
+			if (dfl > dce) {
+				s_return(mk_real(ce));
+			} else if (dfl < dce) {
+				s_return(mk_real(fl));
+			} else {
+				/* Round to even if midway */
+				if (fmod(fl, 2.0) == 0.0) {
+					s_return(mk_real(fl));
+				} else {
+					s_return(mk_real(ce));
+				}
+			}
+		}
+
+	case OP_EX2INEX:	/* exact->inexact */
+		if (!validargs("exact->inexact", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(nvalue(car(args))));
+
+	case OP_INEX2EX:	/* inexact->exact */
+		if (!validargs("inexact->exact", 1, 1, TST_NUMBER)) Error_0(msg);
+		x = car(args);
+		if (x->_isfixnum) {
+			s_return(x);
+		} else if (rvalue(x) == (long)rvalue(x)) {
+			s_return(mk_integer((long)rvalue(x)));
+		} else {
+			Error_1("inexact->exact: cannot express :", x);
+		}
 
 	case OP_CAR:		/* car */
 		if (!validargs("car", 1, 1, TST_PAIR)) Error_0(msg);
@@ -3899,9 +3972,16 @@ void init_procs()
 	mk_proc(OP_SUB, "-");
 	mk_proc(OP_MUL, "*");
 	mk_proc(OP_DIV, "/");
+	mk_proc(OP_ABS, "abs");
 	mk_proc(OP_QUO, "quotient");
 	mk_proc(OP_REM, "remainder");
 	mk_proc(OP_MOD, "modulo");
+	mk_proc(OP_FLOOR, "floor");
+	mk_proc(OP_CEILING, "ceiling");
+	mk_proc(OP_TRUNCATE, "truncate");
+	mk_proc(OP_ROUND, "round");
+	mk_proc(OP_EX2INEX, "exact->inexact");
+	mk_proc(OP_INEX2EX, "inexact->exact");
 	mk_proc(OP_CHAR2INT, "char->integer");
 	mk_proc(OP_INT2CHAR, "integer->char");
 	mk_proc(OP_CHARUPCASE, "char-upcase");
