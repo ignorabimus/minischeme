@@ -1838,6 +1838,10 @@ enum {
 
 	OP_PEVAL,
 	OP_PAPPLY,
+	OP_MAP0,
+	OP_MAP1,
+	OP_FOREACH0,
+	OP_FOREACH1,
 	OP_CONTINUATION,
 	OP_ADD,
 	OP_SUB,
@@ -2674,6 +2678,7 @@ OP_LET2REC:
 		} else {
 			s_return(NIL);
 		}
+
 	case OP_PAPPLY:	/* apply */
 		if (!validargs("apply", 1, 65535, TST_NONE)) Error_0(msg);
 		code = car(args);
@@ -2685,6 +2690,47 @@ OP_LET2REC:
 		code = car(args);
 		args = NIL;
 		s_goto(OP_EVAL);
+
+	case OP_MAP0:	/* map */
+		if (!validargs("map", 2, 65535, TST_ANY TST_LIST)) Error_0(msg);
+		code = car(args);
+		value = 0;
+
+	case OP_MAP1:	/* map */
+		if (value == 0) {
+			car(args) = NIL;
+		} else {
+			car(args) = cons(value, car(args));
+		}
+		y = NIL;
+		for (x = cdr(args); x != NIL; x = cdr(x)) {
+			if (caar(x) == NIL) {
+				s_return(non_alloc_rev(NIL, car(args)));
+			}
+			y = cons(caar(x), y);
+			car(x) = cdar(x);
+		}
+		s_save(OP_MAP1, args, code);
+		args = non_alloc_rev(NIL, y);
+		s_goto(OP_APPLY);
+
+	case OP_FOREACH0:	/* for-each */
+		if (!validargs("for-each", 2, 65535, TST_ANY TST_LIST)) Error_0(msg);
+		code = car(args);
+		args = cdr(args);
+
+	case OP_FOREACH1:	/* for-each */
+		y = NIL;
+		for (x = args; x != NIL; x = cdr(x)) {
+			if (caar(x) == NIL) {
+				s_return(T);
+			}
+			y = cons(caar(x), y);
+			car(x) = cdar(x);
+		}
+		s_save(OP_FOREACH1, args, code);
+		args = non_alloc_rev(NIL, y);
+		s_goto(OP_APPLY);
 
 	case OP_CONTINUATION:	/* call-with-current-continuation */
 		if (!validargs("call-with-current-continuation", 1, 1, TST_NONE)) Error_0(msg);
@@ -3840,6 +3886,8 @@ void init_procs()
 	/* init procedure */
 	mk_proc(OP_PEVAL, "eval");
 	mk_proc(OP_PAPPLY, "apply");
+	mk_proc(OP_MAP0, "map");
+	mk_proc(OP_FOREACH0, "for-each");
 	mk_proc(OP_CONTINUATION, "call-with-current-continuation");
 	mk_proc(OP_FORCE, "force");
 	mk_proc(OP_CAR, "car");

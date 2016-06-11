@@ -21,15 +21,6 @@
 
 (define (list . x) x)
 
-(define (map proc list)
-    (if (pair? list)
-        (cons (proc (car list)) (map proc (cdr list)))))
-
-(define (for-each proc list)
-    (if (pair? list)
-        (begin (proc (car list)) (for-each proc (cdr list)))
-        #t ))
-
 (define (list-tail x k)
     (if (zero? k)
         x
