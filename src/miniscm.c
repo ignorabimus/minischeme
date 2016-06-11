@@ -1856,6 +1856,16 @@ enum {
 	OP_CEILING,
 	OP_TRUNCATE,
 	OP_ROUND,
+	OP_EXP,
+	OP_LOG,
+	OP_SIN,
+	OP_COS,
+	OP_TAN,
+	OP_ASIN,
+	OP_ACOS,
+	OP_ATAN,
+	OP_SQRT,
+	OP_EXPT,
 	OP_EX2INEX,
 	OP_INEX2EX,
 	OP_CAR,
@@ -2951,6 +2961,60 @@ OP_LET2REC:
 			}
 		}
 
+	case OP_EXP:		/* exp */
+		if (!validargs("exp", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(exp(nvalue(car(args)))));
+
+	case OP_LOG:		/* log */
+		if (!validargs("log", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(log(nvalue(car(args)))));
+
+	case OP_SIN:		/* sin */
+		if (!validargs("sin", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(sin(nvalue(car(args)))));
+
+	case OP_COS:		/* cos */
+		if (!validargs("cos", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(cos(nvalue(car(args)))));
+
+	case OP_TAN:		/* tan */
+		if (!validargs("tan", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(tan(nvalue(car(args)))));
+
+	case OP_ASIN:		/* asin */
+		if (!validargs("asin", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(asin(nvalue(car(args)))));
+
+	case OP_ACOS:		/* acos */
+		if (!validargs("acos", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(acos(nvalue(car(args)))));
+
+	case OP_ATAN:		/* atan */
+		if (!validargs("atan", 1, 2, TST_NUMBER)) Error_0(msg);
+		if (cdr(args) == NIL) {
+			s_return(mk_real(atan(nvalue(car(args)))));
+		} else {
+			s_return(mk_real(atan2(nvalue(car(args)), nvalue(cadr(args)))));
+		}
+
+	case OP_SQRT:		/* sqrt */
+		if (!validargs("sqrt", 1, 1, TST_NUMBER)) Error_0(msg);
+		s_return(mk_real(sqrt(nvalue(car(args)))));
+
+	case OP_EXPT:		/* expt */
+		if (!validargs("expt", 2, 2, TST_NUMBER)) Error_0(msg);
+		x = car(args);
+		y = cadr(args);
+		if (nvalue(x) == 0 && nvalue(y) < 0) {
+			s_return(&_ZERO);
+		}
+		rvalue(&v) = pow(nvalue(x), nvalue(y));
+		if (x->_isfixnum && y->_isfixnum && rvalue(&v) == (long)rvalue(&v)) {
+			s_return(mk_integer((long)rvalue(&v)));
+		} else {
+			s_return(mk_real(rvalue(&v)));
+		}
+
 	case OP_EX2INEX:	/* exact->inexact */
 		if (!validargs("exact->inexact", 1, 1, TST_NUMBER)) Error_0(msg);
 		s_return(mk_real(nvalue(car(args))));
@@ -3980,6 +4044,16 @@ void init_procs()
 	mk_proc(OP_CEILING, "ceiling");
 	mk_proc(OP_TRUNCATE, "truncate");
 	mk_proc(OP_ROUND, "round");
+	mk_proc(OP_EXP, "exp");
+	mk_proc(OP_LOG, "log");
+	mk_proc(OP_SIN, "sin");
+	mk_proc(OP_COS, "cos");
+	mk_proc(OP_TAN, "tan");
+	mk_proc(OP_ASIN, "asin");
+	mk_proc(OP_ACOS, "acos");
+	mk_proc(OP_ATAN, "atan");
+	mk_proc(OP_SQRT, "sqrt");
+	mk_proc(OP_EXPT, "expt");
 	mk_proc(OP_EX2INEX, "exact->inexact");
 	mk_proc(OP_INEX2EX, "inexact->exact");
 	mk_proc(OP_CHAR2INT, "char->integer");
