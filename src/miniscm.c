@@ -1930,6 +1930,8 @@ enum {
 	OP_GRE,
 	OP_LEQ,
 	OP_GEQ,
+	OP_MAX,
+	OP_MIN,
 	OP_SYMBOL,
 	OP_SYM2STR,
 	OP_STR2SYM,
@@ -3296,6 +3298,57 @@ OP_VECTOR:
 	case OP_GEQ:		/* >= */
 		if (!validargs(">=", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) >= nvalue(cadr(args)));
+
+	case OP_MAX:		/* max */
+		if (!validargs("max", 1, 65535, TST_NUMBER)) Error_0(msg);
+		v = *car(args);
+		for (x = cdr(args); x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					if (ivalue(&v) < ivalue(car(x))) {
+						ivalue(&v) = ivalue(car(x));
+					}
+				} else {
+					if (ivalue(&v) < rvalue(car(x))) {
+						rvalue(&v) = rvalue(car(x));
+					} else {
+						rvalue(&v) = ivalue(&v);
+					}
+					set_num_real(&v);
+				}
+			} else {
+				if (rvalue(&v) < nvalue(car(x))) {
+					rvalue(&v) = nvalue(car(x));
+				}
+			}
+		}
+		s_return(mk_number(&v));
+
+	case OP_MIN:		/* min */
+		if (!validargs("min", 1, 65535, TST_NUMBER)) Error_0(msg);
+		v = *car(args);
+		for (x = cdr(args); x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					if (ivalue(&v) > ivalue(car(x))) {
+						ivalue(&v) = ivalue(car(x));
+					}
+				} else {
+					if (ivalue(&v) > rvalue(car(x))) {
+						rvalue(&v) = rvalue(car(x));
+					} else {
+						rvalue(&v) = ivalue(&v);
+					}
+					set_num_real(&v);
+				}
+			} else {
+				if (rvalue(&v) > nvalue(car(x))) {
+					rvalue(&v) = nvalue(car(x));
+				}
+			}
+		}
+		s_return(mk_number(&v));
+
 	case OP_SYMBOL:		/* symbol? */
 		if (!validargs("symbol?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_symbol(car(args)));
@@ -4190,6 +4243,8 @@ void init_procs()
 	mk_proc(OP_GRE, ">");
 	mk_proc(OP_LEQ, "<=");
 	mk_proc(OP_GEQ, ">=");
+	mk_proc(OP_MAX, "max");
+	mk_proc(OP_MIN, "min");
 	mk_proc(OP_READ, "read");
 	mk_proc(OP_WRITE_CHAR, "write-char");
 	mk_proc(OP_WRITE, "write");
