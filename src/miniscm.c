@@ -1691,6 +1691,24 @@ int equal(register pointer a, register pointer b)
 	}
 }
 
+/* greatest common divisor */
+int gcd(int a, int b)
+{
+	int c;
+	while (a != 0) {
+		c = a;
+		a = b % a;
+		b = c;
+	}
+	return abs(b);
+}
+
+/* least common multiple */
+int lcm(int a, int b)
+{
+	return abs(a * b / gcd(a, b));
+}
+
 /* true or false value macro */
 #define istrue(p)       ((p) != NIL && (p) != F)
 #define isfalse(p)      ((p) == NIL || (p) == F)
@@ -1852,6 +1870,8 @@ enum {
 	OP_QUO,
 	OP_REM,
 	OP_MOD,
+	OP_GCD,
+	OP_LCM,
 	OP_FLOOR,
 	OP_CEILING,
 	OP_TRUNCATE,
@@ -2916,6 +2936,52 @@ OP_LET2REC:
 			rvalue(&v) = (long)rvalue(&v) % w;
 			if (rvalue(&v) * w < 0) {
 				rvalue(&v) += w;
+			}
+		}
+		s_return(mk_number(&v));
+
+	case OP_GCD:		/* gcd */
+		if (!validargs("gcd", 0, 65535, TST_NUMBER)) Error_0(msg);
+		if (cdr(args) == NIL) {
+			v = _ZERO;
+			x = args;
+		} else {
+			v = *car(args);
+			x = cdr(args);
+		}
+		for (; x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					ivalue(&v) = gcd(ivalue(&v), ivalue(car(x)));
+				} else {
+					rvalue(&v) = gcd(ivalue(&v), (long)rvalue(car(x)));
+					set_num_real(&v);
+				}
+			} else {
+				rvalue(&v) = gcd((long)rvalue(&v), (long)nvalue(car(x)));
+			}
+		}
+		s_return(mk_number(&v));
+
+	case OP_LCM:		/* lcm */
+		if (!validargs("lcm", 0, 65535, TST_NUMBER)) Error_0(msg);
+		if (cdr(args) == NIL) {
+			v = _ONE;
+			x = args;
+		} else {
+			v = *car(args);
+			x = cdr(args);
+		}
+		for (; x != NIL; x = cdr(x)) {
+			if (v._isfixnum) {
+				if (car(x)->_isfixnum) {
+					ivalue(&v) = lcm(ivalue(&v), ivalue(car(x)));
+				} else {
+					rvalue(&v) = lcm(ivalue(&v), (long)rvalue(car(x)));
+					set_num_real(&v);
+				}
+			} else {
+				rvalue(&v) = lcm((long)rvalue(&v), (long)nvalue(car(x)));
 			}
 		}
 		s_return(mk_number(&v));
@@ -4040,6 +4106,8 @@ void init_procs()
 	mk_proc(OP_QUO, "quotient");
 	mk_proc(OP_REM, "remainder");
 	mk_proc(OP_MOD, "modulo");
+	mk_proc(OP_GCD, "gcd");
+	mk_proc(OP_LCM, "lcm");
 	mk_proc(OP_FLOOR, "floor");
 	mk_proc(OP_CEILING, "ceiling");
 	mk_proc(OP_TRUNCATE, "truncate");
