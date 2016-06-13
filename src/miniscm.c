@@ -1950,6 +1950,11 @@ enum {
 	OP_CHARCIGTR,
 	OP_CHARCILEQ,
 	OP_CHARCIGEQ,
+	OP_CHARAP,
+	OP_CHARNP,
+	OP_CHARWP,
+	OP_CHARUP,
+	OP_CHARLP,
 	OP_PROC,
 	OP_PAIR,
 	OP_LISTP,
@@ -3403,6 +3408,21 @@ OP_VECTOR:
 	case OP_CHARCIGEQ:	/* char-ci>=? */
 		if (!validargs("char-ci>=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
 		s_retbool(tolower((unsigned char)ivalue(car(args))) >= tolower((unsigned char)ivalue(cadr(args))));
+	case OP_CHARAP:		/* char-alphabetic? */
+		if (!validargs("char-alphabetic?", 1, 1, TST_CHAR)) Error_0(msg);
+		s_retbool(isascii(ivalue(car(args))) && isalpha(ivalue(car(args))));
+	case OP_CHARNP:		/* char-numeric? */
+		if (!validargs("char-numeric?", 1, 1, TST_CHAR)) Error_0(msg);
+		s_retbool(isascii(ivalue(car(args))) && isdigit(ivalue(car(args))));
+	case OP_CHARWP:		/* char-whitespace? */
+		if (!validargs("char-whitespace?", 1, 1, TST_CHAR)) Error_0(msg);
+		s_retbool(isascii(ivalue(car(args))) && isspace(ivalue(car(args))));
+	case OP_CHARUP:		/* char-upper-case? */
+		if (!validargs("char-upper-case?", 1, 1, TST_CHAR)) Error_0(msg);
+		s_retbool(isascii(ivalue(car(args))) && isupper(ivalue(car(args))));
+	case OP_CHARLP:		/* char-lower-case? */
+		if (!validargs("char-lower-case?", 1, 1, TST_CHAR)) Error_0(msg);
+		s_retbool(isascii(ivalue(car(args))) && islower(ivalue(car(args))));
 	case OP_PROC:		/* procedure? */
 		if (!validargs("procedure?", 1, 1, TST_ANY)) Error_0(msg);
 		/*--
@@ -4222,6 +4242,11 @@ void init_procs()
 	mk_proc(OP_CHARCIGTR, "char-ci>?");
 	mk_proc(OP_CHARCILEQ, "char-ci<=?");
 	mk_proc(OP_CHARCIGEQ, "char-ci>=?");
+	mk_proc(OP_CHARAP, "char-alphabetic?");
+	mk_proc(OP_CHARNP, "char-numeric?");
+	mk_proc(OP_CHARWP, "char-whitespace?");
+	mk_proc(OP_CHARUP, "char-upper-case?");
+	mk_proc(OP_CHARLP, "char-lower-case?");
 	mk_proc(OP_PROC, "procedure?");
 	mk_proc(OP_PAIR, "pair?");
 	mk_proc(OP_LISTP, "list?");
