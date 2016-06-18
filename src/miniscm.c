@@ -125,6 +125,8 @@ typedef struct cell *pointer;
 # define T_FORWARDED 32768	/* 1000000000000000 */	/* only for gc */
 #endif
 
+#define T_VALUES         1	/* 0000000000000001 */	/* for call-with-values */
+
 #define T_PROMISE        1	/* 00000001 */
 #define T_RESULTREADY    2	/* 00000010 */
 
@@ -1754,6 +1756,8 @@ int lcm(int a, int b)
 	code = dump_code(dump);                    \
 	goto LOOP; END
 
+#define s_next_op() ((short)dump_op(dump_next(dump)))
+
 pointer s_clone(pointer d) {
 	pointer p;
 
@@ -1799,6 +1803,8 @@ pointer s_clone_save() {
 	code = cadddr(dump);                       \
 	dump = cddddr(dump);                       \
 	goto LOOP; END
+
+#define s_next_op() ((short)ivalue(car(dump)))
 
 #endif /* USE_SCHEME_STACK */
 
@@ -1862,6 +1868,9 @@ enum {
 	OP_FOREACH0,
 	OP_FOREACH1,
 	OP_CONTINUATION,
+	OP_VALUES,
+	OP_WITHVALUES0,
+	OP_WITHVALUES1,
 	OP_ADD,
 	OP_SUB,
 	OP_MUL,
@@ -2281,7 +2290,13 @@ OP_APPLY:
 #else
 			dump = cont_dump(code);
 #endif
-			s_return(args != NIL ? car(args) : NIL);
+			if (s_next_op() == OP_WITHVALUES1) {
+				args = cons(args, NIL);
+				type(args) |= T_VALUES;
+				s_return(args);
+			} else {
+				s_return(args != NIL ? car(args) : NIL);
+			}
 		} else {
 			Error_0("Illegal function");
 		}
@@ -2785,6 +2800,33 @@ OP_LET2REC:
 #else
 		args = cons(mk_continuation(dump), NIL);
 #endif
+		s_goto(OP_APPLY);
+
+	case OP_VALUES:			/* values */
+		if (!validargs("values", 0, 65535, TST_NONE)) Error_0(msg);
+		if (s_next_op() == OP_WITHVALUES1) {
+			args = cons(args, NIL);
+			type(args) |= T_VALUES;
+			s_return(args);
+		} else {
+			s_return(args != NIL ? car(args) : NIL);
+		}
+
+	case OP_WITHVALUES0:	/* call-with-values */
+		if (!validargs("call-with-values", 2, 2, TST_NONE)) Error_0(msg);
+		s_save(OP_WITHVALUES1, args, code);
+		code = car(args);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_WITHVALUES1:	/* call-with-values */
+		code = cadr(args);
+		if (is_pair(value) && (type(value) & T_VALUES)) {
+			type(value) &= ~T_VALUES;
+			args = car(value);
+		} else {
+			args = cons(value, NIL);
+		}
 		s_goto(OP_APPLY);
 
 	case OP_ADD:		/* + */
@@ -4165,6 +4207,8 @@ void init_procs()
 	mk_proc(OP_MAP0, "map");
 	mk_proc(OP_FOREACH0, "for-each");
 	mk_proc(OP_CONTINUATION, "call-with-current-continuation");
+	mk_proc(OP_VALUES, "values");
+	mk_proc(OP_WITHVALUES0, "call-with-values");
 	mk_proc(OP_FORCE, "force");
 	mk_proc(OP_CAR, "car");
 	mk_proc(OP_CDR, "cdr");
