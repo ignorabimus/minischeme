@@ -1907,6 +1907,7 @@ enum {
 	OP_CHARUPCASE,
 	OP_CHARDNCASE,
 	OP_MKSTRING,
+	OP_STRING,
 	OP_STRLEN,
 	OP_STRREF,
 	OP_STRSET,
@@ -1924,6 +1925,8 @@ enum {
 	OP_STRAPPEND,
 	OP_STR2LIST,
 	OP_LIST2STR,
+	OP_STRCOPY,
+	OP_STRFILL,
 	OP_VECTOR,
 	OP_MKVECTOR,
 	OP_VECLEN,
@@ -1949,7 +1952,7 @@ enum {
 	OP_SYM2STR,
 	OP_STR2SYM,
 	OP_NUMBER,
-	OP_STRING,
+	OP_STRINGP,
 	OP_INTEGER,
 	OP_REAL,
 	OP_CHAR,
@@ -3196,6 +3199,17 @@ OP_LET2REC:
 			s_return(mk_empty_string(ivalue(car(args)), ' '));
 		}
 
+	case OP_STRING:		/* string */
+		if (!validargs("string", 0, 65535, TST_CHAR)) Error_0(msg);
+		for (w = 0, x = args; x != NIL; x = cdr(x)) {
+			++w;
+		}
+		y = mk_empty_string(w, ' ');
+		for (w = 0, x = args; x != NIL; x = cdr(x)) {
+			strvalue(y)[w++] = (char)ivalue(car(x));
+		}
+		s_return(y);
+
 	case OP_STRLEN:		/* string-length */
 		if (!validargs("string-length", 1, 1, TST_STRING)) Error_0(msg);
 		s_return(mk_integer(strlength(car(args))));
@@ -3302,6 +3316,16 @@ OP_LET2REC:
 			strvalue(y)[w++] = (char)ivalue(car(x));
 		}
 		s_return(y);
+
+	case OP_STRCOPY:	/* string-copy */
+		if (!validargs("string-copy", 1, 1, TST_STRING)) Error_0(msg);
+		s_return(mk_string(strvalue(car(args))));
+
+	case OP_STRFILL:	/* string-fill! */
+		if (!validargs("string-fill!", 2, 2, TST_STRING TST_CHAR)) Error_0(msg);
+		x = car(args);
+		memset(strvalue(x), ivalue(cadr(args)), strlength(x));
+		s_return(x);
 
 	case OP_VECTOR:		/* vector */
 OP_VECTOR:
@@ -3466,7 +3490,7 @@ OP_VECTOR:
 	case OP_NUMBER:		/* number? */
 		if (!validargs("number?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_number(car(args)));
-	case OP_STRING:		/* string? */
+	case OP_STRINGP:	/* string? */
 		if (!validargs("string?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_string(car(args)));
 	case OP_INTEGER:	/* integer? */
@@ -4304,6 +4328,7 @@ void init_procs()
 	mk_proc(OP_CHARUPCASE, "char-upcase");
 	mk_proc(OP_CHARDNCASE, "char-downcase");
 	mk_proc(OP_MKSTRING, "make-string");
+	mk_proc(OP_STRING, "string");
 	mk_proc(OP_STRLEN, "string-length");
 	mk_proc(OP_STRREF, "string-ref");
 	mk_proc(OP_STRSET, "string-set!");
@@ -4321,6 +4346,8 @@ void init_procs()
 	mk_proc(OP_STRAPPEND, "string-append");
 	mk_proc(OP_STR2LIST, "string->list");
 	mk_proc(OP_LIST2STR, "list->string");
+	mk_proc(OP_STRCOPY, "string-copy");
+	mk_proc(OP_STRFILL, "string-fill!");
 	mk_proc(OP_VECTOR, "vector");
 	mk_proc(OP_MKVECTOR, "make-vector");
 	mk_proc(OP_VECLEN, "vector-length");
@@ -4334,7 +4361,7 @@ void init_procs()
 	mk_proc(OP_SYM2STR, "symbol->string");
 	mk_proc(OP_STR2SYM, "string->symbol");
 	mk_proc(OP_NUMBER, "number?");
-	mk_proc(OP_STRING, "string?");
+	mk_proc(OP_STRINGP, "string?");
 	mk_proc(OP_INTEGER, "integer?");
 	mk_proc(OP_REAL, "real?");
 	mk_proc(OP_CHAR, "char?");
