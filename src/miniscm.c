@@ -1920,6 +1920,7 @@ enum {
 	OP_STRCIGTR,
 	OP_STRCILEQ,
 	OP_STRCIGEQ,
+	OP_SUBSTR,
 	OP_VECTOR,
 	OP_MKVECTOR,
 	OP_VECLEN,
@@ -3245,6 +3246,24 @@ OP_LET2REC:
 		if (!validargs("string-ci>=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
 		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) >= 0);
 
+	case OP_SUBSTR:		/* substring */
+		if (!validargs("substring", 2, 3, TST_STRING TST_NATURAL)) Error_0(msg);
+		if (ivalue(cadr(args)) > (long)strlength(car(args))) {
+			Error_1("substring: start out of bounds:", cadr(args));
+		}
+		if (cddr(args) != NIL) {
+			if (ivalue(caddr(args)) > (long)strlength(car(args)) || ivalue(caddr(args)) < ivalue(cadr(args))) {
+				Error_1("substring: end out of bounds:", caddr(args));
+			}
+			w = ivalue(caddr(args)) - ivalue(cadr(args));
+		} else {
+			w = strlength(car(args)) - ivalue(cadr(args));
+		}
+		x = mk_empty_string(w, ' ');
+		memcpy(strvalue(x), strvalue(car(args)) + ivalue(cadr(args)), w);
+		strvalue(x)[w] = '\0';
+		s_return(x);
+
 	case OP_VECTOR:		/* vector */
 OP_VECTOR:
 		if (!validargs("vector", 0, 65535, TST_NONE)) Error_0(msg);
@@ -4259,6 +4278,7 @@ void init_procs()
 	mk_proc(OP_STRCIGTR, "string-ci>?");
 	mk_proc(OP_STRCILEQ, "string-ci<=?");
 	mk_proc(OP_STRCIGEQ, "string-ci>=?");
+	mk_proc(OP_SUBSTR, "substring");
 	mk_proc(OP_VECTOR, "vector");
 	mk_proc(OP_MKVECTOR, "make-vector");
 	mk_proc(OP_VECLEN, "vector-length");
