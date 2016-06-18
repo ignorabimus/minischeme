@@ -1922,6 +1922,8 @@ enum {
 	OP_STRCIGEQ,
 	OP_SUBSTR,
 	OP_STRAPPEND,
+	OP_STR2LIST,
+	OP_LIST2STR,
 	OP_VECTOR,
 	OP_MKVECTOR,
 	OP_VECLEN,
@@ -3277,6 +3279,30 @@ OP_LET2REC:
 		}
 		s_return(y);
 
+	case OP_STR2LIST:	/* string->list */
+		if (!validargs("string->list", 1, 1, TST_STRING)) Error_0(msg);
+		y = NIL;
+		for (x = car(args), w = strlength(x) - 1; w >= 0; w--) {
+			y = cons(mk_character(strvalue(x)[w]), y);
+		}
+		s_return(y);
+
+	case OP_LIST2STR:	/* list->string */
+		if (!validargs("list->string", 1, 1, TST_LIST)) Error_0(msg);
+		x = car(args);
+		w = list_length(x);
+		if (w < 0) {
+			Error_1("list->string: not a proper list:", x);
+		}
+		y = mk_empty_string(w, ' ');
+		for (w = 0; x != NIL; x = cdr(x)) {
+			if (!is_character(car(x))) {
+				Error_1("list->string: not a charactor:", car(x));
+			}
+			strvalue(y)[w++] = (char)ivalue(car(x));
+		}
+		s_return(y);
+
 	case OP_VECTOR:		/* vector */
 OP_VECTOR:
 		if (!validargs("vector", 0, 65535, TST_NONE)) Error_0(msg);
@@ -4293,6 +4319,8 @@ void init_procs()
 	mk_proc(OP_STRCIGEQ, "string-ci>=?");
 	mk_proc(OP_SUBSTR, "substring");
 	mk_proc(OP_STRAPPEND, "string-append");
+	mk_proc(OP_STR2LIST, "string->list");
+	mk_proc(OP_LIST2STR, "list->string");
 	mk_proc(OP_VECTOR, "vector");
 	mk_proc(OP_MKVECTOR, "make-vector");
 	mk_proc(OP_VECLEN, "vector-length");
