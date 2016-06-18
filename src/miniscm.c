@@ -1921,6 +1921,7 @@ enum {
 	OP_STRCILEQ,
 	OP_STRCIGEQ,
 	OP_SUBSTR,
+	OP_STRAPPEND,
 	OP_VECTOR,
 	OP_MKVECTOR,
 	OP_VECLEN,
@@ -3264,6 +3265,18 @@ OP_LET2REC:
 		strvalue(x)[w] = '\0';
 		s_return(x);
 
+	case OP_STRAPPEND:	/* string-append */
+		if (!validargs("string-append", 0, 65535, TST_STRING)) Error_0(msg);
+		for (w = 0, x = args; x != NIL; x = cdr(x)) {
+			w += strlength(car(x));
+		}
+		y = mk_empty_string(w, ' ');
+		for (w = 0, x = args; x != NIL; x = cdr(x)) {
+			memcpy(strvalue(y) + w, strvalue(car(x)), strlength(car(x)));
+			w += strlength(car(x));
+		}
+		s_return(y);
+
 	case OP_VECTOR:		/* vector */
 OP_VECTOR:
 		if (!validargs("vector", 0, 65535, TST_NONE)) Error_0(msg);
@@ -4279,6 +4292,7 @@ void init_procs()
 	mk_proc(OP_STRCILEQ, "string-ci<=?");
 	mk_proc(OP_STRCIGEQ, "string-ci>=?");
 	mk_proc(OP_SUBSTR, "substring");
+	mk_proc(OP_STRAPPEND, "string-append");
 	mk_proc(OP_VECTOR, "vector");
 	mk_proc(OP_MKVECTOR, "make-vector");
 	mk_proc(OP_VECLEN, "vector-length");
