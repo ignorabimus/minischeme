@@ -1450,11 +1450,9 @@ void printslashstring(unsigned char *s)
 	putcharacter('"');
 }
 
-/* print atoms */
-int printatom(pointer l, int f)
+char *atom2str(pointer l, int f)
 {
-	char *p = "";
-
+	char *p;
 	if (l == NIL)
 		p = "()";
 	else if (l == T)
@@ -1465,23 +1463,43 @@ int printatom(pointer l, int f)
 		p = "#<EOF>";
 	else if (is_number(l)) {
 		p = strbuff;
-		if (l->_isfixnum) {
-			sprintf(p, "%ld", ivalue(l));
-		} else {
-			sprintf(p, "%.10g", rvalue(l));
-			f = strcspn(p, ".e");
-			if (p[f] == 0) {
-				p[f] = '.';
-				p[f+1] = '0';
-				p[f+2] = 0;
+		if (f <= 1 || f == 10) {
+			if (l->_isfixnum) {
+				sprintf(p, "%ld", ivalue(l));
+			} else {
+				sprintf(p, "%.10g", rvalue(l));
+				f = strcspn(p, ".e");
+				if (p[f] == 0) {
+					p[f] = '.';
+					p[f + 1] = '0';
+					p[f + 2] = 0;
+				}
 			}
+		} else if (f == 16) {
+			if (ivalue(l) >= 0)
+				sprintf(p, "%lx", ivalue(l));
+			else
+				sprintf(p, "-%lx", -ivalue(l));
+		} else if (f == 8) {
+			if (ivalue(l) >= 0)
+				sprintf(p, "%lo", ivalue(l));
+			else
+				sprintf(p, "-%lo", -ivalue(l));
+		} else if (f == 2) {
+			unsigned long b = (ivalue(l) < 0) ? -ivalue(l) : ivalue(l);
+			p = &p[sizeof(strbuff) - 1];
+			*p = 0;
+			do { *--p = (b & 1) ? '1' : '0'; b >>= 1; } while (b != 0);
+			if (ivalue(l) < 0) *--p = '-';
+		} else {
+			p = NULL;
 		}
 	} else if (is_string(l)) {
 		if (!f) {
 			p = strvalue(l);
 		} else {
 			printslashstring(strvalue(l));
-			return 0;
+			p = NULL;
 		}
 	} else if (is_character(l)) {
 		int c = ivalue(l);
@@ -1538,8 +1556,20 @@ int printatom(pointer l, int f)
 	} else {
 		p = "#<ERROR>";
 	}
-	if (f < 0)
+	return p;
+}
+
+/* print atoms */
+int printatom(pointer l, int f)
+{
+	char *p = atom2str(l, f);
+
+	if (p == NULL) {
+		return 0;
+	}
+	if (f < 0) {
 		return strlen(p);
+	}
 	putstr(p);
 	return 0;
 }
@@ -1897,6 +1927,8 @@ enum {
 	OP_EXPT,
 	OP_EX2INEX,
 	OP_INEX2EX,
+	OP_NUM2STR,
+	OP_STR2NUM,
 	OP_CAR,
 	OP_CDR,
 	OP_CONS,
@@ -3152,6 +3184,41 @@ OP_LET2REC:
 			Error_1("inexact->exact: cannot express :", x);
 		}
 
+	case OP_NUM2STR:	/* number->string */
+		if (!validargs("number->string", 1, 2, TST_NUMBER TST_NATURAL)) Error_0(msg);
+		if (cdr(args) != NIL) {
+			w = ivalue(cadr(args));
+			if (w != 16 && w != 10 && w != 8 && w != 2) {
+				Error_1("number->string: bad base:", cadr(args));
+			}
+		} else {
+			w = 10;
+		}
+		s_return(mk_string(atom2str(car(args), w)));
+
+	case OP_STR2NUM:	/* string->number */
+		if (!validargs("string->number", 1, 2, TST_STRING TST_NATURAL)) Error_0(msg);
+		if (cdr(args) != NIL) {
+			w = ivalue(cadr(args));
+			if (w != 16 && w != 10 && w != 8 && w != 2) {
+				Error_1("string->number: bad base:", cadr(args));
+			}
+		} else {
+			w = 10;
+		}
+		if (*strvalue(car(args)) == '#') {
+			s_return(mk_const(strvalue(car(args)) + 1));
+		} else if (w == 10) {
+			s_return(mk_atom(strvalue(car(args))));
+		} else {
+			char *ep;
+			long iv = strtol(strvalue(car(args)), &ep, w);
+			if (*ep) {
+				s_return(F);
+			}
+			s_return(mk_integer(iv));
+		}
+
 	case OP_CAR:		/* car */
 		if (!validargs("car", 1, 1, TST_PAIR)) Error_0(msg);
 		s_return(caar(args));
@@ -4323,6 +4390,8 @@ void init_procs()
 	mk_proc(OP_EXPT, "expt");
 	mk_proc(OP_EX2INEX, "exact->inexact");
 	mk_proc(OP_INEX2EX, "inexact->exact");
+	mk_proc(OP_NUM2STR, "number->string");
+	mk_proc(OP_STR2NUM, "string->number");
 	mk_proc(OP_CHAR2INT, "char->integer");
 	mk_proc(OP_INT2CHAR, "integer->char");
 	mk_proc(OP_CHARUPCASE, "char-upcase");
