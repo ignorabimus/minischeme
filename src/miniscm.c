@@ -1973,6 +1973,8 @@ enum {
 	OP_ZEROP,
 	OP_POSP,
 	OP_NEGP,
+	OP_ODD,
+	OP_EVEN,
 	OP_NEQ,
 	OP_LESS,
 	OP_GRE,
@@ -1987,6 +1989,8 @@ enum {
 	OP_STRINGP,
 	OP_INTEGER,
 	OP_REAL,
+	OP_EXACT,
+	OP_INEXACT,
 	OP_CHAR,
 	OP_CHAREQU,
 	OP_CHARLSS,
@@ -3479,6 +3483,12 @@ OP_VECTOR:
 	case OP_NEGP:		/* negative? */
 		if (!validargs("negative?", 1, 1, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) < 0);
+	case OP_ODD:		/* odd? */
+		if (!validargs("odd?", 1, 1, TST_INTEGER)) Error_0(msg);
+		s_retbool((car(args)->_isfixnum ? ivalue(car(args)) : (long)rvalue(car(args))) % 2 == 1);
+	case OP_EVEN:		/* even? */
+		if (!validargs("even?", 1, 1, TST_INTEGER)) Error_0(msg);
+		s_retbool((car(args)->_isfixnum ? ivalue(car(args)) : (long)rvalue(car(args))) % 2 == 0);
 	case OP_NEQ:		/* = */
 		if (!validargs("=", 2, 2, TST_NUMBER)) Error_0(msg);
 		s_retbool(nvalue(car(args)) == nvalue(cadr(args)));
@@ -3566,6 +3576,12 @@ OP_VECTOR:
 	case OP_REAL:		/* real? */
 		if (!validargs("real?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_number(car(args)));
+	case OP_EXACT:		/* exact? */
+		if (!validargs("exact?", 1, 1, TST_ANY)) Error_0(msg);
+		s_retbool(is_number(car(args)) && car(args)->_isfixnum);
+	case OP_INEXACT:	/* inexact? */
+		if (!validargs("inexact?", 1, 1, TST_ANY)) Error_0(msg);
+		s_retbool(!is_number(car(args)) || !car(args)->_isfixnum);
 	case OP_CHAR:		/* char? */
 		if (!validargs("char?", 1, 1, TST_ANY)) Error_0(msg);
 		s_retbool(is_character(car(args)));
@@ -4433,6 +4449,8 @@ void init_procs()
 	mk_proc(OP_STRINGP, "string?");
 	mk_proc(OP_INTEGER, "integer?");
 	mk_proc(OP_REAL, "real?");
+	mk_proc(OP_EXACT, "exact?");
+	mk_proc(OP_INEXACT, "inexact?");
 	mk_proc(OP_CHAR, "char?");
 	mk_proc(OP_CHAREQU, "char=?");
 	mk_proc(OP_CHARLSS, "char<?");
@@ -4465,6 +4483,8 @@ void init_procs()
 	mk_proc(OP_ZEROP, "zero?");
 	mk_proc(OP_POSP, "positive?");
 	mk_proc(OP_NEGP, "negative?");
+	mk_proc(OP_ODD, "odd?");
+	mk_proc(OP_EVEN, "even?");
 	mk_proc(OP_NEQ, "=");
 	mk_proc(OP_LESS, "<");
 	mk_proc(OP_GRE, ">");
