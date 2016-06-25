@@ -2005,6 +2005,7 @@ enum {
 	OP_VECSET,
 	OP_VEC2LIST,
 	OP_LIST2VEC,
+	OP_VECFILL,
 	OP_NOT,
 	OP_BOOL,
 	OP_NULL,
@@ -3581,6 +3582,13 @@ OP_VECTOR:
 		}
 		s_return(y);
 
+	case OP_VECFILL:	/* vector-fill! */
+		if (!validargs("vector-fill!", 2, 2, TST_VECTOR TST_ANY)) Error_0(msg);
+		for (x = car(args), w = ivalue(x) - 1; w >= 0; w--) {
+			set_vector_elem(car(args), w, cadr(args));
+		}
+		s_return(car(args));
+
 	case OP_NOT:		/* not */
 		if (!validargs("not", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(isfalse(car(args)));
@@ -4560,6 +4568,7 @@ void init_procs()
 	mk_proc(OP_VECSET, "vector-set!");
 	mk_proc(OP_VEC2LIST, "vector->list");
 	mk_proc(OP_LIST2VEC, "list->vector");
+	mk_proc(OP_VECFILL, "vector-fill!");
 	mk_proc(OP_NOT, "not");
 	mk_proc(OP_BOOL, "boolean?");
 	mk_proc(OP_SYMBOL, "symbol?");
