@@ -241,6 +241,8 @@ struct cell _ONE;		/* special cell representing integer 1 */
 pointer inport = &_NIL;		/* pointer to current-input-port */
 pointer outport = &_NIL;	/* pointer to current-output-port */
 
+pointer winders = &_NIL;	/* pointer to winders list */
+
 #ifdef USE_COPYING_GC
 pointer gcell_list = &_NIL;	/* pointer to cell table */
 #define gcell_next(p) car((p) + 1)
@@ -798,6 +800,7 @@ void gc(register pointer *a, register pointer *b)
 	global_env = forward(global_env);
 	inport = forward(inport);
 	outport = forward(outport);
+	winders = forward(winders);
 
 	/* forward special symbols */
 	LAMBDA = forward(LAMBDA);
@@ -967,6 +970,7 @@ void gc(register pointer *a, register pointer *b)
 	mark(global_env);
 	mark(inport);
 	mark(outport);
+	mark(winders);
 
 	/* mark current registers */
 	mark(args);
@@ -1669,6 +1673,31 @@ int list_length(pointer a)
 	}
 }
 
+/* shared tail */
+pointer shared_tail(pointer a, pointer b)
+{
+	int alen = list_length(a);
+	int blen = list_length(b);
+
+	if (alen > blen) {
+		while (alen > blen) {
+			a = cdr(a);
+			--alen;
+		}
+	} else {
+		while (alen < blen) {
+			b = cdr(b);
+			--blen;
+		}
+	}
+
+	while (a != b) {
+		a = cdr(a);
+		b = cdr(b);
+	}
+	return a;
+}
+
 /* equivalence of atoms */
 int eqv(register pointer a, register pointer b)
 {
@@ -1853,6 +1882,7 @@ enum {
 	OP_E0ARGS,
 	OP_E1ARGS,
 	OP_APPLY,
+	OP_APPLYCONT,
 	OP_DOMACRO,
 	OP_GENSYM,
 
@@ -1901,6 +1931,15 @@ enum {
 	OP_VALUES,
 	OP_WITHVALUES0,
 	OP_WITHVALUES1,
+	OP_DYNAMICWIND0,
+	OP_DYNAMICWIND1,
+	OP_DYNAMICWIND2,
+	OP_DYNAMICWIND3,
+	OP_DOWINDS0,
+	OP_DOWINDS1,
+	OP_DOWINDS2,
+	OP_DOWINDS3,
+	OP_DOWINDS4,
 	OP_ADD,
 	OP_SUB,
 	OP_MUL,
@@ -2328,20 +2367,31 @@ OP_APPLY:
 			args = NIL;
 			s_goto(OP_BEGIN);
 		} else if (is_continuation(code)) {	/* CONTINUATION */
-#ifndef USE_SCHEME_STACK
-			dump = s_clone(cont_dump(code));
-#else
-			dump = cont_dump(code);
-#endif
-			if (s_next_op() == OP_WITHVALUES1) {
-				args = cons(args, NIL);
-				type(args) |= T_VALUES;
-				s_return(args);
-			} else {
-				s_return(args != NIL ? car(args) : NIL);
+			code = cont_dump(code);
+			if (winders != car(code)) {
+				s_save(OP_APPLYCONT, args, code);
+				args = winders;
+				code = car(code);
+				s_goto(OP_DOWINDS0);
 			}
+			s_goto(OP_APPLYCONT);
 		} else {
 			Error_0("Illegal function");
+		}
+
+	case OP_APPLYCONT:
+OP_APPLYCONT:
+#ifndef USE_SCHEME_STACK
+		dump = s_clone(cdr(code));
+#else
+		dump = cdr(code);
+#endif
+		if (s_next_op() == OP_WITHVALUES1) {
+			args = cons(args, NIL);
+			type(args) |= T_VALUES;
+			s_return(args);
+		} else {
+			s_return(args != NIL ? car(args) : NIL);
 		}
 	default:
 		break;
@@ -2839,9 +2889,9 @@ OP_LET2REC:
 		if (!validargs("call-with-current-continuation", 1, 1, TST_NONE)) Error_0(msg);
 		code = car(args);
 #ifndef USE_SCHEME_STACK
-		args = cons(mk_continuation(s_clone_save()), NIL);
+		args = cons(mk_continuation(cons(winders, s_clone_save())), NIL);
 #else
-		args = cons(mk_continuation(dump), NIL);
+		args = cons(mk_continuation(cons(winders, dump)), NIL);
 #endif
 		s_goto(OP_APPLY);
 
@@ -2871,6 +2921,75 @@ OP_LET2REC:
 			args = cons(value, NIL);
 		}
 		s_goto(OP_APPLY);
+
+	case OP_DYNAMICWIND0:	/* dynamic-wind -- before */
+		if (!validargs("dynamic-wind", 3, 3, TST_NONE)) Error_0(msg);
+		s_save(OP_DYNAMICWIND1, args, code);
+		code = car(args);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_DYNAMICWIND1:	/* dynamic-wind -- body */
+		winders = cons(cons(car(args), caddr(args)), winders);
+		s_save(OP_DYNAMICWIND2, args, code);
+		code = cadr(args);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_DYNAMICWIND2:	/* dynamic-wind -- after */
+		winders = cdr(winders);
+		s_save(OP_DYNAMICWIND3, cons(value, args), code);
+		code = caddr(args);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_DYNAMICWIND3:	/* dynamic-wind -- return */
+		s_return(car(args));
+
+	case OP_DOWINDS0:		/* winding -- after, before */
+OP_DOWINDS0:
+		args = shared_tail(args, code);
+		if (winders != args && winders != NIL) {
+			s_save(OP_DOWINDS2, args, code);
+			code = args;
+			args = winders;
+			s_goto(OP_DOWINDS1);
+		}
+		if (args != code && code != NIL) {
+			s_goto(OP_DOWINDS2);
+		}
+		s_return(T);
+
+	case OP_DOWINDS1:		/* winding -- after */
+OP_DOWINDS1:
+		winders = args;
+		if (args != code && args != NIL) {
+			s_save(OP_DOWINDS1, cdr(args), code);
+			code = cdar(args);
+			args = NIL;
+			s_goto(OP_APPLY);
+		}
+		s_return(T);
+
+	case OP_DOWINDS2:		/* winding -- before */
+OP_DOWINDS2:
+		if (args != code && code != NIL) {
+			s_save(OP_DOWINDS3, args, code);
+			code = cdr(code);
+			s_goto(OP_DOWINDS2);
+		}
+		winders = code;
+		s_return(T);
+
+	case OP_DOWINDS3:		/* winding -- before */
+		s_save(OP_DOWINDS4, args, code);
+		code = caar(code);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_DOWINDS4:		/* winding -- before */
+		winders = code;
+		s_return(T);
 
 	case OP_ADD:		/* + */
 		if (!validargs("+", 0, 65535, TST_NUMBER)) Error_0(msg);
@@ -4374,6 +4493,7 @@ void init_procs()
 	mk_proc(OP_CONTINUATION, "call-with-current-continuation");
 	mk_proc(OP_VALUES, "values");
 	mk_proc(OP_WITHVALUES0, "call-with-values");
+	mk_proc(OP_DYNAMICWIND0, "dynamic-wind");
 	mk_proc(OP_FORCE, "force");
 	mk_proc(OP_CAR, "car");
 	mk_proc(OP_CDR, "cdr");
