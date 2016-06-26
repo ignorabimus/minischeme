@@ -19,25 +19,6 @@
 
 (define call/cc call-with-current-continuation)
 
-(define (list . x) x)
-
-(define (list-tail x k)
-    (if (zero? k)
-        x
-        (list-tail (cdr x) (- k 1))))
-
-(define (list-ref x k)
-    (car (list-tail x k)))
-
-(define (last-pair x)
-    (if (pair? (cdr x))
-        (last-pair (cdr x))
-        x))
-
-(define (head stream) (car stream))
-
-(define (tail stream) (force (cdr stream)))
-
 ;; The following quasiquote macro is due to Eric S. Tiedemann.
 ;;   Copyright 1988 by Eric S. Tiedemann; all rights reserved.
 ;; 

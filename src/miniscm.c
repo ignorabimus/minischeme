@@ -1973,6 +1973,10 @@ enum {
 	OP_CONS,
 	OP_SETCAR,
 	OP_SETCDR,
+	OP_LIST,
+	OP_LISTTAIL,
+	OP_LISTREF,
+	OP_LASTPAIR,
 	OP_CHAR2INT,
 	OP_INT2CHAR,
 	OP_CHARUPCASE,
@@ -3366,6 +3370,48 @@ OP_DOWINDS2:
 		cdar(args) = cadr(args);
 		s_return(car(args));
 
+	case OP_LIST:		/* list */
+		if (!validargs("list", 0, 65535, TST_NONE)) Error_0(msg);
+		s_return(args);
+
+	case OP_LISTTAIL:	/* list-tail */
+		if (!validargs("list-tail", 2, 2, TST_LIST TST_NATURAL)) Error_0(msg);
+		x = car(args);
+		w = list_length(x);
+		if (w < 0) {
+			Error_1("list-tail: not a proper list:", x);
+		}
+		if (w < ivalue(cadr(args))) {
+			Error_1("list-tail: list length <", cadr(args));
+		}
+		for (w -= ivalue(cadr(args)); w > 0; --w) {
+			x = cdr(x);
+		}
+		s_return(x);
+
+	case OP_LISTREF:	/* list-ref */
+		if (!validargs("list-ref", 2, 2, TST_LIST TST_NATURAL)) Error_0(msg);
+		x = car(args);
+		w = list_length(x);
+		if (w < 0) {
+			Error_1("list-ref: not a proper list:", x);
+		}
+		if (w < ivalue(cadr(args))) {
+			Error_1("list-ref: list length <", cadr(args));
+		}
+		for (w -= ivalue(cadr(args)); w > 0; --w) {
+			x = cdr(x);
+		}
+		s_return(car(x));
+
+	case OP_LASTPAIR:	/* "last-pair" */
+		if (!validargs("last-pair", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(args);
+		while (is_pair(cdr(x))) {
+			x = cdr(x);
+		}
+		s_return(x);
+
 	case OP_CHAR2INT:	/* char->integer */
 		if (!validargs("char->integer", 1, 1, TST_CHAR)) Error_0(msg);
 		s_return(mk_integer(ivalue(car(args))));
@@ -4508,6 +4554,10 @@ void init_procs()
 	mk_proc(OP_CONS, "cons");
 	mk_proc(OP_SETCAR, "set-car!");
 	mk_proc(OP_SETCDR, "set-cdr!");
+	mk_proc(OP_LIST, "list");
+	mk_proc(OP_LISTTAIL, "list-tail");
+	mk_proc(OP_LISTREF, "list-ref");
+	mk_proc(OP_LASTPAIR, "last-pair");
 	mk_proc(OP_ADD, "+");
 	mk_proc(OP_SUB, "-");
 	mk_proc(OP_MUL, "*");
