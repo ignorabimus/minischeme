@@ -1,22 +1,5 @@
 ; This is a init file for Mini-Scheme.
 
-;; fake pre R^3 boolean values
-(define nil #f)
-(define t #t)
-
-(define (caar x) (car (car x)))
-(define (cadr x) (car (cdr x)))
-(define (cdar x) (cdr (car x)))
-(define (cddr x) (cdr (cdr x)))
-(define (caaar x) (car (car (car x))))
-(define (caadr x) (car (car (cdr x))))
-(define (cadar x) (car (cdr (car x))))
-(define (caddr x) (car (cdr (cdr x))))
-(define (cdaar x) (cdr (car (car x))))
-(define (cdadr x) (cdr (car (cdr x))))
-(define (cddar x) (cdr (cdr (car x))))
-(define (cdddr x) (cdr (cdr (cdr x))))
-
 (define call/cc call-with-current-continuation)
 
 ;; The following quasiquote macro is due to Eric S. Tiedemann.

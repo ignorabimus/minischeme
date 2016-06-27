@@ -1973,6 +1973,34 @@ enum {
 	OP_CONS,
 	OP_SETCAR,
 	OP_SETCDR,
+	OP_CAAR,
+	OP_CADR,
+	OP_CDAR,
+	OP_CDDR,
+	OP_CAAAR,
+	OP_CAADR,
+	OP_CADAR,
+	OP_CADDR,
+	OP_CDAAR,
+	OP_CDADR,
+	OP_CDDAR,
+	OP_CDDDR,
+	OP_CAAAAR,
+	OP_CAAADR,
+	OP_CAADAR,
+	OP_CAADDR,
+	OP_CADAAR,
+	OP_CADADR,
+	OP_CADDAR,
+	OP_CADDDR,
+	OP_CDAAAR,
+	OP_CDAADR,
+	OP_CDADAR,
+	OP_CDADDR,
+	OP_CDDAAR,
+	OP_CDDADR,
+	OP_CDDDAR,
+	OP_CDDDDR,
 	OP_LIST,
 	OP_LISTTAIL,
 	OP_LISTREF,
@@ -3370,6 +3398,229 @@ OP_DOWINDS2:
 		cdar(args) = cadr(args);
 		s_return(car(args));
 
+	case OP_CAAR: /* caar */
+		if (!validargs("caar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("caar: must be pair :", x);
+		s_return(car(x));
+	case OP_CADR: /* cadr */
+		if (!validargs("cadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cadr: must be pair :", x);
+		s_return(car(x));
+	case OP_CDAR: /* cdar */
+		if (!validargs("cdar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cdar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDR: /* cddr */
+		if (!validargs("cddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cddr: must be pair :", x);
+		s_return(cdr(x));
+
+	case OP_CAAAR: /* caaar */
+		if (!validargs("caaar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("caaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caaar: must be pair :", x);
+		s_return(car(x));
+	case OP_CAADR: /* caadr */
+		if (!validargs("caadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("caadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caadr: must be pair :", x);
+		s_return(car(x));
+	case OP_CADAR: /* cadar */
+		if (!validargs("cadar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cadar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cadar: must be pair :", x);
+		s_return(car(x));
+	case OP_CADDR: /* caddr */
+		if (!validargs("caddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("caddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("caddr: must be pair :", x);
+		s_return(car(x));
+	case OP_CDAAR: /* cdaar */
+		if (!validargs("cdaar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cdaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdaar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDADR: /* cdadr */
+		if (!validargs("cdadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cdadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdadr: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDAR: /* cddar */
+		if (!validargs("cddar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cddar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cddar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDDR: /* cdddr */
+		if (!validargs("cdddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cdddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cdddr: must be pair :", x);
+		s_return(cdr(x));
+
+	case OP_CAAAAR: /* caaaar */
+		if (!validargs("caaaar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("caaaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caaaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caaaar: must be pair :", x);
+		s_return(car(x));
+	case OP_CAAADR: /* caaadr */
+		if (!validargs("caaadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("caaadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caaadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caaadr: must be pair :", x);
+		s_return(car(x));
+	case OP_CAADAR: /* caadar */
+		if (!validargs("caadar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("caadar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("caadar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caadar: must be pair :", x);
+		s_return(car(x));
+	case OP_CAADDR: /* caaddr */
+		if (!validargs("caaddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("caaddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("caaddr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("caaddr: must be pair :", x);
+		s_return(car(x));
+	case OP_CADAAR: /* cadaar */
+		if (!validargs("cadaar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cadaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cadaar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cadaar: must be pair :", x);
+		s_return(car(x));
+	case OP_CADADR: /* cadadr */
+		if (!validargs("cadadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cadadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cadadr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cadadr: must be pair :", x);
+		s_return(car(x));
+	case OP_CADDAR: /* caddar */
+		if (!validargs("caddar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("caddar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("caddar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("caddar: must be pair :", x);
+		s_return(car(x));
+	case OP_CADDDR: /* cadddr" */
+		if (!validargs("cadddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cadddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cadddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cadddr: must be pair :", x);
+		s_return(car(x));
+	case OP_CDAAAR: /* cdaaar */
+		if (!validargs("cdaaar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cdaaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdaaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdaaar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDAADR: /* cdaadr */
+		if (!validargs("cdaadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cdaadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdaadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdaadr: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDADAR: /* cdadar" */
+		if (!validargs("cdadar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cdadar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cdadar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdadar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDADDR: /* cdaddr */
+		if (!validargs("cdaddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cdaddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cdaddr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cdaddr: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDAAR: /* cddaar */
+		if (!validargs("cddaar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cddaar: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cddaar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cddaar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDADR: /* cddadr */
+		if (!validargs("cddadr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cddadr: must be pair :", x);
+		x = car(x);
+		if (!is_pair(x)) Error_1("cddadr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cddadr: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDDAR: /* cdddar */
+		if (!validargs("cdddar", 1, 1, TST_PAIR)) Error_0(msg);
+		x = car(car(args));
+		if (!is_pair(x)) Error_1("cdddar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cdddar: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cdddar: must be pair :", x);
+		s_return(cdr(x));
+	case OP_CDDDDR: /* cddddr */
+		if (!validargs("cddddr", 1, 1, TST_PAIR)) Error_0(msg);
+		x = cdr(car(args));
+		if (!is_pair(x)) Error_1("cddddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cddddr: must be pair :", x);
+		x = cdr(x);
+		if (!is_pair(x)) Error_1("cddddr: must be pair :", x);
+		s_return(cdr(x));
+
 	case OP_LIST:		/* list */
 		if (!validargs("list", 0, 65535, TST_NONE)) Error_0(msg);
 		s_return(args);
@@ -4554,6 +4805,34 @@ void init_procs()
 	mk_proc(OP_CONS, "cons");
 	mk_proc(OP_SETCAR, "set-car!");
 	mk_proc(OP_SETCDR, "set-cdr!");
+	mk_proc(OP_CAAR, "caar");
+	mk_proc(OP_CADR, "cadr");
+	mk_proc(OP_CDAR, "cdar");
+	mk_proc(OP_CDDR, "cddr");
+	mk_proc(OP_CAAAR, "caaar");
+	mk_proc(OP_CAADR, "caadr");
+	mk_proc(OP_CADAR, "cadar");
+	mk_proc(OP_CADDR, "caddr");
+	mk_proc(OP_CDAAR, "cdaar");
+	mk_proc(OP_CDADR, "cdadr");
+	mk_proc(OP_CDDAR, "cddar");
+	mk_proc(OP_CDDDR, "cdddr");
+	mk_proc(OP_CAAAAR, "caaaar");
+	mk_proc(OP_CAAADR, "caaadr");
+	mk_proc(OP_CAADAR, "caadar");
+	mk_proc(OP_CAADDR, "caaddr");
+	mk_proc(OP_CADAAR, "cadaar");
+	mk_proc(OP_CADADR, "cadadr");
+	mk_proc(OP_CADDAR, "caddar");
+	mk_proc(OP_CADDDR, "cadddr");
+	mk_proc(OP_CDAAAR, "cdaaar");
+	mk_proc(OP_CDAADR, "cdaadr");
+	mk_proc(OP_CDADAR, "cdadar");
+	mk_proc(OP_CDADDR, "cdaddr");
+	mk_proc(OP_CDDAAR, "cddaar");
+	mk_proc(OP_CDDADR, "cddadr");
+	mk_proc(OP_CDDDAR, "cdddar");
+	mk_proc(OP_CDDDDR, "cddddr");
 	mk_proc(OP_LIST, "list");
 	mk_proc(OP_LISTTAIL, "list-tail");
 	mk_proc(OP_LISTREF, "list-ref");
