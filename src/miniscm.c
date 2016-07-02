@@ -115,6 +115,7 @@ typedef struct cell *pointer;
 #define T_VECTOR      1024	/* 0000010000000000 */
 #ifdef USE_MACRO
 # define T_MACRO      2048	/* 0000100000000000 */
+# define T_DEFMACRO      1	/* 0000000000000001 */	/* for define-macro */
 #endif
 #define T_ENVIRONMENT 4096	/* 0001000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
@@ -1916,7 +1917,9 @@ enum {
 	OP_C0STREAM,
 	OP_C1STREAM,
 	OP_0MACRO,
+	OP_DEFMACRO0,
 	OP_1MACRO,
+	OP_DEFMACRO1,
 	OP_CASE0,
 	OP_CASE1,
 	OP_CASE2,
@@ -2336,11 +2339,13 @@ OP_EVAL:
 #ifdef USE_MACRO
 	case OP_E0ARGS:	/* eval arguments */
 		if (is_macro(value)) {	/* macro expansion */
-			push_sink(&value);
-			s_save(OP_DOMACRO, NIL, NIL);
-			args = cons(code, NIL);
-			pop_sink();
+			if (type(value) & T_DEFMACRO) {
+				args = cdr(code);
+			} else {
+				args = cons(code, NIL);
+			}
 			code = value;
+			s_save(OP_DOMACRO, NIL, NIL);
 			s_goto(OP_APPLY);
 		} else {
 			code = cdr(code);
@@ -2799,25 +2804,27 @@ OP_LET2REC:
 		s_return(cons(args, x));
 
 #ifdef USE_MACRO
-	case OP_0MACRO:	/* macro */
+	case OP_0MACRO:		/* macro */
+	case OP_DEFMACRO0:	/* define-macro */
 		if (is_pair(x = car(code))) {
 			if (!is_symbol(car(x))) {
 				Error_0("Variable is not symbol");
 			}
-			s_save(OP_1MACRO, NIL, car(x));
+			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, car(x));
 			y = cons(cdar(code), cdr(code));
 			code = cons(LAMBDA, y);
 		} else {
 			if (!is_symbol(x)) {
 				Error_0("Variable is not symbol");
 			}
-			s_save(OP_1MACRO, NIL, x);
+			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, x);
 			code = cadr(code);
 		}
 		s_goto(OP_EVAL);
 
-	case OP_1MACRO:	/* macro */
-		type(value) |= T_MACRO;
+	case OP_1MACRO:		/* macro */
+	case OP_DEFMACRO1:	/* define-macro */
+		type(value) |= (operator == OP_1MACRO) ? T_MACRO : (T_MACRO | T_DEFMACRO);
 		for (x = car(envir); x != NIL; x = cdr(x))
 			if (caar(x) == code)
 				break;
@@ -4783,6 +4790,7 @@ void init_syntax()
 	mk_syntax(OP_C0STREAM, "cons-stream");
 #ifdef USE_MACRO
 	mk_syntax(OP_0MACRO, "macro");
+	mk_syntax(OP_DEFMACRO0, "define-macro");
 #endif
 	mk_syntax(OP_CASE0, "case");
 }
