@@ -115,9 +115,9 @@ typedef struct cell *pointer;
 #define T_VECTOR      1024	/* 0000010000000000 */
 #ifdef USE_MACRO
 # define T_MACRO      2048	/* 0000100000000000 */
-# define T_DEFMACRO      1	/* 0000000000000001 */	/* for define-macro */
+# define T_DEFMACRO   4096	/* 0001000000000000 */	/* for define-macro */
 #endif
-#define T_ENVIRONMENT 4096	/* 0001000000000000 */
+#define T_ENVIRONMENT 8192	/* 0010000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
 #define MARK         32768	/* 1000000000000000 */
@@ -2155,6 +2155,9 @@ enum {
 	OP_GET_CLOSURE,
 	OP_CLOSUREP,
 	OP_MACROP,
+	OP_MACRO_EXPAND0,
+	OP_MACRO_EXPAND1,
+	OP_MACRO_EXPAND2,
 };
 
 #define TST_NONE 0
@@ -4701,6 +4704,30 @@ OP_P0_WIDTH:
 			s_return(F);
 		}
 		s_retbool(is_macro(car(args)));
+
+	case OP_MACRO_EXPAND0:	/* macro-expand */
+		if (!validargs("macro-expand", 1, 1, TST_LIST)) Error_0(msg);
+		s_save(OP_MACRO_EXPAND1, args, NIL);
+		code = caar(args);
+		args = NIL;
+		s_goto(OP_EVAL);
+
+	case OP_MACRO_EXPAND1:	/* macro-expand */
+		code = value;
+		if (type(code) & T_MACRO) {
+			s_save(OP_MACRO_EXPAND2, args, code);
+			code = cons(LAMBDA, closure_code(code));
+			args = NIL;
+			s_goto(OP_EVAL);
+		}
+		s_return(car(args));
+
+	case OP_MACRO_EXPAND2:	/* macro-expand */
+		if (type(code) & T_DEFMACRO) {
+			args = cdar(args);
+		}
+		code = value;
+		s_goto(OP_APPLY);
 #endif
 
 	default:
@@ -5002,6 +5029,7 @@ void init_procs()
 	mk_proc(OP_CLOSUREP, "closure?");	/* a.k */
 #ifdef USE_MACRO
 	mk_proc(OP_MACROP, "macro?");	/* a.k */
+	mk_proc(OP_MACRO_EXPAND0, "macro-expand");
 #endif
 	mk_proc(OP_GENSYM, "gensym");
 	mk_proc(OP_QUIT, "quit");

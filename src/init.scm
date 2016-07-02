@@ -85,6 +85,3 @@
                                nil))
                         `,vars)))))
       do-macro)))
-
-(define (macro-expand form)
-  (apply (eval (get-closure-code (eval (car form)))) (cdr form)))
