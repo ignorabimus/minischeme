@@ -31,19 +31,16 @@
 /* #define VERBOSE */	/* define this if you want verbose GC */
 /* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
 #define USE_SETJMP	/* undef this if you do not want to use setjmp() */
-#define USE_QQUOTE	/* undef this if you do not need quasiquote */
 #define USE_MACRO	/* undef this if you do not need macro */
 #define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
 
 
-#ifdef USE_QQUOTE
 /*--
  *  If your machine can't support "forward single quotation character"
  *  i.e., '`',  you may have trouble to use backquote.
  *  So use '^' in place of '`'.
  */
 # define BACKQUOTE '`'
-#endif
 
 /*
  *  Basic memory allocation units
@@ -253,11 +250,9 @@ pointer gcell_list = &_NIL;	/* pointer to cell table */
 pointer LAMBDA;			/* pointer to syntax lambda */
 pointer QUOTE;			/* pointer to syntax quote */
 
-#ifdef USE_QQUOTE
 pointer QQUOTE;			/* pointer to symbol quasiquote */
 pointer UNQUOTE;		/* pointer to symbol unquote */
 pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
-#endif
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
 long    fcells = 0;		/* # of free cells */
@@ -806,11 +801,9 @@ void gc(register pointer *a, register pointer *b)
 	/* forward special symbols */
 	LAMBDA = forward(LAMBDA);
 	QUOTE = forward(QUOTE);
-#ifdef USE_QQUOTE
 	QQUOTE = forward(QQUOTE);
 	UNQUOTE = forward(UNQUOTE);
 	UNQUOTESP = forward(UNQUOTESP);
-#endif
 
 	/* forward current registers */
 	args = forward(args);
@@ -1125,11 +1118,9 @@ void port_close(pointer p, int flag)
 #define TOK_QUOTE   4
 #define TOK_COMMENT 5
 #define TOK_DQUOTE  6
-#ifdef USE_QQUOTE
-# define TOK_BQUOTE  7
-# define TOK_COMMA   8
-# define TOK_ATMARK  9
-#endif
+#define TOK_BQUOTE  7
+#define TOK_COMMA   8
+#define TOK_ATMARK  9
 #define TOK_SHARP   10
 #define TOK_VEC     11
 
@@ -1389,7 +1380,6 @@ int token()
 		return token();
 	case '"':
 		return TOK_DQUOTE;
-#ifdef USE_QQUOTE
 	case BACKQUOTE:
 		return TOK_BQUOTE;
 	case ',':
@@ -1399,7 +1389,6 @@ int token()
 			backchar(c);
 			return TOK_COMMA;
 		}
-#endif
 	case '#':
 		if ((c = inchar()) == '(') {
 			return TOK_VEC;
@@ -1753,6 +1742,39 @@ int equal(register pointer a, register pointer b)
 	}
 }
 
+/* make cons list for quasiquote */
+pointer mcons(pointer f, pointer l, pointer r)
+{
+	pointer x;
+
+	if (is_pair(r) && car(r) == QUOTE && cadr(r) == cdr(f) &&
+		is_pair(l) && car(l) == QUOTE && cadr(l) == cdr(f)) {
+		x = cons(f, NIL);
+		return cons(QUOTE, x);
+	} else {
+		args = l;
+		x = cons(r, NIL);
+		x = cons(args, x);
+		return cons(mk_symbol("cons"), x);
+	}
+}
+
+/* make append list for quasiquote */
+pointer mappend(pointer f, pointer l, pointer r)
+{
+	pointer x;
+
+	if (car(f) == NIL ||
+		is_pair(r) && car(l) == QUOTE && cadr(r) == NIL) {
+		return l;
+	} else {
+		args = l;
+		x = cons(r, NIL);
+		x = cons(args, x);
+		return cons(mk_symbol("append"), x);
+	}
+}
+
 /* greatest common divisor */
 int gcd(int a, int b)
 {
@@ -1890,6 +1912,16 @@ enum {
 	OP_LAMBDA,
 	OP_MKCLOSURE,
 	OP_QUOTE,
+	OP_QQUOTE0,
+	OP_QQUOTE1,
+	OP_QQUOTE2,
+	OP_QQUOTE3,
+	OP_QQUOTE4,
+	OP_QQUOTE5,
+	OP_QQUOTE6,
+	OP_QQUOTE7,
+	OP_QQUOTE8,
+	OP_QQUOTE9,
 	OP_DEF0,
 	OP_DEF1,
 	OP_DEFP,
@@ -2519,6 +2551,100 @@ OP_READ_INTERNAL:
 
 	case OP_QUOTE:		/* quote */
 		s_return(car(code));
+
+	case OP_QQUOTE0:	/* quasiquote */
+		args = mk_integer(0);
+		code = car(code);
+		s_save(OP_QQUOTE1, NIL, NIL);
+		s_goto(OP_QQUOTE2);
+
+	case OP_QQUOTE1:	/* quasiquote -- return */
+		code = value;
+		s_goto(OP_EVAL);
+
+	case OP_QQUOTE2:	/* quasiquote -- expand */
+OP_QQUOTE2:
+		if (is_vector(code)) {
+			s_save(OP_QQUOTE3, NIL, NIL);
+			x = NIL;
+			for (w = ivalue(code) - 1; w >= 0; w--) {
+				x = cons(vector_elem(code, w), x);
+			}
+			code = x;
+			s_goto(OP_QQUOTE2);
+		} else if (!is_pair(code)) {
+			x = cons(code, NIL);
+			s_return(cons(QUOTE, x));
+		} else if (QQUOTE == car(code)) {
+			s_save(OP_QQUOTE4, args, NIL);
+			args = mk_integer(ivalue(args) + 1);
+			code = cdr(code);
+			s_goto(OP_QQUOTE2);
+		} else if (ivalue(args) > 0) {
+			if (UNQUOTE == car(code) && list_length(code) == 2) {
+				s_save(OP_QQUOTE5, args, NIL);
+				args = mk_integer(ivalue(args) -1);
+				code = cdr(code);
+				s_goto(OP_QQUOTE2);
+			} else if (UNQUOTESP == car(code)) {
+				s_save(OP_QQUOTE6, args, NIL);
+				args = mk_integer(ivalue(args) - 1);
+				code = cdr(code);
+				s_goto(OP_QQUOTE2);
+			} else {
+				s_save(OP_QQUOTE7, args, code);
+				code = car(code);
+				s_goto(OP_QQUOTE2);
+			}
+		} else {
+			if (UNQUOTE == car(code)) {
+				s_return(cadr(code));
+			} else if (UNQUOTESP == car(code)) {
+				Error_1("Unquote-splicing wasn't in a list:", code);
+			} else if (is_pair(car(code)) && UNQUOTESP == caar(code)) {
+				s_save(OP_QQUOTE9, NIL, code);
+				code = cdr(code);
+				s_goto(OP_QQUOTE2);
+			} else {
+				s_save(OP_QQUOTE7, args, code);
+				code = car(code);
+				s_goto(OP_QQUOTE2);
+			}
+		}
+
+	case OP_QQUOTE3:	/* quasiquote -- 'vector */
+		x = cons(value, NIL);
+		x = cons(mk_symbol("vector"), x);
+		s_return(cons(mk_symbol("apply"), x));
+
+	case OP_QQUOTE4:	/* quasiquote -- 'quasiquote */
+		args = value;
+		x = cons(QQUOTE, NIL);
+		x = cons(QUOTE, x);
+		s_return(mcons(code, x, args));
+
+	case OP_QQUOTE5:	/* quasiquote -- 'unquote */
+		args = value;
+		x = cons(UNQUOTE, NIL);
+		x = cons(QUOTE, x);
+		s_return(mcons(code, x, args));
+
+	case OP_QQUOTE6:	/* quasiquote -- 'unquote-splicing */
+		args = value;
+		x = cons(UNQUOTESP, NIL);
+		x = cons(QUOTE, x);
+		s_return(mcons(code, x, args));
+
+	case OP_QQUOTE7:	/* quasiquote -- 'cons */
+		s_save(OP_QQUOTE8, value, code);
+		code = cdr(code);
+		s_goto(OP_QQUOTE2);
+
+	case OP_QQUOTE8:	/* quasiquote -- 'cons */
+		s_return(mcons(code, args, value));
+
+	case OP_QQUOTE9:	/* quasiquote -- 'append */
+		s_return(mappend(code, cadar(code), value));
 
 	case OP_DEF0:	/* define */
 		if (is_pair(car(code))) {
@@ -4399,7 +4525,6 @@ OP_RDSEXPR:
 			s_save(OP_RDQUOTE, NIL, NIL);
 			tok = token();
 			s_goto(OP_RDSEXPR);
-#ifdef USE_QQUOTE
 		case TOK_BQUOTE:
 			tok = token();
 			if (tok == TOK_VEC) {
@@ -4417,7 +4542,6 @@ OP_RDSEXPR:
 			s_save(OP_RDUQTSP, NIL, NIL);
 			tok = token();
 			s_goto(OP_RDSEXPR);
-#endif
 		case TOK_ATOM:
 			s_return(mk_atom(readstr("();\t\n ")));
 		case TOK_DQUOTE:
@@ -4460,7 +4584,6 @@ OP_RDSEXPR:
 		x = cons(value, NIL);
 		s_return(cons(QUOTE, x));
 
-#ifdef USE_QQUOTE
 	case OP_RDQQUOTE:
 		x = cons(value, NIL);
 		s_return(cons(QQUOTE, x));
@@ -4483,7 +4606,7 @@ OP_RDSEXPR:
 	case OP_RDUQTSP:
 		x = cons(value, NIL);
 		s_return(cons(UNQUOTESP, x));
-#endif
+
 	case OP_RDVEC:
 		args = value;
 		s_goto(OP_VECTOR);
@@ -4803,6 +4926,7 @@ void init_syntax()
 	/* init syntax */
 	mk_syntax(OP_LAMBDA, "lambda");
 	mk_syntax(OP_QUOTE, "quote");
+	mk_syntax(OP_QQUOTE0, "quasiquote");
 	mk_syntax(OP_DEF0, "define");
 	mk_syntax(OP_IF0, "if");
 	mk_syntax(OP_BEGIN, "begin");
@@ -5045,11 +5169,9 @@ void init_globals()
 	/* intialization of global pointers to special symbols */
 	LAMBDA = mk_symbol("lambda");
 	QUOTE = mk_symbol("quote");
-#ifdef USE_QQUOTE
 	QQUOTE = mk_symbol("quasiquote");
 	UNQUOTE = mk_symbol("unquote");
 	UNQUOTESP = mk_symbol("unquote-splicing");
-#endif
 #ifndef USE_SCHEME_STACK
 	dump_base = mk_dumpstack(NIL);
 	dump = dump_base;
