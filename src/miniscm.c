@@ -2190,6 +2190,7 @@ enum {
 	OP_MACRO_EXPAND0,
 	OP_MACRO_EXPAND1,
 	OP_MACRO_EXPAND2,
+	OP_ATOMP,
 };
 
 #define TST_NONE 0
@@ -4852,6 +4853,9 @@ OP_P0_WIDTH:
 		code = value;
 		s_goto(OP_APPLY);
 #endif
+	case OP_ATOMP:		/* atom? */
+		if (!validargs("atom?", 1, 1, TST_NONE)) Error_0(msg);
+		s_retbool(is_atom(car(args)));
 
 	default:
 		sprintf(strbuff, "%d is illegal operator", operator);
@@ -5155,6 +5159,7 @@ void init_procs()
 	mk_proc(OP_MACROP, "macro?");	/* a.k */
 	mk_proc(OP_MACRO_EXPAND0, "macro-expand");
 #endif
+	mk_proc(OP_ATOMP, "atom?");
 	mk_proc(OP_GENSYM, "gensym");
 	mk_proc(OP_QUIT, "quit");
 }

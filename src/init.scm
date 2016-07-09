@@ -4,10 +4,6 @@
 
 ;;;;; following part is written by a.k
 
-;;;;	atom?
-(define (atom? x)
-  (not (pair? x)))
-
 ;;;;	(do ((var init inc) ...) (endtest result ...) body ...)
 ;;
 (macro do
