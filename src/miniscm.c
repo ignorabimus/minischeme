@@ -2377,10 +2377,12 @@ OP_EVAL:
 		if (is_macro(value)) {	/* macro expansion */
 			if (type(value) & T_DEFMACRO) {
 				args = cdr(code);
+				code = value;
 			} else {
-				args = cons(code, NIL);
+				args = code;
+				code = value;
+				args = cons(args, NIL);
 			}
-			code = value;
 			s_save(OP_DOMACRO, NIL, NIL);
 			s_goto(OP_APPLY);
 		} else {
@@ -2556,46 +2558,42 @@ OP_READ_INTERNAL:
 	case OP_QQUOTE0:	/* quasiquote */
 		args = mk_integer(0);
 		code = car(code);
-		s_save(OP_QQUOTE1, NIL, NIL);
-		s_goto(OP_QQUOTE2);
+		s_save(OP_QQUOTE9, NIL, NIL);
+		/* fall through */
 
-	case OP_QQUOTE1:	/* quasiquote -- return */
-		code = value;
-		s_goto(OP_EVAL);
-
-	case OP_QQUOTE2:	/* quasiquote -- expand */
-OP_QQUOTE2:
+	case OP_QQUOTE1:	/* quasiquote -- expand */
+OP_QQUOTE1:
 		if (is_vector(code)) {
-			s_save(OP_QQUOTE3, NIL, NIL);
+			s_save(OP_QQUOTE2, NIL, NIL);
 			x = NIL;
 			for (w = ivalue(code) - 1; w >= 0; w--) {
 				x = cons(vector_elem(code, w), x);
 			}
 			code = x;
-			s_goto(OP_QQUOTE2);
+			s_goto(OP_QQUOTE1);
 		} else if (!is_pair(code)) {
 			x = cons(code, NIL);
 			s_return(cons(QUOTE, x));
 		} else if (QQUOTE == car(code)) {
-			s_save(OP_QQUOTE4, args, NIL);
+			s_save(OP_QQUOTE3, NIL, NIL);
 			args = mk_integer(ivalue(args) + 1);
 			code = cdr(code);
-			s_goto(OP_QQUOTE2);
+			s_goto(OP_QQUOTE1);
 		} else if (ivalue(args) > 0) {
-			if (UNQUOTE == car(code) && list_length(code) == 2) {
-				s_save(OP_QQUOTE5, args, NIL);
-				args = mk_integer(ivalue(args) -1);
-				code = cdr(code);
-				s_goto(OP_QQUOTE2);
-			} else if (UNQUOTESP == car(code)) {
-				s_save(OP_QQUOTE6, args, NIL);
+			if (UNQUOTE == car(code)) {
+				s_save(OP_QQUOTE4, NIL, NIL);
 				args = mk_integer(ivalue(args) - 1);
 				code = cdr(code);
-				s_goto(OP_QQUOTE2);
+				s_goto(OP_QQUOTE1);
+			} else if (UNQUOTESP == car(code)) {
+				s_save(OP_QQUOTE5, NIL, NIL);
+				args = mk_integer(ivalue(args) - 1);
+				code = cdr(code);
+				s_goto(OP_QQUOTE1);
 			} else {
-				s_save(OP_QQUOTE7, args, code);
+				s_save(OP_QQUOTE6, args, code);
 				code = car(code);
-				s_goto(OP_QQUOTE2);
+				s_goto(OP_QQUOTE1);
 			}
 		} else {
 			if (UNQUOTE == car(code)) {
@@ -2603,49 +2601,53 @@ OP_QQUOTE2:
 			} else if (UNQUOTESP == car(code)) {
 				Error_1("Unquote-splicing wasn't in a list:", code);
 			} else if (is_pair(car(code)) && UNQUOTESP == caar(code)) {
-				s_save(OP_QQUOTE9, NIL, code);
+				s_save(OP_QQUOTE8, NIL, code);
 				code = cdr(code);
-				s_goto(OP_QQUOTE2);
+				s_goto(OP_QQUOTE1);
 			} else {
-				s_save(OP_QQUOTE7, args, code);
+				s_save(OP_QQUOTE6, args, code);
 				code = car(code);
-				s_goto(OP_QQUOTE2);
+				s_goto(OP_QQUOTE1);
 			}
 		}
 
-	case OP_QQUOTE3:	/* quasiquote -- 'vector */
+	case OP_QQUOTE2:	/* quasiquote -- 'vector */
 		x = cons(value, NIL);
 		x = cons(mk_symbol("vector"), x);
 		s_return(cons(mk_symbol("apply"), x));
 
-	case OP_QQUOTE4:	/* quasiquote -- 'quasiquote */
+	case OP_QQUOTE3:	/* quasiquote -- 'quasiquote */
 		args = value;
 		x = cons(QQUOTE, NIL);
 		x = cons(QUOTE, x);
 		s_return(mcons(code, x, args));
 
-	case OP_QQUOTE5:	/* quasiquote -- 'unquote */
+	case OP_QQUOTE4:	/* quasiquote -- 'unquote */
 		args = value;
 		x = cons(UNQUOTE, NIL);
 		x = cons(QUOTE, x);
 		s_return(mcons(code, x, args));
 
-	case OP_QQUOTE6:	/* quasiquote -- 'unquote-splicing */
+	case OP_QQUOTE5:	/* quasiquote -- 'unquote-splicing */
 		args = value;
 		x = cons(UNQUOTESP, NIL);
 		x = cons(QUOTE, x);
 		s_return(mcons(code, x, args));
 
-	case OP_QQUOTE7:	/* quasiquote -- 'cons */
-		s_save(OP_QQUOTE8, value, code);
+	case OP_QQUOTE6:	/* quasiquote -- 'cons */
+		s_save(OP_QQUOTE7, value, code);
 		code = cdr(code);
-		s_goto(OP_QQUOTE2);
+		s_goto(OP_QQUOTE1);
 
-	case OP_QQUOTE8:	/* quasiquote -- 'cons */
+	case OP_QQUOTE7:	/* quasiquote -- 'cons */
 		s_return(mcons(code, args, value));
 
-	case OP_QQUOTE9:	/* quasiquote -- 'append */
+	case OP_QQUOTE8:	/* quasiquote -- 'append */
 		s_return(mappend(code, cadar(code), value));
+
+	case OP_QQUOTE9:	/* quasiquote -- return */
+		code = value;
+		s_goto(OP_EVAL);
 
 	case OP_DEF0:	/* define */
 		if (is_pair(car(code))) {
