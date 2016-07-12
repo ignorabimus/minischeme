@@ -1939,6 +1939,12 @@ enum {
 	OP_LET0REC,
 	OP_LET1REC,
 	OP_LET2REC,
+	OP_DO0,
+	OP_DO1,
+	OP_DO2,
+	OP_DO3,
+	OP_DO4,
+	OP_DO5,
 	OP_COND0,
 	OP_COND1,
 	OP_DELAY,
@@ -2746,6 +2752,9 @@ OP_LET1:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1, args, cdr(code));
+			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
+				Error_1("Bad syntax of binding spec in let :", car(code));
+			}
 			code = cadar(code);
 			args = NIL;
 			s_goto(OP_EVAL);
@@ -2811,6 +2820,9 @@ OP_LET2AST:
 		code = cdr(code);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET2AST, args, code);
+			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
+				Error_1("Bad syntax of binding spec in let* :", car(code));
+			}
 			code = cadar(code);
 			args = NIL;
 			s_goto(OP_EVAL);
@@ -2833,6 +2845,9 @@ OP_LET1REC:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1REC, args, cdr(code));
+			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
+				Error_1("Bad syntax of binding spec in letrec :", car(code));
+			}
 			code = cadar(code);
 			args = NIL;
 			s_goto(OP_EVAL);
@@ -2854,6 +2869,76 @@ OP_LET2REC:
 		code = cdr(code);
 		args = NIL;
 		s_goto(OP_BEGIN);
+
+	case OP_DO0:		/* do */
+		envir = cons(NIL, envir);
+		setenvironment(envir);
+		args = NIL;
+		value = code;
+		code = car(code);
+		/* fall through */
+
+	case OP_DO1:		/* do -- init */
+		args = cons(value, args);
+		if (is_pair(code)) {
+			s_save(OP_DO1, args, cdr(code));
+			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
+				Error_1("Bad syntax of binding spec in do :", car(code));
+			}
+			code = cadar(code);
+			args = NIL;
+			s_goto(OP_EVAL);
+		}
+		args = reverse(args);
+		code = car(args);
+		args = cdr(args);
+		/* fall through */
+
+	case OP_DO2:		/* do -- test */
+OP_DO2:
+		push_sink(&x);
+		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
+			y = cons(caar(x), car(args));
+			car(envir) = cons(y, car(envir));
+		}
+		pop_sink();
+		s_save(OP_DO3, NIL, code);
+		code = car(cadr(code));
+		s_goto(OP_EVAL);
+
+	case OP_DO3:		/* do -- command */
+		if (value == F) {
+			s_save(OP_DO4, NIL, code);
+			code = cddr(code);
+		} else {		/* expression */
+			code = cdr(cadr(code));
+		}
+		s_goto(OP_BEGIN);
+
+	case OP_DO4:		/* do -- step */
+		value = code;
+		code = car(code);
+		/* fall through */
+
+	case OP_DO5:		/* do -- step */
+		args = cons(value, args);
+		if (is_pair(code)) {
+			s_save(OP_DO5, args, cdr(code));
+			code = car(code);
+			if (is_pair(cddr(code))) {
+				code = caddr(code);
+			} else {
+				code = car(code);
+			}
+			args = NIL;
+			s_goto(OP_EVAL);
+		}
+		envir = cons(NIL, envir);
+		setenvironment(envir);
+		args = reverse(args);
+		code = car(args);
+		args = cdr(args);
+		s_goto(OP_DO2);
 
 	case OP_COND0:		/* cond */
 		if (!is_pair(code)) {
@@ -4940,6 +5025,7 @@ void init_syntax()
 	mk_syntax(OP_LET0, "let");
 	mk_syntax(OP_LET0AST, "let*");
 	mk_syntax(OP_LET0REC, "letrec");
+	mk_syntax(OP_DO0, "do");
 	mk_syntax(OP_COND0, "cond");
 	mk_syntax(OP_DELAY, "delay");
 	mk_syntax(OP_AND0, "and");
