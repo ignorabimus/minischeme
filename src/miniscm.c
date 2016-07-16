@@ -1793,8 +1793,8 @@ int lcm(int a, int b)
 }
 
 /* true or false value macro */
-#define istrue(p)       ((p) != NIL && (p) != F)
-#define isfalse(p)      ((p) == NIL || (p) == F)
+#define istrue(p)       ((p) != F)
+#define isfalse(p)      ((p) == F)
 
 /* Error macro */
 #define	BEGIN	do {
