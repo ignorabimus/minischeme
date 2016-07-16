@@ -364,7 +364,6 @@ pointer get_cell(register pointer *a, register pointer *b)
 #endif
 }
 
-#ifndef USE_SCHEME_STACK
 #ifdef USE_COPYING_GC
 pointer find_consecutive_cells(int n)
 {
@@ -417,7 +416,6 @@ pointer get_consecutive_cells(int n, pointer *a)
 	}
 	return x;
 }
-#endif /* USE_SCHEME_STACK */
 
 /* get new cons cell */
 pointer cons(pointer a, pointer b)
@@ -1093,18 +1091,15 @@ int realloc_port_string(pointer p)
 	return 1;
 }
 
-void port_close(pointer p, int flag)
+void port_close(pointer p)
 {
-	p->_isfixnum &= ~flag;
-	if ((p->_isfixnum & (port_input | port_output)) == 0) {
-		if (port_file(p) != NULL) {
-			if (is_fileport(p)) {
-				fclose(port_file(p));
-			} else {
-				free(port_file(p));
-			}
-			port_file(p) = NULL;
+	if (port_file(p) != NULL) {
+		if (is_fileport(p)) {
+			fclose(port_file(p));
+		} else {
+			free(port_file(p));
 		}
+		port_file(p) = NULL;
 	}
 }
 
@@ -1530,7 +1525,11 @@ char *atom2str(pointer l, int f)
 		p = strbuff;
 		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
 	} else if (is_port(l)) {
-		p = "#<PORT>";
+		if (port_file(l) != NULL) {
+			p = "#<PORT>";
+		} else {
+			p = "#<PORT (CLOSED)>";
+		}
 #ifdef USE_MACRO
 	} else if (is_macro(l)) {
 		p = "#<MACRO>";
@@ -2146,8 +2145,16 @@ enum {
 	OP_QUIT,
 	OP_GC,
 	OP_GCVERB,
+	OP_CALL_INFILE0,
+	OP_CALL_INFILE1,
+	OP_CALL_OUTFILE0,
+	OP_CALL_OUTFILE1,
 	OP_CURR_INPORT,
 	OP_CURR_OUTPORT,
+	OP_WITH_INFILE0,
+	OP_WITH_INFILE1,
+	OP_WITH_OUTFILE0,
+	OP_WITH_OUTFILE1,
 	OP_OPEN_INFILE,
 	OP_OPEN_OUTFILE,
 	OP_OPEN_INOUTFILE,
@@ -2157,6 +2164,7 @@ enum {
 	OP_GET_OUTSTRING,
 	OP_CLOSE_INPORT,
 	OP_CLOSE_OUTPORT,
+	OP_CLOSE_PORT,
 	OP_INT_ENV,
 	OP_CURR_ENV,
 
@@ -4454,6 +4462,36 @@ OP_ERR1:
 		gc_verbose = (car(args) != F);
 		s_retbool(w);
 
+	case OP_CALL_INFILE0:	/* call-with-input-file */
+		if (!validargs("call-with-input-file", 2, 2, TST_STRING TST_ANY)) Error_0(msg);
+		x = port_from_filename(strvalue(car(args)), port_input);
+		if (x == NIL) {
+			s_return(F);
+		}
+		code = cadr(args);
+		args = cons(x, NIL);
+		s_save(OP_CALL_INFILE1, args, NIL);
+		s_goto(OP_APPLY);
+
+	case OP_CALL_INFILE1:	/* call-with-input-file */
+		port_close(car(args));
+		s_return(value);
+
+	case OP_CALL_OUTFILE0:	/* call-with-output-file */
+		if (!validargs("call-with-output-file", 2, 2, TST_STRING TST_ANY)) Error_0(msg);
+		x = port_from_filename(strvalue(car(args)), port_output);
+		if (x == NIL) {
+			s_return(F);
+		}
+		code = cadr(args);
+		args = cons(x, NIL);
+		s_save(OP_CALL_OUTFILE1, args, NIL);
+		s_goto(OP_APPLY);
+
+	case OP_CALL_OUTFILE1:	/* call-with-output-file */
+		port_close(car(args));
+		s_return(value);
+
 	case OP_CURR_INPORT:	/* current-input-port */
 		if (!validargs("current-input-port", 0, 0, TST_NONE)) Error_0(msg);
 		s_return(inport);
@@ -4461,6 +4499,42 @@ OP_ERR1:
 	case OP_CURR_OUTPORT:	/* current-output-port */
 		if (!validargs("current-output-port", 0, 0, TST_NONE)) Error_0(msg);
 		s_return(outport);
+
+	case OP_WITH_INFILE0:	/* with-input-from-file */
+		if (!validargs("with-input-from-file", 2, 2, TST_STRING TST_ANY)) Error_0(msg);
+		x = port_from_filename(strvalue(car(args)), port_input);
+		if (x == NIL) {
+			s_return(F);
+		}
+		code = cadr(args);
+		args = cons(x, inport);
+		inport = car(args);
+		s_save(OP_WITH_INFILE1, args, NIL);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_WITH_INFILE1:	/* with-input-from-file */
+		port_close(car(args));
+		inport = cdr(args);
+		s_return(value);
+
+	case OP_WITH_OUTFILE0:	/* with-output-to-file */
+		if (!validargs("with-output-to-file", 2, 2, TST_STRING TST_ANY)) Error_0(msg);
+		x = port_from_filename(strvalue(car(args)), port_output);
+		if (x == NIL) {
+			s_return(F);
+		}
+		code = cadr(args);
+		args = cons(x, outport);
+		outport = car(args);
+		s_save(OP_WITH_OUTFILE1, args, NIL);
+		args = NIL;
+		s_goto(OP_APPLY);
+
+	case OP_WITH_OUTFILE1:	/* with-output-to-file */
+		port_close(car(args));
+		outport = cdr(args);
+		s_return(value);
 
 	case OP_OPEN_INFILE:	/* open-input-file */
 		if (!validargs("open-input-file", 1, 1, TST_STRING)) Error_0(msg);
@@ -4520,12 +4594,17 @@ OP_ERR1:
 
 	case OP_CLOSE_INPORT: /* close-input-port */
 		if (!validargs("close-input-port", 1, 1, TST_INPORT)) Error_0(msg);
-		port_close(car(args), port_input);
+		port_close(car(args));
 		s_return(T);
 
 	case OP_CLOSE_OUTPORT: /* close-output-port */
 		if (!validargs("close-output-port", 1, 1, TST_OUTPORT)) Error_0(msg);
-		port_close(car(args), port_output);
+		port_close(car(args));
+		s_return(T);
+
+	case OP_CLOSE_PORT: /* close-port */
+		if (!validargs("close-port", 1, 1, TST_PORT)) Error_0(msg);
+		port_close(car(args));
 		s_return(T);
 
 	case OP_INT_ENV:	/* interaction-environment */
@@ -4540,9 +4619,6 @@ OP_ERR1:
 	case OP_READ:			/* read */
 		if (!validargs("read", 0, 1, TST_INPORT)) Error_0(msg);
 		if (is_pair(args)) {
-			if (!is_inport(car(args))) {
-				Error_1("read: not an input port:", car(args));
-			}
 			if (car(args) != inport) {
 				x = inport;
 				x = cons(x, NIL);
@@ -5214,8 +5290,12 @@ void init_procs()
 	mk_proc(OP_GET, "get");
 	mk_proc(OP_GC, "gc");
 	mk_proc(OP_GCVERB, "gc-verbose");
+	mk_proc(OP_CALL_INFILE0, "call-with-input-file");
+	mk_proc(OP_CALL_OUTFILE0, "call-with-output-file");
 	mk_proc(OP_CURR_INPORT, "current-input-port");
 	mk_proc(OP_CURR_OUTPORT, "current-output-port");
+	mk_proc(OP_WITH_INFILE0, "with-input-from-file");
+	mk_proc(OP_WITH_OUTFILE0, "with-output-to-file");
 	mk_proc(OP_OPEN_INFILE, "open-input-file");
 	mk_proc(OP_OPEN_OUTFILE, "open-output-file");
 	mk_proc(OP_OPEN_INOUTFILE, "open-input-output-file");
@@ -5225,6 +5305,7 @@ void init_procs()
 	mk_proc(OP_GET_OUTSTRING, "get-output-string");
 	mk_proc(OP_CLOSE_INPORT, "close-input-port");
 	mk_proc(OP_CLOSE_OUTPORT, "close-output-port");
+	mk_proc(OP_CLOSE_PORT, "close-port");
 	mk_proc(OP_INT_ENV, "interaction-environment");
 	mk_proc(OP_CURR_ENV, "current-environment");
 	mk_proc(OP_READ_CHAR, "read-char");
