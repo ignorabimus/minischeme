@@ -1619,20 +1619,22 @@ pointer non_alloc_rev(pointer term, pointer list)
 }
 
 /* append list -- make new cells */
-pointer append(register pointer a, register pointer b)
+pointer append(pointer a, pointer b)
 {
-	register pointer p = b, q;
+	register pointer q;
 
 	if (a != NIL) {
+		push_sink(&b);
 		a = reverse(a);
+		pop_sink();
 		while (a != NIL) {
 			q = cdr(a);
-			cdr(a) = p;
-			p = a;
+			cdr(a) = b;
+			b = a;
 			a = q;
 		}
 	}
-	return p;
+	return b;
 }
 
 /* list length */
@@ -2649,7 +2651,9 @@ OP_QQUOTE1:
 		s_return(mcons(code, x, args));
 
 	case OP_QQUOTE6:	/* quasiquote -- 'cons */
+		push_sink(&value);
 		s_save(OP_QQUOTE7, value, code);
+		pop_sink();
 		code = cdr(code);
 		s_goto(OP_QQUOTE1);
 
@@ -2667,16 +2671,17 @@ OP_QQUOTE1:
 		if (is_pair(car(code))) {
 			y = cons(cdar(code), cdr(code));
 			y = cons(LAMBDA, y);
-			x = caar(code);
+			args = caar(code);
 			code = y;
 		} else {
-			x = car(code);
+			args = car(code);
 			code = cadr(code);
 		}
-		if (!is_symbol(x)) {
+		if (!is_symbol(args)) {
 			Error_0("Variable is not symbol");
 		}
-		s_save(OP_DEF1, NIL, x);
+		s_save(OP_DEF1, NIL, args);
+		args = NIL;
 		s_goto(OP_EVAL);
 
 	case OP_DEF1:	/* define */
@@ -3031,18 +3036,18 @@ OP_DO2:
 #ifdef USE_MACRO
 	case OP_0MACRO:		/* macro */
 	case OP_DEFMACRO0:	/* define-macro */
-		if (is_pair(x = car(code))) {
-			if (!is_symbol(car(x))) {
+		if (is_pair(car(code))) {
+			if (!is_symbol(caar(code))) {
 				Error_0("Variable is not symbol");
 			}
-			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, car(x));
+			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, caar(code));
 			y = cons(cdar(code), cdr(code));
 			code = cons(LAMBDA, y);
 		} else {
-			if (!is_symbol(x)) {
+			if (!is_symbol(car(code))) {
 				Error_0("Variable is not symbol");
 			}
-			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, x);
+			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, caar(code));
 			code = cadr(code);
 		}
 		s_goto(OP_EVAL);
@@ -3082,8 +3087,9 @@ OP_DO2:
 				code = cdar(x);
 				s_goto(OP_BEGIN);
 			} else {/* else */
-				s_save(OP_CASE2, NIL, cdar(x));
-				code = caar(x);
+				code = car(x);
+				s_save(OP_CASE2, NIL, cdr(code));
+				code = car(code);
 				s_goto(OP_EVAL);
 			}
 		} else {
@@ -3121,14 +3127,19 @@ OP_DO2:
 			car(args) = cons(value, car(args));
 		}
 		y = NIL;
+		push_sink(&x);
 		for (x = cdr(args); x != NIL; x = cdr(x)) {
 			if (caar(x) == NIL) {
+				pop_sink();
 				s_return(non_alloc_rev(NIL, car(args)));
 			}
 			y = cons(caar(x), y);
 			car(x) = cdar(x);
 		}
+		pop_sink();
+		push_sink(&y);
 		s_save(OP_MAP1, args, code);
+		pop_sink();
 		args = non_alloc_rev(NIL, y);
 		s_goto(OP_APPLY);
 
@@ -3139,14 +3150,19 @@ OP_DO2:
 
 	case OP_FOREACH1:	/* for-each */
 		y = NIL;
+		push_sink(&x);
 		for (x = args; x != NIL; x = cdr(x)) {
 			if (caar(x) == NIL) {
+				pop_sink();
 				s_return(T);
 			}
 			y = cons(caar(x), y);
 			car(x) = cdar(x);
 		}
+		pop_sink();
+		push_sink(&y);
 		s_save(OP_FOREACH1, args, code);
+		pop_sink();
 		args = non_alloc_rev(NIL, y);
 		s_goto(OP_APPLY);
 
@@ -4093,21 +4109,21 @@ OP_VECTOR:
 	case OP_VEC2LIST:		/* vector->list */
 		if (!validargs("vector->list", 1, 1, TST_VECTOR)) Error_0(msg);
 		y = NIL;
-		for (x = car(args), w = ivalue(x) - 1; w >= 0; w--) {
-			y = cons(vector_elem(x, w), y);
+		for (w = ivalue(car(args)) - 1; w >= 0; w--) {
+			y = cons(vector_elem(car(args), w), y);
 		}
 		s_return(y);
 
 	case OP_LIST2VEC:		/* list->vector */
 		if (!validargs("list->vector", 1, 1, TST_LIST)) Error_0(msg);
-		x = car(args);
-		w = list_length(x);
+		args = car(args);
+		w = list_length(args);
 		if (w < 0) {
-			Error_1("list->vector: not a proper list:", x);
+			Error_1("list->vector: not a proper list:", args);
 		}
 		y = mk_vector(w);
-		for (w = 0; x != NIL; x = cdr(x)) {
-			set_vector_elem(y, w++, car(x));
+		for (w = 0; args != NIL; args = cdr(args)) {
+			set_vector_elem(y, w++, car(args));
 		}
 		s_return(y);
 
@@ -4344,7 +4360,7 @@ OP_VECTOR:
 		setresultready(code);
 		car(code) = cons(value, NIL);
 		cdr(code) = NIL;
-		s_return(value);
+		s_return(caar(code));
 
 	case OP_WRITE_CHAR:	/* write-char */
 	case OP_WRITE:		/* write */
@@ -4364,8 +4380,8 @@ OP_VECTOR:
 		}
 		if (is_pair(cdr(args))) {
 			if (cadr(args) != outport) {
-				x = cons(outport, NIL);
-				s_save(OP_SET_OUTPORT, x, NIL);
+				outport = cons(outport, NIL);
+				s_save(OP_SET_OUTPORT, outport, NIL);
 				outport = cadr(args);
 			}
 		}
@@ -4377,8 +4393,8 @@ OP_VECTOR:
 		if (!validargs("newline", 0, 1, TST_OUTPORT)) Error_0(msg);
 		if (is_pair(args)) {
 			if (car(args) != outport) {
-				x = cons(outport, NIL);
-				s_save(OP_SET_OUTPORT, x, NIL);
+				outport = cons(outport, NIL);
+				s_save(OP_SET_OUTPORT, outport, NIL);
 				outport = car(args);
 			}
 		}
@@ -4620,9 +4636,8 @@ OP_ERR1:
 		if (!validargs("read", 0, 1, TST_INPORT)) Error_0(msg);
 		if (is_pair(args)) {
 			if (car(args) != inport) {
-				x = inport;
-				x = cons(x, NIL);
-				s_save(OP_SET_INPORT, x, NIL);
+				inport = cons(inport, NIL);
+				s_save(OP_SET_INPORT, inport, NIL);
 				inport = car(args);
 			}
 		}
@@ -4642,9 +4657,8 @@ OP_ERR1:
 		}
 		if (is_pair(args)) {
 			if (car(args) != inport) {
-				x = inport;
-				x = cons(x, NIL);
-				s_save(OP_SET_INPORT, x, NIL);
+				inport = cons(inport, NIL);
+				s_save(OP_SET_INPORT, inport, NIL);
 				inport = car(args);
 			}
 		}
@@ -4756,12 +4770,8 @@ OP_RDSEXPR:
 		x = cons(value, NIL);
 		x = cons(QQUOTE, x);
 		x = cons(x, NIL);
-		push_sink(&x);
-		y = mk_symbol("vector");
-		x = cons(y, x);
-		y = mk_symbol("apply");
-		pop_sink();
-		s_return(cons(y, x));
+		x = cons(mk_symbol("vector"), x);
+		s_return(cons(mk_symbol("apply"), x));
 
 	case OP_RDUNQUOTE:
 		x = cons(value, NIL);
@@ -4830,15 +4840,13 @@ OP_P0LIST:
 	case OP_PVECFROM:
 OP_PVECFROM:
 		w = ivalue(cdr(args));
-		x = car(args);
-		if (w == ivalue(x)) {
+		if (w == ivalue(car(args))) {
 			putstr(")");
 			s_return(T);
 		} else {
 			ivalue(cdr(args)) = w + 1;
-			y = args;
-			args = vector_elem(x, w);
-			s_save(OP_PVECFROM, y, NIL);
+			s_save(OP_PVECFROM, args, NIL);
+			args = vector_elem(car(args), w);
 			if (w > 0) putstr(" ");
 			s_goto(OP_P0LIST);
 		}
