@@ -2197,9 +2197,6 @@ enum {
 	OP_ASSQ,
 	OP_ASSV,
 	OP_ASSOC,
-	OP_PRINT_WIDTH,
-	OP_P0_WIDTH,
-	OP_P1_WIDTH,
 	OP_GET_CLOSURE,
 	OP_CLOSUREP,
 	OP_MACROP,
@@ -2275,7 +2272,7 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 				break;
 			case '\006': /* TST_OUTPORT */
 				if (!is_outport(car(x))) {
-					snprintf(msg, 256, "%s: argument %d must be: output port", name, i);
+					snprintf(msg, sizeof(msg), "%s: argument %d must be: output port", name, i);
 					return 0;
 				}
 				break;
@@ -4635,6 +4632,9 @@ OP_ERR1:
 	case OP_READ:			/* read */
 		if (!validargs("read", 0, 1, TST_INPORT)) Error_0(msg);
 		if (is_pair(args)) {
+			if (port_file(car(args)) == NULL) {
+				Error_0("Input port was closed");
+			}
 			if (car(args) != inport) {
 				inport = cons(inport, NIL);
 				s_save(OP_SET_INPORT, inport, NIL);
@@ -4656,6 +4656,9 @@ OP_ERR1:
 			break;
 		}
 		if (is_pair(args)) {
+			if (port_file(car(args)) == NULL) {
+				Error_0("Input port was closed");
+			}
 			if (car(args) != inport) {
 				inport = cons(inport, NIL);
 				s_save(OP_SET_INPORT, inport, NIL);
@@ -4670,6 +4673,15 @@ OP_ERR1:
 			backchar(w);
 		}
 		s_return(mk_character(w));
+
+	case OP_CHAR_READY:		/* char-ready? */
+		if (!validargs("char-ready?", 0, 1, TST_INPORT)) Error_0(msg);
+		if (is_pair(args)) {
+			x = car(args);
+		} else {
+			x = inport;
+		}
+		s_retbool(is_fileport(x) || is_strport(x));
 
 	case OP_SET_INPORT:		/* set-input-port */
 		if (!validargs("set-input-port", 1, 1, TST_INPORT)) Error_0(msg);
@@ -4915,57 +4927,6 @@ OP_PVECFROM:
 			if (equal(x, caar(y))) s_return(car(y));
 		}
 		s_return(F);
-
-	case OP_PRINT_WIDTH:	/* print-width */	/* a.k */
-		w = 0;
-		args = car(args);
-		print_flag = -1;
-		s_goto(OP_P0_WIDTH);
-
-	case OP_P0_WIDTH:
-OP_P0_WIDTH:
-		if (!is_pair(args)) {
-			w += printatom(args, print_flag);
-			s_return(mk_integer(w));
-		} else if (car(args) == QUOTE
-			   && ok_abbrev(cdr(args))) {
-			++w;
-			args = cadr(args);
-			s_goto(OP_P0_WIDTH);
-		} else if (car(args) == QQUOTE
-			   && ok_abbrev(cdr(args))) {
-			++w;
-			args = cadr(args);
-			s_goto(OP_P0_WIDTH);
-		} else if (car(args) == UNQUOTE
-			   && ok_abbrev(cdr(args))) {
-			++w;
-			args = cadr(args);
-			s_goto(OP_P0_WIDTH);
-		} else if (car(args) == UNQUOTESP
-			   && ok_abbrev(cdr(args))) {
-			w += 2;
-			args = cadr(args);
-			s_goto(OP_P0_WIDTH);
-		} else {
-			++w;
-			s_save(OP_P1_WIDTH, cdr(args), NIL);
-			args = car(args);
-			s_goto(OP_P0_WIDTH);
-		}
-
-	case OP_P1_WIDTH:
-		if (is_pair(args)) {
-			s_save(OP_P1_WIDTH, cdr(args), NIL);
-			++w;
-			args = car(args);
-			s_goto(OP_P0_WIDTH);
-		} else {
-			if (args != NIL)
-				w += 3 + printatom(args, print_flag);
-			++w;
-			s_return(mk_integer(w));
-		}
 
 	case OP_GET_CLOSURE:	/* get-closure-code */	/* a.k */
 		if (!validargs("get-closure-code", 1, 1, TST_NONE)) Error_0(msg);
@@ -5286,6 +5247,7 @@ void init_procs()
 	mk_proc(OP_MAX, "max");
 	mk_proc(OP_MIN, "min");
 	mk_proc(OP_READ, "read");
+	mk_proc(OP_CHAR_READY, "char-ready?");
 	mk_proc(OP_WRITE_CHAR, "write-char");
 	mk_proc(OP_WRITE, "write");
 	mk_proc(OP_DISPLAY, "display");
@@ -5327,7 +5289,6 @@ void init_procs()
 	mk_proc(OP_ASSQ, "assq");	/* a.k */
 	mk_proc(OP_ASSV, "assv");
 	mk_proc(OP_ASSOC, "assoc");
-	mk_proc(OP_PRINT_WIDTH, "print-width");	/* a.k */
 	mk_proc(OP_DEFP, "defined?");
 	mk_proc(OP_MKCLOSURE, "make-closure");
 	mk_proc(OP_GET_CLOSURE, "get-closure-code");	/* a.k */
