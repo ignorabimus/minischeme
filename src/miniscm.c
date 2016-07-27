@@ -3044,7 +3044,7 @@ OP_DO2:
 			if (!is_symbol(car(code))) {
 				Error_0("Variable is not symbol");
 			}
-			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, caar(code));
+			s_save((operator == OP_0MACRO) ? OP_1MACRO : OP_DEFMACRO1, NIL, car(code));
 			code = cadr(code);
 		}
 		s_goto(OP_EVAL);
