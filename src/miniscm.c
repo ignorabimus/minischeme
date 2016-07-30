@@ -110,10 +110,6 @@ typedef struct cell *pointer;
 #define T_CHARACTER    256	/* 0000000100000000 */
 #define T_PORT         512	/* 0000001000000000 */
 #define T_VECTOR      1024	/* 0000010000000000 */
-#ifdef USE_MACRO
-# define T_MACRO      2048	/* 0000100000000000 */
-# define T_DEFMACRO   4096	/* 0001000000000000 */	/* for define-macro */
-#endif
 #define T_ENVIRONMENT 8192	/* 0010000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
@@ -127,6 +123,10 @@ typedef struct cell *pointer;
 
 #define T_PROMISE        1	/* 00000001 */
 #define T_RESULTREADY    2	/* 00000010 */
+#ifdef USE_MACRO
+# define T_MACRO         4	/* 00000100 */
+# define T_DEFMACRO      8	/* 00001000 */	/* for define-macro */
+#endif
 
 /* macros for cell operations */
 #define type(p)         ((p)->_flag)
@@ -161,7 +161,7 @@ typedef struct cell *pointer;
 
 #define is_closure(p)   (type(p)&T_CLOSURE)
 #ifdef USE_MACRO
-# define is_macro(p)    (type(p)&T_MACRO)
+# define is_macro(p)    (exttype(p)&T_MACRO)
 #endif
 #define closure_code(p) car(p)
 #define closure_env(p)  cdr(p)
@@ -1530,10 +1530,6 @@ char *atom2str(pointer l, int f)
 		} else {
 			p = "#<PORT (CLOSED)>";
 		}
-#ifdef USE_MACRO
-	} else if (is_macro(l)) {
-		p = "#<MACRO>";
-#endif
 	} else if (is_closure(l)) {
 		if (is_promise(l)) {
 			if (is_resultready(l)) {
@@ -1541,6 +1537,10 @@ char *atom2str(pointer l, int f)
 			} else {
 				p = "#<PROMISE>";
 			}
+#ifdef USE_MACRO
+		} else if (is_macro(l)) {
+			p = "#<MACRO>";
+#endif
 		} else {
 			p = "#<CLOSURE>";
 		}
@@ -2387,8 +2387,8 @@ OP_EVAL:
 
 #ifdef USE_MACRO
 	case OP_E0ARGS:	/* eval arguments */
-		if (is_macro(value)) {	/* macro expansion */
-			if (type(value) & T_DEFMACRO) {
+		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
+			if (exttype(value) & T_DEFMACRO) {
 				args = cdr(code);
 				code = value;
 			} else {
@@ -3051,7 +3051,7 @@ OP_DO2:
 
 	case OP_1MACRO:		/* macro */
 	case OP_DEFMACRO1:	/* define-macro */
-		type(value) |= (operator == OP_1MACRO) ? T_MACRO : (T_MACRO | T_DEFMACRO);
+		exttype(value) |= (operator == OP_1MACRO) ? T_MACRO : (T_MACRO | T_DEFMACRO);
 		for (x = car(envir); x != NIL; x = cdr(x))
 			if (caar(x) == code)
 				break;
@@ -4935,10 +4935,6 @@ OP_PVECFROM:
 			s_return(F);
 		} else if (is_closure(args)) {
 			s_return(cons(LAMBDA, closure_code(value)));
-#ifdef USE_MACRO
-		} else if (is_macro(args)) {
-			s_return(cons(LAMBDA, closure_code(value)));
-#endif
 		} else {
 			s_return(F);
 		}
@@ -4959,7 +4955,7 @@ OP_PVECFROM:
 		if (car(args) == NIL) {
 			s_return(F);
 		}
-		s_retbool(is_macro(car(args)));
+		s_retbool(is_closure(car(args)) && is_macro(car(args)));
 
 	case OP_MACRO_EXPAND0:	/* macro-expand */
 		if (!validargs("macro-expand", 1, 1, TST_LIST)) Error_0(msg);
@@ -4969,8 +4965,8 @@ OP_PVECFROM:
 		s_goto(OP_EVAL);
 
 	case OP_MACRO_EXPAND1:	/* macro-expand */
-		code = value;
-		if (type(code) & T_MACRO) {
+		if (is_closure(value) && is_macro(value)) {
+			code = value;
 			s_save(OP_MACRO_EXPAND2, args, code);
 			code = cons(LAMBDA, closure_code(code));
 			args = NIL;
@@ -4979,7 +4975,7 @@ OP_PVECFROM:
 		s_return(car(args));
 
 	case OP_MACRO_EXPAND2:	/* macro-expand */
-		if (type(code) & T_DEFMACRO) {
+		if (exttype(code) & T_DEFMACRO) {
 			args = cdar(args);
 		}
 		code = value;
