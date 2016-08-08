@@ -630,6 +630,13 @@ pointer mk_const(char *name)
 		sprintf(tmp, "0x%s", &name[1]);
 		sscanf(tmp, "%lx", &x);
 		return mk_integer(x);
+	} else if (*name == 'b') {	/* #b (binary) */
+		x = 0;
+		for (name++; *name == '0' || *name == '1'; name++) {
+			x <<= 1;
+			x += *name - '0';
+		}
+		return mk_integer(x);
 	} else if (*name == '\\') { /* #\w (character) */
 		if (stricmp(name + 1, "space") == 0) {
 			return mk_character(' ');
