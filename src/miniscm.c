@@ -1969,6 +1969,10 @@ enum {
 	OP_CASE0,
 	OP_CASE1,
 	OP_CASE2,
+	OP_WHEN0,
+	OP_WHEN1,
+	OP_UNLESS0,
+	OP_UNLESS1,
 
 	OP_PEVAL,
 	OP_PAPPLY,
@@ -3102,6 +3106,30 @@ OP_DO2:
 
 	case OP_CASE2:		/* case */
 		if (istrue(value)) {
+			s_goto(OP_BEGIN);
+		} else {
+			s_return(NIL);
+		}
+
+	case OP_WHEN0:		/* when */
+		s_save(OP_WHEN1, NIL, cdr(code));
+		code = car(code);
+		s_goto(OP_EVAL);
+
+	case OP_WHEN1:		/* when */
+		if (istrue(value)) {
+			s_goto(OP_BEGIN);
+		} else {
+			s_return(NIL);
+		}
+
+	case OP_UNLESS0:	/* unless */
+		s_save(OP_UNLESS1, NIL, cdr(code));
+		code = car(code);
+		s_goto(OP_EVAL);
+
+	case OP_UNLESS1:	/* unless */
+		if (isfalse(value)) {
 			s_goto(OP_BEGIN);
 		} else {
 			s_return(NIL);
@@ -5084,6 +5112,8 @@ void init_syntax()
 	mk_syntax(OP_DEFMACRO0, "define-macro");
 #endif
 	mk_syntax(OP_CASE0, "case");
+	mk_syntax(OP_WHEN0, "when");
+	mk_syntax(OP_UNLESS0, "unless");
 }
 
 
