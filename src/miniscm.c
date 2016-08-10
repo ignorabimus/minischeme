@@ -1798,7 +1798,10 @@ int gcd(int a, int b)
 /* least common multiple */
 int lcm(int a, int b)
 {
-	return abs(a * b / gcd(a, b));
+	if (a == 0 || b == 0) {
+		return 0;
+	}
+	return abs(a) / gcd(a, b) * abs(b);
 }
 
 /* true or false value macro */
