@@ -85,7 +85,7 @@ struct cell {
 		} _number;
 		struct {
 			FILE   *_file;
-			size_t  _size;
+			char   *_curr;
 		} _port;
 		struct {
 			struct cell *_car;
@@ -156,7 +156,7 @@ typedef struct cell *pointer;
 #define is_syntax(p)    (type(p)&T_SYNTAX)
 #define is_proc(p)      (type(p)&T_PROC)
 #define syntaxname(p)   strvalue(car(p))
-#define syntaxnum(p)    strlength(car(p))
+#define syntaxnum(p)    (*(short *)&car(p)->_extflag)
 #define procnum(p)      ivalue(p)
 
 #define is_closure(p)   (type(p)&T_CLOSURE)
@@ -183,8 +183,7 @@ enum {
 #define is_fileport(p)  (is_port(p) && ((p)->_isfixnum & port_file))
 #define is_strport(p)   (is_port(p) && ((p)->_isfixnum & port_string))
 #define port_file(p)    ((p)->_object._port._file)
-#define port_size(p)    ((p)->_object._port._size)
-#define port_curr(p)    ((char *)cdr((p) + 1))
+#define port_curr(p)    ((p)->_object._port._curr)
 
 #define is_vector(p)    (type(p)&T_VECTOR)
 
@@ -214,8 +213,8 @@ enum {
 #define cadddr(p)       car(cdr(cdr(cdr(p))))
 #define cddddr(p)       cdr(cdr(cdr(cdr(p))))
 
-/* arrays for segments */
-pointer cell_seg;
+/* array for segments */
+struct cell cell_seg[CELL_SEGSIZE * 2];
 
 /* We use 4 registers. */
 pointer args;			/* register for arguments of function */
@@ -295,27 +294,19 @@ pointer **psink = sink;
 pointer from_space;
 pointer to_space;
 
-int alloc_cellseg()
+void alloc_cellseg()
 {
-	cell_seg = (pointer)malloc(CELL_SEGSIZE * sizeof(struct cell) * 2);
-	if (cell_seg == (pointer)0)
-		return 0;
 	fcells = CELL_SEGSIZE;
 	free_cell = from_space = cell_seg;
 	to_space = cell_seg + CELL_SEGSIZE;
-
-	return 1;
 }
 #else
-int alloc_cellseg()
+void alloc_cellseg()
 {
 	register pointer p;
 	register long i;
 
-	p = (pointer)malloc(CELL_SEGSIZE * sizeof(struct cell));
-	if (p == (pointer)0)
-		return 0;
-	free_cell = cell_seg = p;
+	p = free_cell = cell_seg;
 	fcells += CELL_SEGSIZE;
 	for (i = 0; i < CELL_SEGSIZE - 1; i++, p++) {
 		type(p) = 0;
@@ -325,8 +316,6 @@ int alloc_cellseg()
 	type(p) = 0;
 	car(p) = NIL;
 	cdr(p) = NIL;
-
-	return 1;
 }
 #endif
 
@@ -464,52 +453,38 @@ pointer mk_number(struct cell *v)
 	return v->_isfixnum ? mk_integer(ivalue(v)) : mk_real(rvalue(v));
 }
 
-/* allocate name to string area */
-char *store_string(size_t len, const char *str, char fill)
-{
-	char *q = (char *)malloc(len + 1);
-	if (q == NULL) {
-		FatalError("Unable to allocate string area");
-	}
-	if (str != 0) {
-		snprintf(q, len + 1, "%s", str);
-	} else {
-		memset(q, fill, len);
-		q[len] = 0;
-	}
-	return q;
-}
-
 /* get new string */
-pointer mk_string(char *str)
+pointer mk_string(const char *str)
 {
-	pointer x = get_consecutive_cells(2, &NIL);
-
 	size_t len = strlen(str);
+	pointer x = get_consecutive_cells(2 + len / sizeof (struct cell), &NIL);
 
-	type(x) = (T_STRING | T_ATOM);
-	strvalue(x) = store_string(len, str, 0);
-	strlength(x) = len;
 #ifdef USE_COPYING_GC
-	type(x + 1) = (T_STRING | T_ATOM);
-	gcell_next(x) = gcell_list;
-	gcell_list = x;
+	strvalue(x) = (char *)(x + 1);
+#else
+	x += 1 + len / sizeof(struct cell);
+	strvalue(x) = (char *)(x - (1 + len / sizeof(struct cell)));
 #endif
+	type(x) = (T_STRING | T_ATOM);
+	strlength(x) = len;
+	snprintf(strvalue(x), len + 1, "%s", str);
 	return x;
 }
 
 pointer mk_empty_string(size_t len, char fill)
 {
-	pointer x = get_consecutive_cells(2, &NIL);
+	pointer x = get_consecutive_cells(2 + len / sizeof(struct cell), &NIL);
 
-	type(x) = (T_STRING | T_ATOM);
-	strvalue(x) = store_string(len, 0, fill);
-	strlength(x) = len;
 #ifdef USE_COPYING_GC
-	type(x + 1) = (T_STRING | T_ATOM);
-	gcell_next(x) = gcell_list;
-	gcell_list = x;
+	strvalue(x) = (char *)(x + 1);
+#else
+	x += 1 + len / sizeof(struct cell);
+	strvalue(x) = (char *)(x - (1 + len / sizeof(struct cell)));
 #endif
+	type(x) = (T_STRING | T_ATOM);
+	strlength(x) = len;
+	memset(strvalue(x), fill, len);
+	strvalue(x)[len] = 0;
 	return x;
 }
 
@@ -667,7 +642,7 @@ pointer mk_port(FILE *fp, int prop)
 	pointer x = get_consecutive_cells(2, &NIL);
 
 	type(x + 1) = type(x) = (T_PORT | T_ATOM);
-	x->_isfixnum = prop | port_file;
+	(x + 1)->_isfixnum = x->_isfixnum = prop | port_file;
 	port_file(x) = fp;
 #ifdef USE_COPYING_GC
 	gcell_next(x) = gcell_list;
@@ -676,19 +651,14 @@ pointer mk_port(FILE *fp, int prop)
 	return x;
 }
 
-pointer mk_port_string(char *str, size_t size, int prop)
+pointer mk_port_string(pointer p, int prop)
 {
-	pointer x = get_consecutive_cells(2, &NIL);
+	pointer x = get_cell(&p, &NIL);
 
-	type(x + 1) = type(x) = (T_PORT | T_ATOM);
+	type(x) = (T_PORT | T_ATOM);
 	x->_isfixnum = prop | port_string;
-	port_file(x) = (FILE *)str;
-	port_size(x) = size;
-#ifdef USE_COPYING_GC
-	gcell_next(x) = gcell_list;
-	gcell_list = x;
-#endif
-	port_curr(x) = str;
+	port_file(x) = (FILE *)p;
+	port_curr(x) = strvalue(p);
 	return x;
 }
 
@@ -768,7 +738,15 @@ pointer forward(pointer x)
 	*next = *x;
 	type(x) = T_FORWARDED;
 	x->_object._forwarded = next;
-	if (is_string(next) || is_port(next)) {
+	if (is_string(next)) {
+		int i;
+		int n = 1 + strlength(next) / sizeof(struct cell);
+		strvalue(next) = (char *)(next + 1);
+		for (i = 0; i < n; i++) {
+			*++next = *++x;
+		}
+		return next++ - n;
+	} else if (is_fileport(next)) {
 		*++next = *++x;
 		type(x) = T_FORWARDED;
 		x->_object._forwarded = next;
@@ -842,12 +820,20 @@ void gc(register pointer *a, register pointer *b)
 
 	while (scan < next) {
 		switch (type(scan) & 0x07ff) {
-		case T_STRING:
 		case T_NUMBER:
 		case T_PROC:
 		case T_CHARACTER:
-		case T_PORT:
 		case T_VECTOR:
+			break;
+		case T_STRING:
+			scan += 1 + strlength(scan) / sizeof(struct cell);
+			break;
+		case T_PORT:
+			if (is_strport(scan)) {
+				size_t curr_len = port_curr(scan) - strvalue(car(scan));
+				car(scan) = forward(car(scan));
+				port_curr(scan) = strvalue(car(scan)) + curr_len;
+			}
 			break;
 		case T_SYMBOL:
 		case T_SYNTAX | T_SYMBOL:
@@ -871,15 +857,9 @@ void gc(register pointer *a, register pointer *b)
 			gcell_next(q) = gcell_list;
 			gcell_list = q;
 		} else {
-			if (is_string(p)) {
-				if (strvalue(p) != NULL) {
-					free(strvalue(p));
-				}
-			} else if (port_file(p) != NULL) {
+			if (port_file(p) != NULL) {
 				if (is_fileport(p)) {
 					fclose(port_file(p));
-				} else {
-					free(port_file(p));
 				}
 			}
 			p = gcell_next(p);
@@ -913,7 +893,11 @@ void mark(register pointer p)
 
 E2:	setmark(p);
 	if (is_port(p)) {
-		setmark(p + 1);
+		if (is_fileport(p)) {
+			setmark(p + 1);
+		} else {
+			mark(car(p));
+		}
 	} else if (is_vector(p)) {
 		int i;
 		int n = 1 + ivalue(p) / 2 + ivalue(p) % 2;
@@ -1003,24 +987,29 @@ void gc(register pointer *a, register pointer *b)
 	free_cell = NIL;
 	p = cell_seg + CELL_SEGSIZE;
 	while (--p >= cell_seg) {
-		if (is_mark(p))
+		if (is_mark(p)) {
 			clrmark(p);
-		else {
 			if (is_string(p)) {
-				if (strvalue(p) != NULL) {
-					free(strvalue(p));
-				}
-			} else if (is_port(p)) {
+				p = (pointer)strvalue(p);
+			}
+		} else {
+			if (is_string(p)) {
+				pointer q = (pointer)strvalue(p);
+				do {
+					type(p) = 0;
+					cdr(p) = free_cell;
+					car(p) = NIL;
+					free_cell = p;
+					++fcells;
+				} while (--p > q);
+			} else if (is_fileport(p)) {
 				type(p) = 0;
 				cdr(p) = free_cell;
 				car(p) = NIL;
 				free_cell = p;
 				++fcells;
-				--p;
-				if (is_fileport(p) && port_file(p) != NULL) {
+				if (port_file(--p) != NULL) {
 					fclose(port_file(p));
-				} else if (is_strport(p) && port_file(p) != NULL) {
-					free(port_file(p));
 				}
 			}
 			type(p) = 0;
@@ -1059,43 +1048,33 @@ pointer port_from_filename(const char *filename, int prop)
 
 pointer port_from_scratch()
 {
-	char *p;
-
-	p = (char *)malloc(BLOCK_SIZE);
-	if (p == NULL) {
-		return NIL;
-	}
-	memset(p, 0, BLOCK_SIZE);
-	return mk_port_string(p, BLOCK_SIZE, port_output);
+	return mk_port_string(mk_empty_string(BLOCK_SIZE, '\0'), port_output);
 }
 
-pointer port_from_string(const char *str, size_t len, int prop)
+pointer port_from_string(const char *str, int prop)
 {
-	char *p;
-
-	p = (char *)malloc(len + 1);
-	if (p == NULL) {
-		return NIL;
-	}
-	memcpy(p, str, len);
-	p[len] = '\0';
-	return mk_port_string(p, len + 1, prop);
+	return mk_port_string(mk_string(str), prop);
 }
 
-int realloc_port_string(pointer p)
+pointer realloc_port_string(pointer p)
 {
-	size_t new_size = port_size(p) + BLOCK_SIZE;
-	char *str = (char *)malloc(new_size);
-	if (str == NULL) {
-		return 0;
-	}
-	memcpy(str, port_file(p), port_size(p));
-	memset(str + port_size(p), 0, BLOCK_SIZE);
-	free(port_file(p));
-	port_file(p) = (FILE *)str;
-	port_curr(p) = str + port_size(p);
-	port_size(p) = new_size;
-	return 1;
+	size_t curr_len = port_curr(p) - strvalue(car(p));
+	size_t new_size = strlength(car(p)) + BLOCK_SIZE;
+	pointer x = get_consecutive_cells(2 + new_size / sizeof(struct cell), &p);
+
+#ifdef USE_COPYING_GC
+	strvalue(x) = (char *)(x + 1);
+#else
+	x += 1 + new_size / sizeof(struct cell);
+	strvalue(x) = (char *)(x - (1 + new_size / sizeof(struct cell)));
+#endif
+	type(x) = (T_STRING | T_ATOM);
+	strlength(x) = new_size;
+	memcpy(strvalue(x), strvalue(car(p)), strlength(car(p)));
+	memset(strvalue(x) + strlength(car(p)), 0, BLOCK_SIZE);
+	car(p) = x;
+	port_curr(p) = strvalue(x) + curr_len;
+	return p;
 }
 
 void port_close(pointer p)
@@ -1103,8 +1082,6 @@ void port_close(pointer p)
 	if (port_file(p) != NULL) {
 		if (is_fileport(p)) {
 			fclose(port_file(p));
-		} else {
-			free(port_file(p));
 		}
 		port_file(p) = NULL;
 	}
@@ -1153,7 +1130,7 @@ int inchar()
 			}
 		}
 	} else {
-		if (port_curr(inport) == (char *)port_file(inport) + port_size(inport)) {
+		if (port_curr(inport) == strvalue(car(inport)) + strlength(car(inport))) {
 			c = EOF;
 		} else {
 			c = *(port_curr(inport)++);
@@ -1169,7 +1146,6 @@ void flushinput()
 		fclose(port_file(inport));
 		port_file(inport) = stdin;
 	} else if (is_strport(inport)) {
-		free(port_file(inport));
 		port_file(inport) = stdin;
 	}
 }
@@ -1189,7 +1165,7 @@ void backchar(int c)
 	if (c != EOF) {
 		if (is_fileport(inport)) {
 			ungetc(c, port_file(inport));
-		} else if (port_curr(inport) != (char *)port_file(inport)) {
+		} else if (port_curr(inport) != strvalue(car(inport))) {
 			--port_curr(inport);
 		}
 	}
@@ -1200,14 +1176,13 @@ void putstr(const char *s)
 	if (is_fileport(outport)) {
 		fputs(s, port_file(outport));
 	} else {
-		char *endp = (char *)port_file(outport) + port_size(outport);
+		char *endp = strvalue(car(outport)) + strlength(car(outport));
 		while (*s) {
 			if (port_curr(outport) < endp) {
 				*port_curr(outport)++ = *s++;
 				if (port_curr(outport) == endp) {
-					if (realloc_port_string(outport)) {
-						endp = (char *)port_file(outport) + port_size(outport);
-					}
+					outport = realloc_port_string(outport);
+					endp = strvalue(car(outport)) + strlength(car(outport));
 				}
 			}
 		}
@@ -1219,11 +1194,11 @@ void putcharacter(const int c)
 	if (is_fileport(outport)) {
 		fputc(c, port_file(outport));
 	} else {
-		char *endp = (char *)port_file(outport) + port_size(outport);
+		char *endp = strvalue(car(outport)) + strlength(car(outport));
 		if (port_curr(outport) < endp) {
 			*port_curr(outport)++ = c;
 			if (port_curr(outport) == endp) {
-				realloc_port_string(outport);
+				outport = realloc_port_string(outport);
 			}
 		}
 	}
@@ -4613,7 +4588,7 @@ OP_ERR1:
 
 	case OP_OPEN_INSTRING:	/* open-input-string */
 		if (!validargs("open-input-string", 1, 1, TST_STRING)) Error_0(msg);
-		x = port_from_string(strvalue(car(args)), strlen(strvalue(car(args))), port_input);
+		x = port_from_string(strvalue(car(args)), port_input);
 		if (x == NIL) {
 			s_return(F);
 		}
@@ -4629,7 +4604,7 @@ OP_ERR1:
 
 	case OP_OPEN_INOUTSTRING:	/* open-input-output-string */
 		if (!validargs("open-input-output-string", 1, 1, TST_STRING)) Error_0(msg);
-		x = port_from_string(strvalue(car(args)), strlen(strvalue(car(args))), port_input | port_output);
+		x = port_from_string(strvalue(car(args)), port_input | port_output);
 		if (x == NIL) {
 			s_return(F);
 		}
@@ -4639,7 +4614,7 @@ OP_ERR1:
 		if (!validargs("get-output-string", 1, 1, TST_OUTPORT)) Error_0(msg);
 		x = car(args);
 		if (is_strport(x) && port_file(x) != NULL) {
-			s_return(mk_string((char *)port_file(x)));
+			s_return(mk_string(strvalue(car(x))));
 		}
 		s_return(F);
 
@@ -5364,8 +5339,7 @@ void init_globals()
 /* initialization of Mini-Scheme */
 void init_scheme()
 {
-	if (alloc_cellseg() == 0)
-		FatalError("Unable to allocate initial cell segments");
+	alloc_cellseg();
 #ifdef VERBOSE
 	gc_verbose = 1;
 #else
