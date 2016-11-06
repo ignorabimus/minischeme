@@ -647,9 +647,10 @@ pointer mk_port_string(pointer p, int prop)
 	return x;
 }
 
-void fill_vector(pointer v, pointer a, int n)
+void fill_vector(pointer v, pointer a)
 {
 	int i;
+	int n = 1 + ivalue(v) / 2 + ivalue(v) % 2;
 
 	for (i = 1; i < n; i++) {
 		type(v + i) = T_PAIR;
@@ -665,7 +666,7 @@ pointer mk_vector(int len)
 	type(x) = (T_VECTOR | T_ATOM);
 	ivalue(x) = len;
 	set_num_integer(x);
-	fill_vector(x, NIL, n);
+	fill_vector(x, NIL);
 	return x;
 }
 
@@ -4085,7 +4086,7 @@ OP_VECTOR:
 		w = ivalue(car(args));
 		x = mk_vector(w);
 		if (cdr(args) != NIL) {
-			fill_vector(x, cadr(args), w);
+			fill_vector(x, cadr(args));
 		}
 		s_return(x);
 
