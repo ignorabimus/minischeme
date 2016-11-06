@@ -30,7 +30,6 @@
  */
 /* #define VERBOSE */	/* define this if you want verbose GC */
 /* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
-#define USE_SETJMP	/* undef this if you do not want to use setjmp() */
 #define USE_MACRO	/* undef this if you do not need macro */
 #define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
 
@@ -54,9 +53,7 @@
 
 #include <stdio.h>
 #include <ctype.h>
-#ifdef USE_SETJMP
 #include <setjmp.h>
-#endif
 
 #include <string.h>
 #include <stdlib.h>
@@ -258,15 +255,12 @@ long    fcells = 0;		/* # of free cells */
 
 FILE   *srcfp;			/* source file */
 
-#ifdef USE_SETJMP
 jmp_buf error_jmp;
 
-#endif
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
 
 void gc(register pointer *a, register pointer *b);
 void FatalError(char *s);
-void Error(char *s);
 
 #ifndef USE_SCHEME_STACK
 #define dump_prev(p)  car(p)
@@ -329,16 +323,7 @@ pointer get_cell(register pointer *a, register pointer *b)
 	if (fcells == 0) {
 		gc(a, b);
 		if (fcells == 0) {
-#ifdef USE_SETJMP
-			args = envir = code = dump = NIL;
-			gc(&NIL, &NIL);
-			if (fcells != 0)
-				Error("run out of cells --- rerurn to top level");
-			else
-				FatalError("run out of cells --- unable to recover cells");
-#else
-			FatalError("run out of cells  --- unable to recover cells");
-#endif
+			FatalError("run out of cells --- unable to recover cells");
 		}
 	}
 
@@ -768,6 +753,7 @@ void gc(register pointer *a, register pointer *b)
 {
 	register pointer scan, **pp;
 	register pointer p, q;
+	char temp[32];
 
 	if (gc_verbose)
 		printf("gc...");
@@ -844,8 +830,9 @@ void gc(register pointer *a, register pointer *b)
 			cdr(scan) = forward(cdr(scan));
 			break;
 		default:
-			fprintf(stderr, "Error: Unknown type %d\n", type(scan));
-			exit(1);
+			sprintf(temp, "GC: Unknown type %d", type(scan));
+			FatalError(temp);
+			break;
 		}
 		++scan;
 	}
@@ -1113,24 +1100,20 @@ int inchar()
 	if (is_fileport(inport)) {
 		if (feof(port_file(inport))) {
 			fclose(port_file(inport));
-			port_file(inport) = srcfp;
-			if (port_file(inport) == stdin) {
-				printf(prompt);
-			}
+			port_file(inport) = NULL;
+			return EOF;
 		}
 
 		c = fgetc(port_file(inport));
 		if (c == EOF) {
 			if (port_file(inport) == stdin) {
 				fprintf(stderr, "Good-bye\n");
-				exit(0);
-			}
-			if (port_file(inport) == srcfp) {
-				exit(0);
+				port_file(inport) = NULL;
 			}
 		}
 	} else {
 		if (port_curr(inport) == strvalue(car(inport)) + strlength(car(inport))) {
+			port_file(inport) = NULL;
 			c = EOF;
 		} else {
 			c = *(port_curr(inport)++);
@@ -1147,12 +1130,14 @@ void flushinput()
 		port_file(inport) = stdin;
 	} else if (is_strport(inport)) {
 		port_file(inport) = stdin;
+		inport->_isfixnum = port_input | port_file;
 	}
 }
 
 /* check c is delimiter */
 int isdelim(char *s, char c)
 {
+	if (c == EOF) return 0;
 	while (*s)
 		if (*s++ == c)
 			return 0;
@@ -1883,11 +1868,11 @@ pointer s_clone_save() {
 
 /* operator code */
 enum {
-	OP_LOAD = 0,
-	OP_T0LVL,
+	OP_T0LVL = 0,
 	OP_T1LVL,
 	OP_READ_INTERNAL,
 	OP_VALUEPRINT,
+	OP_LOAD,
 	OP_EVAL,
 	OP_E0ARGS,
 	OP_E1ARGS,
@@ -2328,7 +2313,7 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 }
 
 /* kernel of this intepreter */
-pointer Eval_Cycle(short operator)
+int Eval_Cycle(short operator)
 {
 	FILE *tmpfp;
 	int tok;
@@ -2479,17 +2464,25 @@ OP_APPLYCONT:
 	switch (operator) {
 	case OP_LOAD:		/* load */
 		if (!validargs("load", 1, 1, TST_STRING)) Error_0(msg);
+		if (port_file(inport) == stdin) {
+			fprintf(port_file(outport), "loading %s\n", strvalue(car(args)));
+		}
+		srcfp = port_file(inport);
 		if ((port_file(inport) = fopen(strvalue(car(args)), "r")) == NULL) {
 			port_file(inport) = srcfp;
 			Error_1("Unable to open", car(args));
-		}
-		if (port_file(inport) == stdin) {
-			fprintf(port_file(outport), "loading %s", strvalue(car(args)));
 		}
 		s_goto(OP_T0LVL);
 
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
+		if (port_file(inport) == NULL) {
+			if (srcfp == NULL) {
+				break;
+			}
+			port_file(inport) = srcfp;
+			srcfp = NULL;
+		}
 		if (port_file(inport) == stdin) {
 			putstr("\n");
 		}
@@ -4475,8 +4468,11 @@ OP_ERR1:
 		}
 
 	case OP_QUIT:		/* quit */
-		if (!validargs("quit", 0, 0, TST_NONE)) Error_0(msg);
-		break;
+		if (!validargs("quit", 0, 1, TST_INTEGER)) Error_0(msg);
+		if (is_pair(args)) {
+			return ivalue(car(args));
+		}
+		return 0;
 
 	case OP_GC:		/* gc */
 		if (!validargs("gc", 0, 0, TST_NONE)) Error_0(msg);
@@ -5004,7 +5000,7 @@ OP_PVECFROM:
 		Error_0(strbuff);
 	}
 
-	return NIL;
+	return 0;
 }
 
 /* ========== Initialization of internal keywords ========== */
@@ -5037,8 +5033,14 @@ void init_vars_global()
 {
 	pointer x;
 
-	/* init input/output file */
-	inport = mk_port(srcfp, port_input);
+	oblist = NIL;
+	winders = NIL;
+#ifdef USE_COPYING_GC
+	gcell_list = NIL;
+	psink = sink;
+#endif
+	srcfp = NULL;
+	/* init output file */
 	outport = mk_port(stdout, port_output);
 	/* init NIL */
 	type(NIL) = (T_ATOM | MARK);
@@ -5338,7 +5340,7 @@ void init_globals()
 }
 
 /* initialization of Mini-Scheme */
-void init_scheme()
+void scheme_init()
 {
 	alloc_cellseg();
 #ifdef VERBOSE
@@ -5349,45 +5351,81 @@ void init_scheme()
 	init_globals();
 }
 
+void scheme_deinit()
+{
+	oblist = NIL;
+	inport = NIL;
+	outport = NIL;
+	global_env = NIL;
+	winders = NIL;
+#ifdef USE_COPYING_GC
+	gcell_list = NIL;
+	psink = sink;
+#endif
+	args = NIL;
+	envir = NIL;
+	code = NIL;
+#ifndef USE_SCHEME_STACK
+	dump_base = NIL;
+#endif
+	dump = NIL;
+
+	gc_verbose = 0;
+	gc(&NIL, &NIL);
+}
+
+int scheme_load_file(FILE *fin)
+{
+	short op;
+
+	if (setjmp(error_jmp) == 0) {
+		inport = mk_port(fin, port_input);
+		op = OP_T0LVL;
+	} else {
+		op = OP_QUIT;
+	}
+	return Eval_Cycle(op);
+}
+
 /* ========== Error ==========  */
 
 void FatalError(char *s)
 {
 	fprintf(stderr, "Fatal error: %s\n", s);
-	exit(1);
-}
-
-#ifdef USE_SETJMP
-void Error(char *s)
-{
-	fprintf(stderr, "Error: %s\n", s);
 	flushinput();
-	longjmp(error_jmp, OP_T0LVL);
+	args = NIL;
+	longjmp(error_jmp, OP_QUIT);
 }
-#endif
 
 /* ========== Main ========== */
 
 int main(int argc, char *argv[])
 {
-	short op = (short)OP_LOAD;
+	int ret;
+	FILE *fin;
+
+	scheme_init();
+
+	/* Load "init.scm" */
+	if ((fin = fopen(InitFile, "r")) != NULL) {
+		ret = scheme_load_file(fin);
+	} else {
+		fprintf(stderr, "Unable to open %s\n", InitFile);
+	}
 
 	if (argc > 1) {
-		if ((srcfp = fopen(argv[1], "r")) == NULL) {
+		fin = fopen(argv[1], "r");
+		if (fin == NULL) {
 			fprintf(stderr, "Unable to open %s\n", argv[1]);
 			return 1;
 		}
 	} else {
-		srcfp = stdin;
+		fin = stdin;
 		printf(banner);
 	}
+	ret = scheme_load_file(fin);
 
-	init_scheme();
-	args = cons(mk_string(InitFile), NIL);
-#ifdef USE_SETJMP
-	op = (short)setjmp(error_jmp);
-#endif
-	Eval_Cycle(op);
+	scheme_deinit();
 
-	return 0;
+	return ret;
 }
