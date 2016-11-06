@@ -1570,6 +1570,7 @@ pointer mk_continuation(pointer d)
 	register pointer x = get_cell(&NIL, &d);
 
 	type(x) = T_CONTINUATION;
+	car(x) = NIL;
 	cont_dump(x) = d;
 	return x;
 }
