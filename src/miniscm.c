@@ -29,7 +29,6 @@
  * Define or undefine following symbols as you need.
  */
 /* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
-#define USE_MACRO	/* undef this if you do not need macro */
 #define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
 
 
@@ -119,10 +118,8 @@ typedef struct cell *pointer;
 
 #define T_PROMISE        1	/* 00000001 */
 #define T_RESULTREADY    2	/* 00000010 */
-#ifdef USE_MACRO
-# define T_MACRO         4	/* 00000100 */
-# define T_DEFMACRO      8	/* 00001000 */	/* for define-macro */
-#endif
+#define T_MACRO          4	/* 00000100 */
+#define T_DEFMACRO       8	/* 00001000 */	/* for define-macro */
 
 /* macros for cell operations */
 #define type(p)         ((p)->_flag)
@@ -156,9 +153,7 @@ typedef struct cell *pointer;
 #define procnum(p)      ivalue(p)
 
 #define is_closure(p)   (type(p)&T_CLOSURE)
-#ifdef USE_MACRO
-# define is_macro(p)    (exttype(p)&T_MACRO)
-#endif
+#define is_macro(p)     (exttype(p)&T_MACRO)
 #define closure_code(p) car(p)
 #define closure_env(p)  cdr(p)
 
@@ -1504,10 +1499,8 @@ char *atom2str(pointer l, int f)
 			} else {
 				p = "#<PROMISE>";
 			}
-#ifdef USE_MACRO
 		} else if (is_macro(l)) {
 			p = "#<MACRO>";
-#endif
 		} else {
 			p = "#<CLOSURE>";
 		}
@@ -2348,11 +2341,7 @@ OP_EVAL:
 				operator = (short)syntaxnum(x);
 				goto LOOP;
 			} else {/* first, eval top element and eval arguments */
-#ifdef USE_MACRO
 				s_save(OP_E0ARGS, NIL, code);
-#else
-				s_save(OP_E1ARGS, NIL, cdr(code));
-#endif
 				code = car(code);
 				s_goto(OP_EVAL);
 			}
@@ -2360,7 +2349,6 @@ OP_EVAL:
 			s_return(code);
 		}
 
-#ifdef USE_MACRO
 	case OP_E0ARGS:	/* eval arguments */
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
 			if (exttype(value) & T_DEFMACRO) {
@@ -2377,7 +2365,6 @@ OP_EVAL:
 			code = cdr(code);
 			s_goto(OP_E1ARGS);
 		}
-#endif
 
 	case OP_E1ARGS:	/* eval arguments */
 OP_E1ARGS:
@@ -2521,11 +2508,9 @@ OP_READ_INTERNAL:
 			s_goto(OP_T0LVL);
 		}
 
-#ifdef USE_MACRO
 	case OP_DOMACRO:	/* do macro */
 		code = value;
 		s_goto(OP_EVAL);
-#endif
 
 	case OP_GENSYM:
 		if (!validargs("gensym", 0, 0, TST_NONE)) Error_0(msg);
@@ -3013,7 +2998,6 @@ OP_DO2:
 		setpromise(x);
 		s_return(cons(args, x));
 
-#ifdef USE_MACRO
 	case OP_0MACRO:		/* macro */
 	case OP_DEFMACRO0:	/* define-macro */
 		if (is_pair(car(code))) {
@@ -3045,7 +3029,6 @@ OP_DO2:
 			car(envir) = cons(x, car(envir));
 		}
 		s_return(code);
-#endif
 
 	case OP_CASE0:		/* case */
 		s_save(OP_CASE1, NIL, cdr(code));
@@ -4959,7 +4942,7 @@ OP_PVECFROM:
 			s_return(F);
 		}
 		s_retbool(is_closure(car(args)));
-#ifdef USE_MACRO
+
 	case OP_MACROP:		/* macro? */
 		if (!validargs("macro?", 1, 1, TST_NONE)) Error_0(msg);
 		if (car(args) == NIL) {
@@ -4990,7 +4973,7 @@ OP_PVECFROM:
 		}
 		code = value;
 		s_goto(OP_APPLY);
-#endif
+
 	case OP_ATOMP:		/* atom? */
 		if (!validargs("atom?", 1, 1, TST_NONE)) Error_0(msg);
 		s_retbool(is_atom(car(args)));
@@ -5088,10 +5071,8 @@ void init_syntax()
 	mk_syntax(OP_AND0, "and");
 	mk_syntax(OP_OR0, "or");
 	mk_syntax(OP_C0STREAM, "cons-stream");
-#ifdef USE_MACRO
 	mk_syntax(OP_0MACRO, "macro");
 	mk_syntax(OP_DEFMACRO0, "define-macro");
-#endif
 	mk_syntax(OP_CASE0, "case");
 	mk_syntax(OP_WHEN0, "when");
 	mk_syntax(OP_UNLESS0, "unless");
@@ -5307,10 +5288,8 @@ void init_procs()
 	mk_proc(OP_MKCLOSURE, "make-closure");
 	mk_proc(OP_GET_CLOSURE, "get-closure-code");	/* a.k */
 	mk_proc(OP_CLOSUREP, "closure?");	/* a.k */
-#ifdef USE_MACRO
 	mk_proc(OP_MACROP, "macro?");	/* a.k */
 	mk_proc(OP_MACRO_EXPAND0, "macro-expand");
-#endif
 	mk_proc(OP_ATOMP, "atom?");
 	mk_proc(OP_GENSYM, "gensym");
 	mk_proc(OP_QUIT, "quit");
