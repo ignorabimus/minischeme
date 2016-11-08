@@ -28,7 +28,6 @@
 /*
  * Define or undefine following symbols as you need.
  */
-/* #define VERBOSE */	/* define this if you want verbose GC */
 /* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
 #define USE_MACRO	/* undef this if you do not need macro */
 #define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
@@ -5344,11 +5343,7 @@ void init_globals()
 void scheme_init()
 {
 	alloc_cellseg();
-#ifdef VERBOSE
-	gc_verbose = 1;
-#else
 	gc_verbose = 0;
-#endif
 	init_globals();
 }
 
