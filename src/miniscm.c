@@ -1,4 +1,12 @@
 /*
+ * This software is released under the MIT License, see the LICENSE file.
+ *
+ * This version has been modified by Tatsuya WATANABE.
+ *	current version is 0.85w3 (2017)
+ *
+ * Below are the original credits.
+ */
+/*
  *      ---------- Mini-Scheme Interpreter Version 0.85 ----------
  *
  *                coded by Atsushi Moriwaki (11/5/1989)
@@ -19,9 +27,6 @@
  *
  *  This is a revised and modified version by Akira KIDA.
  *	current version is 0.85k4 (15 May 1994)
- *
- *  This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w2 (2016)
  *--
  */
 
@@ -236,6 +241,10 @@ pointer gcell_list = &_NIL;	/* pointer to cell table */
 #define gcell_next(p) car((p) + 1)
 #endif
 
+pointer value;
+pointer mark_x;
+pointer mark_y;
+
 /* global pointers to special symbols */
 pointer LAMBDA;			/* pointer to syntax lambda */
 pointer QUOTE;			/* pointer to syntax quote */
@@ -265,16 +274,6 @@ void FatalError(char *s);
 #define dump_code(p)  cdr((p) + 2)
 
 pointer dump_base; /* pointer to base of allocated dump stack */
-#endif
-
-#ifdef USE_COPYING_GC
-pointer *sink[2];
-pointer **psink = sink;
-#define push_sink(x) (*psink++ = (x))
-#define pop_sink() (--psink)
-#else
-#define push_sink(x)
-#define pop_sink()
 #endif
 
 /* allocate new cell segment */
@@ -746,7 +745,7 @@ pointer forward(pointer x)
 
 void gc(register pointer *a, register pointer *b)
 {
-	register pointer scan, **pp;
+	register pointer scan;
 	register pointer p, q;
 	char temp[32];
 
@@ -791,9 +790,9 @@ void gc(register pointer *a, register pointer *b)
 #endif
 	dump = forward(dump);
 
-	for (pp = sink; pp != psink; pp++) {
-		**pp = forward(**pp);
-	}
+	value = forward(value);
+	mark_x = forward(mark_x);
+	mark_y = forward(mark_y);
 
 	/* forward variables a, b */
 	*a = forward(*a);
@@ -958,6 +957,10 @@ void gc(register pointer *a, register pointer *b)
 #else
 	mark(dump);
 #endif
+
+	mark(value);
+	mark(mark_x);
+	mark(mark_y);
 
 	/* mark variables a, b */
 	mark(*a);
@@ -1556,12 +1559,11 @@ pointer mk_continuation(pointer d)
 /* reverse list -- make new cells */
 pointer reverse(pointer a) /* a must be checked by gc */
 {
-	register pointer p = NIL;
+	pointer p = NIL;
 
-	push_sink(&a);
-	for ( ; is_pair(a); a = cdr(a))
-		p = cons(car(a), p);
-	pop_sink();
+	for (mark_x = a; is_pair(mark_x); mark_x = cdr(mark_x)) {
+		p = cons(car(mark_x), p);
+	}
 	return p;
 }
 
@@ -1582,12 +1584,12 @@ pointer non_alloc_rev(pointer term, pointer list)
 /* append list -- make new cells */
 pointer append(pointer a, pointer b)
 {
-	register pointer q;
+	pointer q;
 
 	if (a != NIL) {
-		push_sink(&b);
+		mark_y = b;
 		a = reverse(a);
-		pop_sink();
+		b = mark_y;
 		while (a != NIL) {
 			q = cdr(a);
 			cdr(a) = b;
@@ -1819,17 +1821,15 @@ pointer s_clone(pointer d) {
 }
 
 pointer s_clone_save() {
-	pointer p = NIL, d;
+	pointer p = NIL;
 
-	push_sink(&d);
-	for (d = dump_base; d != dump; d = dump_prev(d)) {
-		p = cons(dump_code(d), p);
-		p = cons(dump_envir(d), p);
-		args = cons(dump_args(d), p);
-		p = mk_integer((long)dump_op(d));
+	for (mark_x = dump_base; mark_x != dump; mark_x = dump_prev(mark_x)) {
+		p = cons(dump_code(mark_x), p);
+		p = cons(dump_envir(mark_x), p);
+		args = cons(dump_args(mark_x), p);
+		p = mk_integer((long)dump_op(mark_x));
 		p = cons(p, args);
 	}
-	pop_sink();
 	return p;
 }
 
@@ -2308,10 +2308,9 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 /* kernel of this intepreter */
 int Eval_Cycle(short operator)
 {
-	FILE *tmpfp;
+	FILE *tmpfp = NULL;
 	int tok;
 	int print_flag;
-	pointer value;
 	pointer x, y;
 	struct cell v;
 	long w;
@@ -2390,27 +2389,24 @@ OP_APPLY:
 			/* make environment */
 			envir = cons(NIL, closure_env(code));
 			setenvironment(envir);
-			push_sink(&x);
-			for (x = car(closure_code(code));
-			     is_pair(x); x = cdr(x), args = cdr(args)) {
+			for (mark_x = car(closure_code(code));
+			     is_pair(mark_x); mark_x = cdr(mark_x), args = cdr(args)) {
 				if (args == NIL) {
-					pop_sink();
 					Error_0("Few arguments");
 				} else {
-					y = cons(car(x), car(args));
+					y = cons(car(mark_x), car(args));
 					car(envir) = cons(y, car(envir));
 				}
 			}
-			pop_sink();
-			if (x == NIL) {
+			if (mark_x == NIL) {
 				/*--
 				 * if (args != NIL) {
 				 * 	Error_0("Many arguments");
 				 * }
 				 */
-			} else if (is_symbol(x)) {
-				x = cons(x, args);
-				car(envir) = cons(x, car(envir));
+			} else if (is_symbol(mark_x)) {
+				mark_x = cons(mark_x, args);
+				car(envir) = cons(mark_x, car(envir));
 			} else {
 				Error_0("Syntax error in closure");
 			}
@@ -2616,9 +2612,7 @@ OP_QQUOTE1:
 		s_return(mcons(code, x, args));
 
 	case OP_QQUOTE6:	/* quasiquote -- 'cons */
-		push_sink(&value);
 		s_save(OP_QQUOTE7, value, code);
-		pop_sink();
 		code = cdr(code);
 		s_goto(OP_QQUOTE1);
 
@@ -2747,16 +2741,14 @@ OP_LET1:
 OP_LET2:
 		envir = cons(NIL, envir);
 		setenvironment(envir);
-		push_sink(&x);
-		for (x = is_symbol(car(code)) ? cadr(code) : car(code);
-			args != NIL; x = cdr(x), args = cdr(args)) {
-			y = cons(caar(x), car(args));
+		for (mark_x = is_symbol(car(code)) ? cadr(code) : car(code);
+		     args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
+			y = cons(caar(mark_x), car(args));
 			car(envir) = cons(y, car(envir));
 		}
 		if (is_symbol(car(code))) {	/* named let */
-			for (x = cadr(code), args = NIL; x != NIL; x = cdr(x))
-				args = cons(caar(x), args);
-			pop_sink();
+			for (mark_x = cadr(code), args = NIL; mark_x != NIL; mark_x = cdr(mark_x))
+				args = cons(caar(mark_x), args);
 			y = reverse(args);
 			y = cons(y, cddr(code));
 			y = mk_closure(y, envir);
@@ -2765,7 +2757,6 @@ OP_LET2:
 			code = cddr(code);
 			args = NIL;
 		} else {
-			pop_sink();
 			code = cdr(code);
 			args = NIL;
 		}
@@ -2838,12 +2829,10 @@ OP_LET1REC:
 
 	case OP_LET2REC:	/* letrec */
 OP_LET2REC:
-		push_sink(&x);
-		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
-			y = cons(caar(x), car(args));
+		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
+			y = cons(caar(mark_x), car(args));
 			car(envir) = cons(y, car(envir));
 		}
-		pop_sink();
 		code = cdr(code);
 		args = NIL;
 		s_goto(OP_BEGIN);
@@ -2874,12 +2863,10 @@ OP_LET2REC:
 
 	case OP_DO2:		/* do -- test */
 OP_DO2:
-		push_sink(&x);
-		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
-			y = cons(caar(x), car(args));
+		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
+			y = cons(caar(mark_x), car(args));
 			car(envir) = cons(y, car(envir));
 		}
-		pop_sink();
 		s_save(OP_DO3, NIL, code);
 		code = car(cadr(code));
 		s_goto(OP_EVAL);
@@ -3113,21 +3100,16 @@ OP_DO2:
 		} else {
 			car(args) = cons(value, car(args));
 		}
-		y = NIL;
-		push_sink(&x);
-		for (x = cdr(args); x != NIL; x = cdr(x)) {
-			if (caar(x) == NIL) {
-				pop_sink();
+		mark_y = NIL;
+		for (mark_x = cdr(args); mark_x != NIL; mark_x = cdr(mark_x)) {
+			if (caar(mark_x) == NIL) {
 				s_return(non_alloc_rev(NIL, car(args)));
 			}
-			y = cons(caar(x), y);
-			car(x) = cdar(x);
+			mark_y = cons(caar(mark_x), mark_y);
+			car(mark_x) = cdar(mark_x);
 		}
-		pop_sink();
-		push_sink(&y);
 		s_save(OP_MAP1, args, code);
-		pop_sink();
-		args = non_alloc_rev(NIL, y);
+		args = non_alloc_rev(NIL, mark_y);
 		s_goto(OP_APPLY);
 
 	case OP_FOREACH0:	/* for-each */
@@ -3136,21 +3118,16 @@ OP_DO2:
 		args = cdr(args);
 
 	case OP_FOREACH1:	/* for-each */
-		y = NIL;
-		push_sink(&x);
-		for (x = args; x != NIL; x = cdr(x)) {
-			if (caar(x) == NIL) {
-				pop_sink();
+		mark_y = NIL;
+		for (mark_x = args; mark_x != NIL; mark_x = cdr(mark_x)) {
+			if (caar(mark_x) == NIL) {
 				s_return(T);
 			}
-			y = cons(caar(x), y);
-			car(x) = cdar(x);
+			mark_y = cons(caar(mark_x), mark_y);
+			car(mark_x) = cdar(mark_x);
 		}
-		pop_sink();
-		push_sink(&y);
 		s_save(OP_FOREACH1, args, code);
-		pop_sink();
-		args = non_alloc_rev(NIL, y);
+		args = non_alloc_rev(NIL, mark_y);
 		s_goto(OP_APPLY);
 
 	case OP_CONTINUATION:	/* call-with-current-continuation */
@@ -5020,11 +4997,7 @@ void init_vars_global()
 	winders = NIL;
 #ifdef USE_COPYING_GC
 	gcell_list = NIL;
-	psink = sink;
 #endif
-	srcfp = NULL;
-	/* init output file */
-	outport = mk_port(stdout, port_output);
 	/* init NIL */
 	type(NIL) = (T_ATOM | MARK);
 	car(NIL) = cdr(NIL) = NIL;
@@ -5049,6 +5022,9 @@ void init_vars_global()
 	type(&_ONE) = T_NUMBER;
 	set_num_integer(&_ONE);
 	ivalue(&_ONE) = 1;
+	srcfp = NULL;
+	/* init output file */
+	outport = mk_port(stdout, port_output);
 }
 
 
@@ -5316,6 +5292,9 @@ void init_globals()
 #endif
 	envir = global_env;
 	code = NIL;
+	value = NIL;
+	mark_x = NIL;
+	mark_y = NIL;
 }
 
 /* initialization of Mini-Scheme */
@@ -5335,7 +5314,6 @@ void scheme_deinit()
 	winders = NIL;
 #ifdef USE_COPYING_GC
 	gcell_list = NIL;
-	psink = sink;
 #endif
 	args = NIL;
 	envir = NIL;
@@ -5344,6 +5322,9 @@ void scheme_deinit()
 	dump_base = NIL;
 #endif
 	dump = NIL;
+	value = NIL;
+	mark_x = NIL;
+	mark_y = NIL;
 
 	gc_verbose = 0;
 	gc(&NIL, &NIL);
