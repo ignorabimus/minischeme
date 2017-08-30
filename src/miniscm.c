@@ -51,7 +51,7 @@
 #define CELL_SEGSIZE 500000	/* # of cells in one segment */
 
 
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w2.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w3.\n"
 
 
 #include <stdio.h>
@@ -98,6 +98,7 @@ struct cell {
 };
 
 typedef struct cell *pointer;
+typedef pointer(*foreign_func)(pointer);
 
 #define T_STRING         1	/* 0000000000000001 */
 #define T_NUMBER         2	/* 0000000000000010 */
@@ -110,6 +111,7 @@ typedef struct cell *pointer;
 #define T_CHARACTER    256	/* 0000000100000000 */
 #define T_PORT         512	/* 0000001000000000 */
 #define T_VECTOR      1024	/* 0000010000000000 */
+#define T_FOREIGN     2048	/* 0000100000000000 */
 #define T_ENVIRONMENT 8192	/* 0010000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
@@ -182,6 +184,8 @@ enum {
 #define port_curr(p)    ((p)->_object._port._curr)
 
 #define is_vector(p)    (type(p)&T_VECTOR)
+
+#define is_foreign(p)   (type(p) & T_FOREIGN)
 
 #define is_environment(p) (type(p) & T_ENVIRONMENT)
 #define setenvironment(p) type(p) |= T_ENVIRONMENT
@@ -685,6 +689,16 @@ pointer set_vector_elem(pointer v, int i, pointer a)
 	}
 }
 
+pointer mk_foreign_func(foreign_func ff, pointer *pp)
+{
+	pointer x = get_cell(pp, &NIL);
+
+	type(x) = (T_FOREIGN | T_ATOM);
+	car(x) = (pointer)ff;
+	cdr(x) = NIL;
+	return x;
+}
+
 #ifndef USE_SCHEME_STACK
 /* get dump stack */
 pointer mk_dumpstack(pointer next)
@@ -799,11 +813,12 @@ void gc(register pointer *a, register pointer *b)
 	*b = forward(*b);
 
 	while (scan < next) {
-		switch (type(scan) & 0x07ff) {
+		switch (type(scan) & 0x0fff) {
 		case T_NUMBER:
 		case T_PROC:
 		case T_CHARACTER:
 		case T_VECTOR:
+		case T_FOREIGN:
 			break;
 		case T_STRING:
 			scan += 1 + strlength(scan) / sizeof(struct cell);
@@ -1509,6 +1524,9 @@ char *atom2str(pointer l, int f)
 		}
 	} else if (is_continuation(l)) {
 		p = "#<CONTINUATION>";
+	} else if (is_foreign(l)) {
+		p = strbuff;
+		sprintf(p, "#<FOREIGN PROCEDURE %ld>", procnum(l));
 	} else {
 		p = "#<ERROR>";
 	}
@@ -2382,9 +2400,12 @@ OP_E1ARGS:
 
 	case OP_APPLY:		/* apply 'code' to 'args' */
 OP_APPLY:
-		if (is_proc(code)) {
-			operator = (short)procnum(code);	/* PROCEDURE */
+		if (is_proc(code)) {	/* PROCEDURE */
+			operator = (short)procnum(code);
 			goto LOOP;
+		} else if (is_foreign(code)) {	/* FOREIGN */
+			x = ((foreign_func)car(code))(args);
+			s_return(x);
 		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */
 			envir = cons(NIL, closure_env(code));
@@ -5341,6 +5362,21 @@ int scheme_load_file(FILE *fin)
 		op = OP_QUIT;
 	}
 	return Eval_Cycle(op);
+}
+
+void scheme_register_foreign_func(char* name, foreign_func ff)
+{
+	pointer s = mk_symbol(name);
+	pointer f = mk_foreign_func(ff, &s), x;
+
+	for (x = car(global_env); x != NIL; x = cdr(x)) {
+		if (caar(x) == s) {
+			cdar(x) = f;
+			return;
+		}
+	}
+	x = cons(s, f);
+	car(global_env) = cons(x, car(global_env));
 }
 
 /* ========== Error ==========  */
