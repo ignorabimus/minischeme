@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w3 (2017)
+ *	current version is 0.85w4 (2017)
  *
  * Below are the original credits.
  */
@@ -51,7 +51,7 @@
 #define CELL_SEGSIZE 500000	/* # of cells in one segment */
 
 
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w3.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w4.\n"
 
 
 #include <stdio.h>
@@ -249,6 +249,9 @@ pointer value;
 pointer mark_x;
 pointer mark_y;
 
+pointer c_nest;			/* pointer to nested C calls list */
+pointer c_sink;			/* pointer to sink arguments list */
+
 /* global pointers to special symbols */
 pointer LAMBDA;			/* pointer to syntax lambda */
 pointer QUOTE;			/* pointer to syntax quote */
@@ -265,6 +268,7 @@ FILE   *srcfp;			/* source file */
 jmp_buf error_jmp;
 
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
+int		interactive_repl = 0;
 
 void gc(register pointer *a, register pointer *b);
 void FatalError(char *s);
@@ -386,6 +390,16 @@ pointer get_consecutive_cells(int n, pointer *a)
 		}
 	}
 	return x;
+}
+
+void push_recent_alloc(pointer recent)
+{
+	pointer holder = get_cell(&recent, &NIL);
+
+	type(holder) = T_PAIR;
+	car(holder) = recent;
+	cdr(holder) = c_sink;
+	c_sink = holder;
 }
 
 /* get new cons cell */
@@ -757,6 +771,27 @@ pointer forward(pointer x)
 	return next++;
 }
 
+#ifndef USE_SCHEME_STACK
+void forward_dump(pointer base, pointer curr)
+{
+	pointer p, q;
+
+	for (p = base; p != curr; p = dump_prev(p)) {
+		q = forward(p);
+		forward(p + 1);
+		forward(p + 2);
+		dump_args(q) = forward(dump_args(q));
+		dump_envir(q) = forward(dump_envir(q));
+		dump_code(q) = forward(dump_code(q));
+	}
+	for (; p != NIL; p = dump_prev(p)) {
+		forward(p);
+		forward(p + 1);
+		forward(p + 2);
+	}
+}
+#endif
+
 void gc(register pointer *a, register pointer *b)
 {
 	register pointer scan;
@@ -787,26 +822,21 @@ void gc(register pointer *a, register pointer *b)
 	envir = forward(envir);
 	code = forward(code);
 #ifndef USE_SCHEME_STACK
-	for (p = dump_base; p != dump; p = dump_prev(p)) {
-		register pointer q = forward(p);
-		forward(p + 1);
-		forward(p + 2);
-		dump_args(q) = forward(dump_args(q));
-		dump_envir(q) = forward(dump_envir(q));
-		dump_code(q) = forward(dump_code(q));
-	}
-	for ( ; p != NIL; p = dump_prev(p)) {
-		forward(p);
-		forward(p + 1);
-		forward(p + 2);
-	}
+	forward_dump(dump_base, dump);
 	dump_base = forward(dump_base);
+
+	for (p = c_nest; p != NIL; p = cdr(p)) {
+		q = cdr(cdar(c_nest));
+		forward_dump(cdr(q), car(q));
+	}
 #endif
 	dump = forward(dump);
 
 	value = forward(value);
 	mark_x = forward(mark_x);
 	mark_y = forward(mark_y);
+	c_nest = forward(c_nest);
+	c_sink = forward(c_sink);
 
 	/* forward variables a, b */
 	*a = forward(*a);
@@ -935,6 +965,26 @@ E6:	if (!t)
 	}
 }
 
+#ifndef USE_SCHEME_STACK
+void mark_dump(pointer base, pointer curr)
+{
+	pointer p;
+
+	for (p = base; p != curr; p = dump_prev(p)) {
+		setmark(p);
+		setmark(p + 1);
+		setmark(p + 2);
+		mark(dump_args(p));
+		mark(dump_envir(p));
+		mark(dump_code(p));
+	}
+	for ( ; p != NIL; p = dump_prev(p)) {
+		setmark(p);
+		setmark(p + 1);
+		setmark(p + 2);
+	}
+}
+#endif
 
 /* garbage collection. parameter a, b is marked. */
 void gc(register pointer *a, register pointer *b)
@@ -956,18 +1006,11 @@ void gc(register pointer *a, register pointer *b)
 	mark(envir);
 	mark(code);
 #ifndef USE_SCHEME_STACK
-	for (p = dump_base; p != dump; p = dump_prev(p)) {
-		setmark(p);
-		setmark(p + 1);
-		setmark(p + 2);
-		mark(dump_args(p));
-		mark(dump_envir(p));
-		mark(dump_code(p));
-	}
-	for ( ; p != NIL; p = dump_prev(p)) {
-		setmark(p);
-		setmark(p + 1);
-		setmark(p + 2);
+	mark_dump(dump_base, dump);
+
+	for (p = c_nest; p != NIL; p = cdr(p)) {
+		pointer q = cdr(cdar(c_nest));
+		mark_dump(cdr(q), car(q));
 	}
 #else
 	mark(dump);
@@ -976,6 +1019,8 @@ void gc(register pointer *a, register pointer *b)
 	mark(value);
 	mark(mark_x);
 	mark(mark_y);
+	mark(c_nest);
+	mark(c_sink);
 
 	/* mark variables a, b */
 	mark(*a);
@@ -1139,7 +1184,7 @@ int inchar()
 void flushinput()
 {
 	if (is_fileport(inport) && port_file(inport) != stdin) {
-		fclose(port_file(inport));
+		if (port_file(inport)) fclose(port_file(inport));
 		port_file(inport) = stdin;
 	} else if (is_strport(inport)) {
 		port_file(inport) = stdin;
@@ -1816,6 +1861,7 @@ int lcm(int a, int b)
 
 #define s_return(a) BEGIN                      \
 	value = (a);                               \
+	if (dump == dump_base) return 0;           \
 	dump = dump_next(dump);                    \
 	operator = (short)dump_op(dump);           \
 	args = dump_args(dump);                    \
@@ -1862,6 +1908,7 @@ pointer s_clone_save() {
 
 #define s_return(a) BEGIN                      \
 	value = (a);                               \
+	if (dump == NIL) return 0;                 \
 	operator = (short)ivalue(car(dump));       \
 	args = cadr(dump);                         \
 	envir = caddr(dump);                       \
@@ -2334,6 +2381,8 @@ int Eval_Cycle(short operator)
 	long w;
 
 LOOP:
+	c_sink = NIL;
+
 	switch (operator) {
 	case OP_EVAL:		/* main part of evalution */
 OP_EVAL:
@@ -2404,6 +2453,7 @@ OP_APPLY:
 			operator = (short)procnum(code);
 			goto LOOP;
 		} else if (is_foreign(code)) {	/* FOREIGN */
+			push_recent_alloc(args);
 			x = ((foreign_func)car(code))(args);
 			s_return(x);
 		} else if (is_closure(code)) {	/* CLOSURE */
@@ -4407,6 +4457,9 @@ OP_ERR1:
 			putstr("\n");
 			flushinput();
 			port_file(outport) = tmpfp;
+			if (!interactive_repl) {
+				return -1;
+			}
 			s_goto(OP_T0LVL);
 		}
 
@@ -5293,9 +5346,13 @@ void init_procs()
 }
 
 
-/* initialize several globals */
-void init_globals()
+/* initialization of Mini-Scheme */
+void scheme_init()
 {
+	alloc_cellseg();
+	gc_verbose = 0;
+
+	/* initialize several globals */
 	init_vars_global();
 	init_syntax();
 	init_procs();
@@ -5316,14 +5373,8 @@ void init_globals()
 	value = NIL;
 	mark_x = NIL;
 	mark_y = NIL;
-}
-
-/* initialization of Mini-Scheme */
-void scheme_init()
-{
-	alloc_cellseg();
-	gc_verbose = 0;
-	init_globals();
+	c_nest = NIL;
+	c_sink = NIL;
 }
 
 void scheme_deinit()
@@ -5346,6 +5397,8 @@ void scheme_deinit()
 	value = NIL;
 	mark_x = NIL;
 	mark_y = NIL;
+	c_nest = NIL;
+	c_sink = NIL;
 
 	gc_verbose = 0;
 	gc(&NIL, &NIL);
@@ -5355,8 +5408,25 @@ int scheme_load_file(FILE *fin)
 {
 	short op;
 
+	if (fin == stdin) {
+		interactive_repl = 1;
+	}
+	inport = mk_port(fin, port_input);
 	if (setjmp(error_jmp) == 0) {
-		inport = mk_port(fin, port_input);
+		op = OP_T0LVL;
+	} else {
+		op = OP_QUIT;
+	}
+	return Eval_Cycle(op);
+}
+
+int scheme_load_string(const char *cmd)
+{
+	short op;
+
+	interactive_repl = 0;
+	inport = port_from_string(cmd, port_input);
+	if (setjmp(error_jmp) == 0) {
 		op = OP_T0LVL;
 	} else {
 		op = OP_QUIT;
@@ -5377,6 +5447,80 @@ void scheme_register_foreign_func(char* name, foreign_func ff)
 	}
 	x = cons(s, f);
 	car(global_env) = cons(x, car(global_env));
+}
+
+void save_from_C_call()
+{
+	pointer x;
+#ifndef USE_SCHEME_STACK
+	x = cons(dump, dump_base);
+	x = cons(envir, x);
+	x = cons(c_sink, x);
+	c_nest = cons(x, c_nest);
+	dump_base = mk_dumpstack(NIL);
+	dump = dump_base;
+#else
+	x = cons(envir, dump);
+	x = cons(c_sink, x);
+	c_nest = cons(x, c_nest);
+	dump = NIL;
+#endif
+	envir = global_env;
+}
+
+void restore_from_C_call()
+{
+#ifndef USE_SCHEME_STACK
+	c_sink = caar(c_nest);
+	envir = car(cdar(c_nest));
+	dump = cadr(cdar(c_nest));
+	dump_base = cddr(cdar(c_nest));
+#else
+	c_sink = caar(c_nest);
+	envir = car(cdar(c_nest));
+	dump = cdr(cdar(c_nest));
+#endif
+	c_nest = cdr(c_nest);
+}
+
+pointer scheme_call(pointer func, pointer argslist)
+{
+	int old_repl = interactive_repl;
+	interactive_repl = 0;
+	save_from_C_call();
+	envir = global_env;
+	args = argslist;	/* assumed to be already eval'ed. */
+	code = func;		/* assumed to be already eval'ed. */
+	Eval_Cycle(OP_APPLY);
+	interactive_repl = old_repl;
+	restore_from_C_call();
+	return value;
+}
+
+pointer scheme_eval(pointer obj)
+{
+	int old_repl = interactive_repl;
+	interactive_repl = 0;
+	save_from_C_call();
+	args = NIL;
+	code = obj;
+	Eval_Cycle(OP_EVAL);
+	interactive_repl = old_repl;
+	restore_from_C_call();
+	return value;
+}
+
+pointer scheme_apply0(char *procname)
+{
+	pointer x = mk_symbol(procname);
+	return scheme_eval(cons(x, NIL));
+}
+
+pointer scheme_apply1(char *procname, pointer argslist)
+{
+	pointer mark_x = argslist;
+	pointer x = mk_symbol(procname);
+	return scheme_eval(cons(x, mark_x));
 }
 
 /* ========== Error ==========  */
