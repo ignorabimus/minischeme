@@ -13,6 +13,44 @@ Features
 * reinventing the [tinyscheme](https://github.com/ignorabimus/tinyscheme "Experimental fork of TinyScheme and extensions TSX, RE.") :)
 
 
+Build (with MSVC)
+-----------------
+
+Install "Visual C++ 2015" or later.
+
+* I compiled using "Microsoft Visual C++ 2015", but "2013" or earlier maybe OK.
+
+### Setting up environemt
+
+Open the Visual Studio command prompt, or open Normal command prompt then run
+
+    > (Visual Studio installed path)\VC\vcvarsall.bat
+
+and change directory to unpacking source files.
+
+    > cd src
+
+### Build an executable
+
+To build an executable, just run
+
+    > msvcbuild.bat
+
+and you'll get
+
+    > bin\minischeme.exe
+
+### Build a static library
+
+To build as a static library, run with "static" option
+
+    > msvcbuild.bat static
+
+and you'll get
+
+    > lib\minischeme.lib
+
+
 [R5RS standard](http://www.schemers.org/Documents/Standards/R5RS/ "schemers.org: Documents: Standards: R5RS") compatibility
 ------------------
 
@@ -244,6 +282,8 @@ Links
 -----
 
 [D. Souflis, J. Shapiro - TinyScheme Home](http://tinyscheme.sourceforge.net/home.html)
+
+[Visual Studio Downloads](http://www.visualstudio.com/downloads/)
 
 
 License
