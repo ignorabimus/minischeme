@@ -33,6 +33,9 @@
 /*
  * Define or undefine following symbols as you need.
  */
+#ifndef STANDALONE
+#define STANDALONE 1	/* define 0 if you want to build as a Library */
+#endif
 /* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
 #define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
 
@@ -5535,6 +5538,8 @@ void FatalError(char *s)
 
 /* ========== Main ========== */
 
+#if STANDALONE
+
 int main(int argc, char *argv[])
 {
 	int ret;
@@ -5565,3 +5570,5 @@ int main(int argc, char *argv[])
 
 	return ret;
 }
+
+#endif
