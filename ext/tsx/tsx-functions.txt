@@ -1,0 +1,176 @@
+TinyScheme Extensions (TSX) 1.1  [September, 2002]
+(c) 2002 Manuel Heras-Gilsanz (manuel@heras-gilsanz.com)
+
+This software is subject to the license terms contained in the
+LICENSE file.
+
+
+TSX FUNCTIONS
+
+TSX incorporates the following functions:
+
+*Sockets (included if HAVE_SOCKETS is defined in tsx.h)
+
+(make-client-socket host port)
+        host: string (IP address or host name)
+        port: integer number
+
+        Returns a socket which is already connected to the
+        specified host and port, or #f if the connection could
+        not be performed.
+
+(make-server-socket port)
+        port: integer number
+
+        Returns a socket which is bound to the specified port on
+        the local machine, and ready to accept connections. If the
+        socket could not be created (e.g., because the port is
+        already in use, or it is a privileged port and the user has
+        no permissions on it), #f is returned.
+
+(recv! sock buff)
+        sock: socket obtained with make-client-socket or accept
+        buff: string
+
+        Waits for received data through the specified socket, and
+        stores it on the buffer. The return value indicates the
+        number of received bytes. This call blocks until some data
+        is received, but does not guarantee that buff gets
+        completely filled. If an error occurs (e.g., the other
+        peer disconnects) then #f is returned.
+
+(recv-new-string sock)
+        sock: socket obtained with make-client-socket or accept
+
+        Waits for received data through the specified socket, and
+        returns it in a new string. This call blocks until some
+        data is received. If an error occurs, then #f is returned.
+
+(send sock buff)
+        sock: socket obtained with make-client-socket or accept
+        buff: string
+
+        Sends the data contained in the string through the socket.
+        It returns the number of transmitted bytes (could be
+        different than the size of the string!), or #f if an error
+        occured (e.g., the other peer disconnected).
+
+(accept server-sock)
+        server-sock: socket obtained with make-server-socket
+
+        Waits until a connection is received on the specified
+        server socket, and returns the connected socket. If an
+        error occurs (e.g., the network interface shuts down), it
+        returns #f instead.
+
+(close-socket sock)
+        sock: socket obtained with make-server-socket,
+              make-client-socket or accept
+
+	The socket is closed. No further calls should be performed
+        on this socket.
+
+(sock-is-data-ready? sock)
+        sock: socket obtained with make-server-socket,
+              make-client-socket or accept
+
+	This function allows non-blocking operation with sockets.
+	It returns #t if data is available for reception on this
+	socket, and #f if no data has been received.
+
+(sock-peek sock)
+        sock: socket obtained with make-server-socket,
+              make-client-socket or accept
+
+	This function returns (as a newly created string) the
+	data received in this socket. The information is not
+	removed from the input queue.
+
+*File system (included if HAVE_FILESYSTEM is defined in tsx.h)
+
+Scheme already defines functions to read and write files. These
+functions allow access to the filesystem to check if a certain
+file exists, to get its size, etc.
+
+(file-size filename)
+        filename: string
+
+        This function returns the size (in bytes) of the
+        indicated file, or #f if the file does not exists or
+        is not accessible to the requesting user.
+
+(file-exists? filename)
+        filename: string
+
+        This function returns #t if the indicated file exists, and
+        #f if it does not exists or it is not accessible to the
+        requesting user.
+
+(delete-file filename)
+        filename: string
+
+        Removes the specified file. It returns #t if the operation
+        succeeds, or #f otherwise (e.g., because the file is
+        read-only, or because the file does not exist).
+
+(open-dir-stream path)
+        path: string
+
+        Opens a "directory stream" on the provided directory path.
+        This stream will provide all the files within the directory,
+        using the function read-dir-entry. The stream should be closed
+        at the end with close-dir-stream.
+
+(read-dir-entry dirstream)
+        dirstream: directory stream, obtained with open-dir-stream.
+
+        It returns the name of the following directory entry, or eof
+        if all the entries were provided. Check the return value with
+        with eof-object?.
+
+(close-dir-stream dirstream) 
+        dirstream: directory stream, obtained with open-dir-stream.
+
+        Close directory stream. No further calls to read-dir-entry should
+        be performed.
+
+
+*Time (available if HAVE_TIME is defined in tsx.h)
+
+(time)
+        Returns the current local time, as a list of integer
+        containing:
+          (year month day-of-month hour min sec millisec)
+        The year is expressed as an offsett from 1900.
+
+(gettimeofday)
+        Returns a list containing the number of seconds from
+        the beginning of the day, and microseconds within the
+        current second.
+
+(usleep microsec)
+        microsec: integer
+
+        Suspends execution of the calling thread during the
+        specified number of microseconds.
+
+
+*Miscellaneous functions (available if HAVE_MISC is defined)
+
+(getenv varname)
+        varname: string
+
+        Returns a string with the content of the specified
+        environment variable, or #f if the variable is not
+        defined.
+
+(system command)
+        command: string
+
+        Executes a command on the /bin/sh shell. Returns #f if
+        it is unable to run /bin/sh or another error occurs,
+        or an integer return code which is the value returned
+        by the command to the shell.
+
+END
+
