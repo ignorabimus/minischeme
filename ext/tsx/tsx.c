@@ -6,8 +6,14 @@
  * LICENSE file.
  */
 
-#include "scheme-private.h"
+#include "miniscm.h"
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#include <time.h>
+#include <sys/timeb.h>
+#include <io.h>
+#else
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -19,70 +25,69 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <dirent.h>
+#endif
 #include "tsx.h"
 
-#undef cons
-
 #ifdef HAVE_MISC
-pointer foreign_getenv(scheme * sc, pointer args)
+pointer foreign_getenv(pointer args)
 {
   pointer first_arg;
   pointer ret;
   char * varname;
   char * value;
 
-  if(args == sc->NIL)
+  if(args == NIL)
   {
-    return sc->F;
+    return F;
   }
 
-  first_arg = sc->vptr->pair_car(args);
+  first_arg = car(args);
 
-  if(!sc->vptr->is_string(first_arg))
+  if(!is_string(first_arg))
   {
-    return sc->F;
+    return F;
   }
 
-  varname = sc->vptr->string_value(first_arg);
+  varname = strvalue(first_arg);
   value = getenv(varname);
   if (0 == value)
   {
-    ret = sc->F;
+    ret = F;
   }
   else
   {
-    ret = sc->vptr->mk_string(sc,value);
+    ret = mk_string(value);
   }
   return ret;
 }
 
-pointer foreign_system(scheme * sc, pointer args)
+pointer foreign_system(pointer args)
 {
   pointer first_arg;
   char * command;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(first_arg))
-    return sc->F;
-  
-  command = sc->vptr->string_value(first_arg);
+  first_arg = car(args);
+  if(!is_string(first_arg))
+    return F;
+
+  command = strvalue(first_arg);
   if(0 == command)
-    return sc->F;
+    return F;
 
   retcode = system(command);
   if( (127 == retcode) || (-1 == retcode) )
-    return sc->F;
+    return F;
 
-  return (sc->vptr->mk_integer(sc,retcode));
+  return (mk_integer(retcode));
 }
 #endif /* defined (HAVE_MISC) */
 
 #ifdef HAVE_FILESYSTEM
-pointer foreign_filesize(scheme * sc, pointer args)
+pointer foreign_filesize(pointer args)
 {
   pointer first_arg;
   pointer ret;
@@ -90,28 +95,28 @@ pointer foreign_filesize(scheme * sc, pointer args)
   char * filename;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_string(first_arg)) {
+    return F;
   }
 
-  filename = sc->vptr->string_value(first_arg);
+  filename = strvalue(first_arg);
   retcode = stat(filename, &buf);
   if (0 == retcode)
   {
-    ret = sc->vptr->mk_integer(sc,buf.st_size);
+    ret = mk_integer(buf.st_size);
   }
   else
   {
-    ret = sc->F;
+    ret = F;
   }
   return ret;
 }
 
-pointer foreign_fileexists(scheme * sc, pointer args)
+pointer foreign_fileexists(pointer args)
 {
   pointer first_arg;
   pointer ret;
@@ -119,182 +124,249 @@ pointer foreign_fileexists(scheme * sc, pointer args)
   char * filename;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_string(first_arg)) {
+    return F;
   }
 
-  filename = sc->vptr->string_value(first_arg);
+  filename = strvalue(first_arg);
   retcode = stat(filename, &buf);
   if (0 == retcode)
   {
-    ret = sc->T;
+    ret = T;
   }
   else
   {
-    ret = sc->F;
+    ret = F;
   }
   return ret;
 }
 
-pointer foreign_deletefile(scheme * sc, pointer args)
+pointer foreign_deletefile(pointer args)
 {
   pointer first_arg;
   pointer ret;
   char * filename;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_string(first_arg)) {
+    return F;
   }
 
-  filename = sc->vptr->string_value(first_arg);
+  filename = strvalue(first_arg);
+#ifdef _WIN32
+  retcode = _unlink(filename);
+#else
   retcode = unlink(filename);
+#endif
   if (0 == retcode) {
-    ret = sc->T;
+    ret = T;
   }
   else {
-    ret = sc->F;
+    ret = F;
   }
   return ret;
 }
 
-pointer foreign_opendirstream(scheme * sc, pointer args)
+pointer foreign_opendirstream(pointer args)
 {
   pointer first_arg;
   char * dirpath;
+#ifdef _WIN32
+  long dir;
+  struct _finddata_t entry;
+#else
   DIR * dir;
+#endif
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(first_arg))
-    return sc->F;
-  
-  dirpath = sc->vptr->string_value(first_arg);
+  first_arg = car(args);
+  if(!is_string(first_arg))
+    return F;
 
+  dirpath = strvalue(first_arg);
+
+#ifdef _WIN32
+  dir = _findfirst(dirpath, &entry);
+  if(-1L == dir)
+#else
   dir = opendir(dirpath);
   if(0 == dir)
-    return sc->F;
+#endif
+    return F;
 
-  return (sc->vptr->mk_integer(sc,(int) dir));
+  return (mk_integer((int) dir));
 }
 
-pointer foreign_readdirentry(scheme * sc, pointer args)
+pointer foreign_readdirentry(pointer args)
 {
   pointer first_arg;
+#ifdef _WIN32
+  long dir;
+  struct _finddata_t entry;
+#else
   DIR * dir;
   struct dirent * entry;
+#endif
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg))
-    return sc->F;
-  
-  dir = (DIR *) sc->vptr->ivalue(first_arg);
+  first_arg = car(args);
+  if(!is_number(first_arg))
+    return F;
+
+#ifdef _WIN32
+  dir = (long) ivalue(first_arg);
+  if(-1L == dir)
+#else
+  dir = (DIR *) ivalue(first_arg);
   if(0 == dir)
-    return sc->F;
+#endif
+    return F;
 
+#ifdef _WIN32
+  dir = _findnext(dir, &entry);
+  if(-1L == dir)
+#else
   entry = readdir(dir);
   if(0 == entry)
-    return sc->EOF_OBJ;
+#endif
+    return EOF_OBJ;
 
-  return (sc->vptr->mk_string(sc,entry->d_name));
+#ifdef _WIN32
+  return (mk_string(entry.name));
+#else
+  return (mk_string(entry->d_name));
+#endif
 }
 
-pointer foreign_closedirstream(scheme * sc, pointer args)
+pointer foreign_closedirstream(pointer args)
 {
   pointer first_arg;
+#ifdef _WIN32
+  long dir;
+#else
   DIR * dir;
+#endif
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg))
-    return sc->F;
-  
-  dir = (DIR *) sc->vptr->ivalue(first_arg);
+  first_arg = car(args);
+  if(!is_number(first_arg))
+    return F;
+
+#ifdef _WIN32
+  dir = (long) ivalue(first_arg);
+  if(-1L == dir)
+#else
+  dir = (DIR *) ivalue(first_arg);
   if(0 == dir)
-    return sc->F;
+#endif
+    return F;
 
+#ifdef _WIN32
+  _findclose(dir);
+#else
   closedir(dir);
-  return sc->T;
+#endif
+  return T;
 }
 #endif /* defined (HAVE_FILESYSTEM) */
 
 #ifdef HAVE_TIME
-pointer foreign_time(scheme * sc, pointer args)
+pointer foreign_time(pointer args)
 {
   time_t now;
   struct tm * now_tm;
   pointer ret;
 
-  if(args != sc->NIL)
+  if(args != NIL)
   {
-    return sc->F;
+    return F;
   }
 
   time(&now);
   now_tm = localtime(&now);
-  
-  ret = sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) now_tm->tm_year),
-         sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) now_tm->tm_mon),
-          sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) now_tm->tm_mday),
-           sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) now_tm->tm_hour),
-            sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) now_tm->tm_min),
-             sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) now_tm->tm_sec),sc->NIL))))));
+
+  ret = cons(mk_integer((long) now_tm->tm_year),
+         cons(mk_integer((long) now_tm->tm_mon),
+          cons(mk_integer((long) now_tm->tm_mday),
+           cons(mk_integer((long) now_tm->tm_hour),
+            cons(mk_integer((long) now_tm->tm_min),
+             cons(mk_integer((long) now_tm->tm_sec),NIL))))));
 
   return ret;
 }
 
-pointer foreign_gettimeofday(scheme * sc, pointer args)
+pointer foreign_gettimeofday(pointer args)
 {
   struct timeval tv;
   pointer ret;
 
+#ifdef _WIN32
+  struct _timeb tb;
+
+  _ftime(&tb);
+  tv.tv_sec = (long) tb.time;
+  tv.tv_usec = tb.millitm * 1000;
+#else
   gettimeofday(&tv, 0);
-  
-  ret = sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) tv.tv_sec),
-         sc->vptr->cons(sc,sc->vptr->mk_integer(sc,(long) tv.tv_usec),
-          sc->NIL));
+#endif
+
+  ret = cons(mk_integer((long) tv.tv_sec),
+         cons(mk_integer((long) tv.tv_usec),
+          NIL));
 
   return ret;
 }
 
-pointer foreign_usleep(scheme * sc, pointer args)
+pointer foreign_usleep(pointer args)
 {
   pointer first_arg;
   long usec;
-  int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_integer(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_integer(first_arg)) {
+    return F;
   }
 
-  usec = sc->vptr->ivalue(first_arg);
-  retcode = usleep(usec);
+  usec = ivalue(first_arg);
+#ifdef _WIN32
+  if (usec > 0) {
+    HANDLE hTimer;
+    LARGE_INTEGER dueTime;
 
-  return sc->T;
+    dueTime.QuadPart = -10LL * usec;
+
+    hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
+    SetWaitableTimer(hTimer, &dueTime, 0, NULL, NULL, 0);
+    WaitForSingleObject(hTimer, INFINITE);
+    CloseHandle(hTimer);
+  }
+#else
+  usleep(usec);
+#endif
+
+  return T;
 }
 #endif /* defined (HAVE_TIME) */
 
 #ifdef HAVE_SOCKETS
-pointer foreign_makeclientsocket(scheme * sc, pointer args)
+pointer foreign_makeclientsocket(pointer args)
 {
   pointer first_arg;
   pointer second_arg;
@@ -306,92 +378,105 @@ pointer foreign_makeclientsocket(scheme * sc, pointer args)
   int retcode;
   long port;
   int sock;
+#ifdef _WIN32
+  int size = sizeof(address);
+#endif
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_string(first_arg)) {
+    return F;
   }
-  args = sc->vptr->pair_cdr(args);
-  second_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(second_arg)) {
-    return sc->F;
+  args = cdr(args);
+  second_arg = car(args);
+  if(!is_number(second_arg)) {
+    return F;
   }
-  
-  hostname = sc->vptr->string_value(first_arg);
-  port = sc->vptr->ivalue(second_arg);
 
-  if(inet_aton(hostname, &inaddr))
+  hostname = strvalue(first_arg);
+  port = ivalue(second_arg);
+
+#ifdef _WIN32
+  /* inet_pton() is not implemented in Windows XP, 2003 */
+  if (WSAStringToAddress(hostname, AF_INET, NULL, (struct sockaddr *)&address, &size) == 0) {
+    inaddr = address.sin_addr;
+#else
+  if(inet_aton(hostname, &inaddr)) {
+#endif
     host = gethostbyaddr((char *) &inaddr, sizeof(inaddr), AF_INET);
-  else
+  } else
     host = gethostbyname(hostname);
 
   if(0 == host) {
-    return sc->F;
+    return F;
   }
 
   sock = socket(PF_INET, SOCK_STREAM, 0);
   if(-1==sock) {
-    return sc->F;
+    return F;
   }
 
   address.sin_family = AF_INET;
-  address.sin_port   = htons(port);
+  address.sin_port   = htons((u_short) port);
   memcpy(&address.sin_addr, host->h_addr_list[0], sizeof(address.sin_addr));
 
   retcode = connect(sock, (struct sockaddr *)&address, sizeof(address));
   if (0 == retcode) {
-    ret = sc->vptr->mk_integer(sc,sock);
+    ret = mk_integer(sock);
   }
   else {
-    ret = sc->F;
+    ret = F;
   }
   return ret;
 }
 
-pointer foreign_makeserversocket(scheme * sc, pointer args)
+pointer foreign_makeserversocket(pointer args)
 {
   pointer first_arg;
   struct sockaddr_in address;
   long port;
+#ifdef _WIN32
+  const char one = 1;
+#else
   int one = 1;
+#endif
   int sock;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_number(first_arg)) {
+    return F;
   }
-  
-  port = sc->vptr->ivalue(first_arg);
+
+  port = ivalue(first_arg);
 
   sock = socket(PF_INET, SOCK_STREAM, 0);
   if(-1==sock) {
-    return sc->F;
+    return F;
   }
 
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
   address.sin_family = AF_INET;
-  address.sin_port   = htons(port);
+  address.sin_port   = htons((u_short) port);
   memset(&address.sin_addr, 0, sizeof(address.sin_addr));
 
   if(bind(sock, (struct sockaddr *) &address, sizeof(address))) {
-    return sc->F;
+    return F;
   }
 
   if(listen(sock, 1)) {
-    return sc->F;
+    return F;
   }
 
-  return (sc->vptr->mk_integer(sc,sock));
+  return (mk_integer(sock));
 }
 
-pointer foreign_recv(scheme * sc, pointer args)
+pointer foreign_recv(pointer args)
 {
   pointer first_arg;
   pointer second_arg;
@@ -400,34 +485,34 @@ pointer foreign_recv(scheme * sc, pointer args)
   pointer ret;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_number(first_arg)) {
+    return F;
   }
-  args = sc->vptr->pair_cdr(args);
-  second_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(second_arg)) {
-    return sc->F;
+  args = cdr(args);
+  second_arg = car(args);
+  if(!is_string(second_arg)) {
+    return F;
   }
-  
-  sock = sc->vptr->ivalue(first_arg);
-  buf  = sc->vptr->string_value(second_arg);
+
+  sock = ivalue(first_arg);
+  buf  = strvalue(second_arg);
 
   retcode = recv(sock, buf, strlen(buf), 0);
   if (-1 == retcode) {
-    ret = sc->F;
+    ret = F;
   }
   else {
-    ret = sc->vptr->mk_integer(sc,retcode);
+    ret = mk_integer(retcode);
   }
 
   return ret;
 }
 
-pointer foreign_recvnewbuf(scheme * sc, pointer args)
+pointer foreign_recvnewbuf(pointer args)
 {
   pointer first_arg;
   int sock;
@@ -435,23 +520,23 @@ pointer foreign_recvnewbuf(scheme * sc, pointer args)
   int lenreceived;
   char buf[2500];
 
-  if(args == sc->NIL) return sc->F;
+  if(args == NIL) return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) return sc->F;
-  
-  sock = sc->vptr->ivalue(first_arg);
+  first_arg = car(args);
+  if(!is_number(first_arg)) return F;
+
+  sock = ivalue(first_arg);
 
   lenreceived = recv(sock, buf, sizeof(buf) - 1, 0);
-  if (-1 == lenreceived) return sc->F;
+  if (-1 == lenreceived) return F;
 
   buf[lenreceived] = 0;
-  ret = sc->vptr->mk_string(sc,buf);
+  ret = mk_string(buf);
 
   return ret;
 }
 
-pointer foreign_isdataready(scheme * sc, pointer args)
+pointer foreign_isdataready(pointer args)
 {
   pointer first_arg;
   int sock;
@@ -459,29 +544,29 @@ pointer foreign_isdataready(scheme * sc, pointer args)
   fd_set fds;
   fd_set fdsin;
 
-  if(args == sc->NIL) return sc->F;
+  if(args == NIL) return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) return sc->F;
-  
-  sock = sc->vptr->ivalue(first_arg);
+  first_arg = car(args);
+  if(!is_number(first_arg)) return F;
+
+  sock = ivalue(first_arg);
 
   tv.tv_sec = 0;
   tv.tv_usec = 0;
-  
+
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
   fdsin = fds;
   if (select(1+sock, &fdsin, NULL, NULL, &tv) < 0)
     {
-      return sc->F;
+      return F;
     }
   if (FD_ISSET(sock, &fdsin))
-	  return sc->T;
-  return sc->F;
+    return T;
+  return F;
 }
 
-pointer foreign_sockpeek(scheme * sc, pointer args)
+pointer foreign_sockpeek(pointer args)
 {
   pointer first_arg;
   int sock;
@@ -489,23 +574,23 @@ pointer foreign_sockpeek(scheme * sc, pointer args)
   int lenreceived;
   char buf[2500];
 
-  if(args == sc->NIL) return sc->F;
+  if(args == NIL) return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) return sc->F;
-  
-  sock = sc->vptr->ivalue(first_arg);
+  first_arg = car(args);
+  if(!is_number(first_arg)) return F;
+
+  sock = ivalue(first_arg);
 
   lenreceived = recv(sock, buf, sizeof(buf) - 1, MSG_PEEK);
-  if (-1 == lenreceived) return sc->F;
+  if (-1 == lenreceived) return F;
 
   buf[lenreceived] = 0;
-  ret = sc->vptr->mk_string(sc,buf);
+  ret = mk_string(buf);
 
   return ret;
 }
 
-pointer foreign_send(scheme * sc, pointer args)
+pointer foreign_send(pointer args)
 {
   pointer first_arg;
   pointer second_arg;
@@ -514,34 +599,34 @@ pointer foreign_send(scheme * sc, pointer args)
   pointer ret;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_number(first_arg)) {
+    return F;
   }
-  args = sc->vptr->pair_cdr(args);
-  second_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_string(second_arg)) {
-    return sc->F;
+  args = cdr(args);
+  second_arg = car(args);
+  if(!is_string(second_arg)) {
+    return F;
   }
-  
-  sock = sc->vptr->ivalue(first_arg);
-  buf  = sc->vptr->string_value(second_arg);
+
+  sock = ivalue(first_arg);
+  buf  = strvalue(second_arg);
 
   retcode = send(sock, buf, strlen(buf), 0);
   if (-1 == retcode) {
-    ret = sc->F;
+    ret = F;
   }
   else {
-    ret = sc->vptr->mk_integer(sc,retcode);
+    ret = mk_integer(retcode);
   }
 
   return ret;
 }
 
-pointer foreign_accept(scheme * sc, pointer args)
+pointer foreign_accept(pointer args)
 {
   pointer first_arg;
   int sock;
@@ -550,120 +635,84 @@ pointer foreign_accept(scheme * sc, pointer args)
   socklen_t addr_len = sizeof(struct sockaddr_in);
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg)) {
-    return sc->F;
+  first_arg = car(args);
+  if(!is_number(first_arg)) {
+    return F;
   }
-  
-  sock = sc->vptr->ivalue(first_arg);
+
+  sock = ivalue(first_arg);
 
   retcode = accept(sock, (struct sockaddr *)&addr, &addr_len);
   if (-1 == retcode) {
-    ret = sc->F;
+    ret = F;
   }
   else {
-    ret = sc->vptr->mk_integer(sc,retcode);
+    ret = mk_integer(retcode);
   }
 
   return ret;
 }
 
-pointer foreign_closesocket(scheme * sc, pointer args)
+pointer foreign_closesocket(pointer args)
 {
   pointer first_arg;
   int sock;
   int retcode;
 
-  if(args == sc->NIL)
-    return sc->F;
+  if(args == NIL)
+    return F;
 
-  first_arg = sc->vptr->pair_car(args);
-  if(!sc->vptr->is_number(first_arg))
-    return sc->F;
-  
-  sock = sc->vptr->ivalue(first_arg);
+  first_arg = car(args);
+  if(!is_number(first_arg))
+    return F;
 
+  sock = ivalue(first_arg);
+
+#ifdef _WIN32
+  retcode = _close(sock);
+#else
   retcode = close(sock);
+#endif
   if (-1 == retcode)
-    return sc->F;
+    return F;
 
-  return sc->T;
+  return T;
 }
 #endif /* defined (HAVE_SOCKETS) */
 
 
-/* This function gets called when TinyScheme is loading the extension */
-void init_tsx (scheme * sc)
+/* This function gets called when MiniScheme is loading the extension */
+void init_tsx(void)
 {
 #ifdef HAVE_MISC
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"getenv"),
-                               sc->vptr->mk_foreign_func(sc, foreign_getenv));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"system"),
-                               sc->vptr->mk_foreign_func(sc, foreign_system));
+  scheme_register_foreign_func("getenv", foreign_getenv);
+  scheme_register_foreign_func("system", foreign_system);
 #endif /* defined (HAVE_MISC) */
 #ifdef HAVE_TIME
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"time"),
-                               sc->vptr->mk_foreign_func(sc, foreign_time));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"gettimeofday"),
-                               sc->vptr->mk_foreign_func(sc, foreign_gettimeofday));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"usleep"),
-                               sc->vptr->mk_foreign_func(sc, foreign_usleep));
+  scheme_register_foreign_func("time", foreign_time);
+  scheme_register_foreign_func("gettimeofday", foreign_gettimeofday);
+  scheme_register_foreign_func("usleep", foreign_usleep);
 #endif /* defined (HAVE_TIME) */
 #ifdef HAVE_FILESYSTEM
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"file-size"),
-                               sc->vptr->mk_foreign_func(sc, foreign_filesize));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"file-exists?"),
-                               sc->vptr->mk_foreign_func(sc, foreign_fileexists));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"delete-file"),
-                               sc->vptr->mk_foreign_func(sc, foreign_deletefile));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"open-dir-stream"),
-                               sc->vptr->mk_foreign_func(sc, foreign_opendirstream));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"read-dir-entry"),
-                               sc->vptr->mk_foreign_func(sc, foreign_readdirentry));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"close-dir-stream"),
-                               sc->vptr->mk_foreign_func(sc, foreign_closedirstream));
+  scheme_register_foreign_func("file-size", foreign_filesize);
+  scheme_register_foreign_func("file-exists?", foreign_fileexists);
+  scheme_register_foreign_func("delete-file", foreign_deletefile);
+  scheme_register_foreign_func("open-dir-stream", foreign_opendirstream);
+  scheme_register_foreign_func("read-dir-entry", foreign_readdirentry);
+  scheme_register_foreign_func("close-dir-stream", foreign_closedirstream);
 #endif /* defined (HAVE_FILESYSTEM) */
 #ifdef HAVE_SOCKETS
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"make-client-socket"),
-                               sc->vptr->mk_foreign_func(sc, foreign_makeclientsocket));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"make-server-socket"),
-                               sc->vptr->mk_foreign_func(sc, foreign_makeserversocket));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"recv!"),
-                               sc->vptr->mk_foreign_func(sc, foreign_recv));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"recv-new-string"),
-                               sc->vptr->mk_foreign_func(sc, foreign_recvnewbuf));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"sock-peek"),
-                               sc->vptr->mk_foreign_func(sc, foreign_sockpeek));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"sock-is-data-ready?"),
-                               sc->vptr->mk_foreign_func(sc, foreign_isdataready));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"send"),
-                               sc->vptr->mk_foreign_func(sc, foreign_send));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"accept"),
-                               sc->vptr->mk_foreign_func(sc, foreign_accept));
-  sc->vptr->scheme_define(sc,sc->global_env,
-                               sc->vptr->mk_symbol(sc,"close-socket"),
-                               sc->vptr->mk_foreign_func(sc, foreign_closesocket));
+  scheme_register_foreign_func("make-client-socket", foreign_makeclientsocket);
+  scheme_register_foreign_func("make-server-socket", foreign_makeserversocket);
+  scheme_register_foreign_func("recv!", foreign_recv);
+  scheme_register_foreign_func("recv-new-string", foreign_recvnewbuf);
+  scheme_register_foreign_func("sock-peek", foreign_sockpeek);
+  scheme_register_foreign_func("sock-is-data-ready?", foreign_isdataready);
+  scheme_register_foreign_func("send", foreign_send);
+  scheme_register_foreign_func("accept", foreign_accept);
+  scheme_register_foreign_func("close-socket", foreign_closesocket);
 #endif /* defined (HAVE_SOCKETS) */
 }
