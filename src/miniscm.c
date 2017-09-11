@@ -30,32 +30,19 @@
  *--
  */
 
-/*
- * Define or undefine following symbols as you need.
- */
-#ifndef STANDALONE
-#define STANDALONE 1	/* define 0 if you want to build as a Library */
-#endif
-/* #define USE_SCHEME_STACK */	/* define this if you want original-Stack */
-#define USE_COPYING_GC	/* undef this if you do not want to use Copying GC */
-
+#include "miniscm.h"
 
 /*--
  *  If your machine can't support "forward single quotation character"
  *  i.e., '`',  you may have trouble to use backquote.
  *  So use '^' in place of '`'.
  */
-# define BACKQUOTE '`'
+#define BACKQUOTE '`'
 
-/*
- *  Basic memory allocation units
- */
-
-#define CELL_SEGSIZE 500000	/* # of cells in one segment */
-
-
+#if STANDALONE
 #define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w4.\n"
-
+#define InitFile "init.scm"
+#endif
 
 #include <stdio.h>
 #include <ctype.h>
@@ -66,155 +53,10 @@
 #include <float.h>
 #include <math.h>
 #define prompt "> "
-#define InitFile "init.scm"
 #ifdef _WIN32
 #define snprintf _snprintf
 #define stricmp _stricmp
 #endif
-
-/* cell structure */
-struct cell {
-	unsigned short _flag;
-	unsigned char  _extflag;
-	unsigned char  _isfixnum;
-	union {
-		struct {
-			char   *_svalue;
-			size_t  _length;
-		} _string;
-		struct {
-			long    _ivalue;
-			long    _rvalue;
-		} _number;
-		struct {
-			FILE   *_file;
-			char   *_curr;
-		} _port;
-		struct {
-			struct cell *_car;
-			struct cell *_cdr;
-		} _cons;
-#ifdef USE_COPYING_GC
-		struct cell *_forwarded;
-#endif
-	} _object;
-};
-
-typedef struct cell *pointer;
-typedef pointer(*foreign_func)(pointer);
-
-#define T_STRING         1	/* 0000000000000001 */
-#define T_NUMBER         2	/* 0000000000000010 */
-#define T_SYMBOL         4	/* 0000000000000100 */
-#define T_SYNTAX         8	/* 0000000000001000 */
-#define T_PROC          16	/* 0000000000010000 */
-#define T_PAIR          32	/* 0000000000100000 */
-#define T_CLOSURE       64	/* 0000000001000000 */
-#define T_CONTINUATION 128	/* 0000000010000000 */
-#define T_CHARACTER    256	/* 0000000100000000 */
-#define T_PORT         512	/* 0000001000000000 */
-#define T_VECTOR      1024	/* 0000010000000000 */
-#define T_FOREIGN     2048	/* 0000100000000000 */
-#define T_ENVIRONMENT 8192	/* 0010000000000000 */
-#define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
-#define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
-#define MARK         32768	/* 1000000000000000 */
-#define UNMARK       32767	/* 0111111111111111 */
-#ifdef USE_COPYING_GC
-# define T_FORWARDED 32768	/* 1000000000000000 */	/* only for gc */
-#endif
-
-#define T_VALUES         1	/* 0000000000000001 */	/* for call-with-values */
-
-#define T_PROMISE        1	/* 00000001 */
-#define T_RESULTREADY    2	/* 00000010 */
-#define T_MACRO          4	/* 00000100 */
-#define T_DEFMACRO       8	/* 00001000 */	/* for define-macro */
-
-/* macros for cell operations */
-#define type(p)         ((p)->_flag)
-#define exttype(p)      ((p)->_extflag)
-
-#define is_string(p)    (type(p)&T_STRING)
-#define strvalue(p)     ((p)->_object._string._svalue)
-#define strlength(p)    ((p)->_object._string._length)
-
-#define is_number(p)    (type(p)&T_NUMBER)
-#define ivalue(p)       ((p)->_object._number._ivalue)
-#define rvalue(p)       (*(double *)&(p)->_object._number._ivalue)
-#define nvalue(p)       ((p)->_isfixnum ? ivalue(p) : rvalue(p))
-#define is_integer(p)   (is_number(p) && ((p)->_isfixnum || floor(rvalue(p) + 0.5) == rvalue(p)))
-#define set_num_integer(p)   ((p)->_isfixnum = 1)
-#define set_num_real(p)      ((p)->_isfixnum = 0)
-
-#define is_pair(p)      (type(p)&T_PAIR)
-#define car(p)          ((p)->_object._cons._car)
-#define cdr(p)          ((p)->_object._cons._cdr)
-
-#define is_symbol(p)    (type(p)&T_SYMBOL)
-#define symname(p)      strvalue(car(p))
-#define hasprop(p)      (type(p)&T_SYMBOL)
-#define symprop(p)      cdr(p)
-
-#define is_syntax(p)    (type(p)&T_SYNTAX)
-#define is_proc(p)      (type(p)&T_PROC)
-#define syntaxname(p)   strvalue(car(p))
-#define syntaxnum(p)    (*(short *)&car(p)->_extflag)
-#define procnum(p)      ivalue(p)
-
-#define is_closure(p)   (type(p)&T_CLOSURE)
-#define is_macro(p)     (exttype(p)&T_MACRO)
-#define closure_code(p) car(p)
-#define closure_env(p)  cdr(p)
-
-#define is_continuation(p) (type(p)&T_CONTINUATION)
-#define cont_dump(p)    cdr(p)
-
-#define is_character(p) (type(p)&T_CHARACTER)
-
-enum {
-	port_input = 1,
-	port_output = 2,
-	port_file = 4,
-	port_string = 8,
-};
-#define is_port(p)      (type(p) & T_PORT)
-#define is_inport(p)    (is_port(p) && ((p)->_isfixnum & port_input))
-#define is_outport(p)   (is_port(p) && ((p)->_isfixnum & port_output))
-#define is_fileport(p)  (is_port(p) && ((p)->_isfixnum & port_file))
-#define is_strport(p)   (is_port(p) && ((p)->_isfixnum & port_string))
-#define port_file(p)    ((p)->_object._port._file)
-#define port_curr(p)    ((p)->_object._port._curr)
-
-#define is_vector(p)    (type(p)&T_VECTOR)
-
-#define is_foreign(p)   (type(p) & T_FOREIGN)
-
-#define is_environment(p) (type(p) & T_ENVIRONMENT)
-#define setenvironment(p) type(p) |= T_ENVIRONMENT
-
-#define is_promise(p)   (exttype(p) & T_PROMISE)
-#define setpromise(p)   exttype(p) |= T_PROMISE
-#define is_resultready(p) (exttype(p) & T_RESULTREADY)
-#define setresultready(p) exttype(p) |= T_RESULTREADY
-
-#define is_atom(p)      (type(p)&T_ATOM)
-#define setatom(p)      type(p) |= T_ATOM
-#define clratom(p)      type(p) &= CLRATOM
-
-#define is_mark(p)      (type(p)&MARK)
-#define setmark(p)      type(p) |= MARK
-#define clrmark(p)      type(p) &= UNMARK
-
-#define caar(p)         car(car(p))
-#define cadr(p)         car(cdr(p))
-#define cdar(p)         cdr(car(p))
-#define cddr(p)         cdr(cdr(p))
-#define cadar(p)        car(cdr(car(p)))
-#define caddr(p)        car(cdr(cdr(p)))
-#define cadaar(p)       car(cdr(car(car(p))))
-#define cadddr(p)       car(cdr(cdr(cdr(p))))
-#define cddddr(p)       cdr(cdr(cdr(cdr(p))))
 
 /* array for segments */
 struct cell cell_seg[CELL_SEGSIZE * 2];
@@ -271,7 +113,7 @@ FILE   *srcfp;			/* source file */
 jmp_buf error_jmp;
 
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
-int		interactive_repl = 0;
+int     interactive_repl = 0;
 
 void gc(register pointer *a, register pointer *b);
 void FatalError(char *s);

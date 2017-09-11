@@ -1,14 +1,14 @@
 @setlocal
-@set TSCOMPILE=cl /nologo /O2 /W3 /c /D_CRT_SECURE_NO_WARNINGS
-@set TSLINK=link /nologo
-@set TSLIB=lib /nologo
+@set MSCOMPILE=cl /nologo /O2 /W3 /c /D_CRT_SECURE_NO_WARNINGS
+@set MSLINK=link /nologo
+@set MSLIB=lib /nologo
 
 @if "%1" == "static" goto STATIC
 @if not exist bin\ (
   mkdir bin
 )
-%TSCOMPILE% /MT /DSTANDALONE=1 miniscm.c
-%TSLINK% /out:bin\miniscm.exe miniscm.obj
+%MSCOMPILE% /MT /DSTANDALONE=1 miniscm.c
+%MSLINK% /out:bin\miniscm.exe miniscm.obj
 
 @goto END
 
@@ -16,8 +16,8 @@
 @if not exist lib\ (
   mkdir lib
 )
-%TSCOMPILE% /MT /DSTANDALONE=0 miniscm.c
-%TSLIB% /out:lib\miniscm.lib miniscm.obj
+%MSCOMPILE% /MT /DSTANDALONE=0 miniscm.c
+%MSLIB% /out:lib\miniscm.lib miniscm.obj
 
 :END
 del miniscm.obj
