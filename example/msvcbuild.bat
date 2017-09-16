@@ -7,7 +7,7 @@ call msvcbuild.bat
 cd ..\..\ext\tsx
 call msvcbuild.bat
 
-cd ..\..\sample
+cd ..\..\example
 @setlocal
 @set SCHEME_H_DIR=..\src
 @set MSCOMPILE=cl /nologo /O2 /W3 /c /D_CRT_SECURE_NO_WARNINGS /I%SCHEME_H_DIR%
