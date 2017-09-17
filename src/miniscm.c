@@ -44,9 +44,7 @@
 #define InitFile "init.scm"
 #endif
 
-#include <stdio.h>
 #include <ctype.h>
-#include <setjmp.h>
 
 #include <string.h>
 #include <stdlib.h>
@@ -106,9 +104,10 @@ pointer UNQUOTE;		/* pointer to symbol unquote */
 pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
-long    fcells = 0;		/* # of free cells */
+long    fcells = 0;			/* # of free cells */
 
-FILE   *srcfp;			/* source file */
+FILE   *load_stack[MAXFIL];	/* stack of loading files */
+int     load_files;			/* # of loading files */
 
 jmp_buf error_jmp;
 
@@ -289,7 +288,7 @@ pointer mk_real(register double num)
 }
 
 /* get number atom */
-pointer mk_number(struct cell *v)
+pointer mk_number(pointer v)
 {
 	return v->_isfixnum ? mk_integer(ivalue(v)) : mk_real(rvalue(v));
 }
@@ -330,7 +329,7 @@ pointer mk_empty_string(size_t len, char fill)
 }
 
 /* get new symbol */
-pointer mk_symbol(char *name)
+pointer mk_symbol(const char *name)
 {
 	register pointer x, y = NIL;
 
@@ -353,7 +352,7 @@ pointer mk_symbol(char *name)
 }
 
 /* get new uninterned-symbol */
-pointer mk_uninterned_symbol(char *name)
+pointer mk_uninterned_symbol(const char *name)
 {
 	register pointer x;
 
@@ -372,9 +371,10 @@ pointer gensym()
 }
 
 /* make symbol or number atom from string */
-pointer mk_atom(char *q)
+pointer mk_atom(const char *q)
 {
-	char c, *p;
+	const char *p;
+	char c;
 	int has_dec_point = 0;
 	int has_fp_exp = 0;
 
@@ -426,7 +426,7 @@ pointer mk_atom(char *q)
 }
 
 /* make constant */
-pointer mk_const(char *name)
+pointer mk_const(const char *name)
 {
 	long    x;
 	char    tmp[256];
@@ -1028,12 +1028,23 @@ int inchar()
 /* back to standard input */
 void flushinput()
 {
+	FILE *closed = NULL;
+
 	if (is_fileport(inport) && port_file(inport) != stdin) {
-		if (port_file(inport)) fclose(port_file(inport));
+		if (port_file(inport)) {
+			fclose(port_file(inport));
+			closed = port_file(inport);
+		}
 		port_file(inport) = stdin;
 	} else if (is_strport(inport)) {
 		port_file(inport) = stdin;
 		inport->_isfixnum = port_input | port_file;
+	}
+
+	while (load_files > 0) {
+		if (load_stack[--load_files] != stdin && load_stack[load_files] != closed) {
+			fclose(load_stack[load_files]);
+		}
 	}
 }
 
@@ -2366,9 +2377,12 @@ OP_APPLYCONT:
 		if (port_file(inport) == stdin) {
 			fprintf(port_file(outport), "loading %s\n", strvalue(car(args)));
 		}
-		srcfp = port_file(inport);
+		if (load_files == MAXFIL) {
+			Error_1("Unable to open", car(args));
+		}
+		load_stack[load_files++] = port_file(inport);
 		if ((port_file(inport) = fopen(strvalue(car(args)), "r")) == NULL) {
-			port_file(inport) = srcfp;
+			port_file(inport) = load_stack[--load_files];
 			Error_1("Unable to open", car(args));
 		}
 		s_goto(OP_T0LVL);
@@ -2376,11 +2390,10 @@ OP_APPLYCONT:
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
 		if (port_file(inport) == NULL) {
-			if (srcfp == NULL) {
+			if (load_files == 0) {
 				break;
 			}
-			port_file(inport) = srcfp;
-			srcfp = NULL;
+			port_file(inport) = load_stack[--load_files];
 		}
 		if (port_file(inport) == stdin) {
 			putstr("\n");
@@ -4941,7 +4954,7 @@ void init_vars_global()
 	type(&_ONE) = T_NUMBER;
 	set_num_integer(&_ONE);
 	ivalue(&_ONE) = 1;
-	srcfp = NULL;
+	load_files = 0;
 	/* init output file */
 	outport = mk_port(stdout, port_output);
 }
@@ -5279,7 +5292,7 @@ int scheme_load_string(const char *cmd)
 	return Eval_Cycle(op);
 }
 
-void scheme_register_foreign_func(char* name, foreign_func ff)
+void scheme_register_foreign_func(const char *name, foreign_func ff)
 {
 	pointer s = mk_symbol(name);
 	pointer f = mk_foreign_func(ff, &s), x;
@@ -5355,13 +5368,13 @@ pointer scheme_eval(pointer obj)
 	return value;
 }
 
-pointer scheme_apply0(char *procname)
+pointer scheme_apply0(const char *procname)
 {
 	pointer x = mk_symbol(procname);
 	return scheme_eval(cons(x, NIL));
 }
 
-pointer scheme_apply1(char *procname, pointer argslist)
+pointer scheme_apply1(const char *procname, pointer argslist)
 {
 	pointer mark_x = argslist;
 	pointer x = mk_symbol(procname);

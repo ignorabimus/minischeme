@@ -2,6 +2,7 @@
 #define MINISCHEME_H
 
 #include <stdio.h>
+#include <setjmp.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,8 @@ extern "C" {
  *  Basic memory allocation units
  */
 #define CELL_SEGSIZE 500000	/* # of cells in one segment */
+
+#define MAXFIL 64	/* stack size of loading files */
 
 /* cell structure */
 struct cell {
@@ -171,32 +174,34 @@ extern pointer F;
 extern pointer EOF_OBJ;
 extern pointer mark_x;
 extern pointer mark_y;
+extern jmp_buf error_jmp;
 
 pointer cons(pointer a, pointer b);
 pointer mk_character(int c);
 pointer mk_integer(long num);
 pointer mk_real(double num);
-pointer mk_number(struct cell *v);
+pointer mk_number(pointer v);
 pointer mk_string(const char *str);
 pointer mk_empty_string(size_t len, char fill);
-pointer mk_symbol(char *name);
-pointer mk_uninterned_symbol(char *name);
+pointer mk_symbol(const char *name);
+pointer mk_uninterned_symbol(const char *name);
 pointer gensym();
-pointer mk_atom(char *q);
-pointer mk_const(char *name);
+pointer mk_atom(const char *q);
+pointer mk_const(const char *name);
 pointer mk_port(FILE *fp, int prop);
 pointer mk_port_string(pointer p, int prop);
 pointer mk_vector(int len);
 pointer vector_elem(pointer v, int i);
 pointer set_vector_elem(pointer v, int i, pointer a);
+int list_length(pointer a);
 
 void scheme_init();
 void scheme_deinit();
 int scheme_load_file(FILE *fin);
 int scheme_load_string(const char *cmd);
-void scheme_register_foreign_func(char *name, foreign_func ff);
-pointer scheme_apply0(char *procname);
-pointer scheme_apply1(char *procname, pointer args);
+void scheme_register_foreign_func(const char *name, foreign_func ff);
+pointer scheme_apply0(const char *procname);
+pointer scheme_apply1(const char *procname, pointer argslist);
 
 #ifdef __cplusplus
 }
