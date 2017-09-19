@@ -3007,20 +3007,21 @@ OP_DO2:
 		}
 
 	case OP_PAPPLY:	/* apply */
-		if (!validargs("apply", 1, 65535, TST_NONE)) Error_0(msg);
+		if (!validargs("apply", 2, 65535, TST_NONE)) Error_0(msg);
 		code = car(args);
 		args = cdr(args);
 		for (x = args, y = car(x); cdr(x) != NIL; x = cdr(x)) {
 			if (cddr(x) == NIL) {
 				y = cadr(x);
 				cdr(x) = NIL;
+				x = NIL;
 				break;
 			}
 		}
 		if (list_length(y) < 0) {
 			Error_0("apply: last argument is not a proper list");
 		}
-		if (x == args) {
+		if (x != NIL) {
 			args = y;
 		} else {
 			args = append(args, y);
