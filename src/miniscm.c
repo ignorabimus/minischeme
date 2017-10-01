@@ -133,14 +133,14 @@ pointer dump_base; /* pointer to base of allocated dump stack */
 pointer from_space;
 pointer to_space;
 
-void alloc_cellseg()
+void alloc_cellseg(void)
 {
 	fcells = CELL_SEGSIZE;
 	free_cell = from_space = cell_seg;
 	to_space = cell_seg + CELL_SEGSIZE;
 }
 #else
-void alloc_cellseg()
+void alloc_cellseg(void)
 {
 	register pointer p;
 	register long i;
@@ -361,7 +361,7 @@ pointer mk_uninterned_symbol(const char *name)
 	return x;
 }
 
-pointer gensym()
+pointer gensym(void)
 {
 	char name[40];
 	static unsigned long gensym_cnt;
@@ -483,7 +483,7 @@ pointer mk_port(FILE *fp, int prop)
 	pointer x = get_consecutive_cells(2, &NIL);
 
 	type(x + 1) = type(x) = (T_PORT | T_ATOM);
-	(x + 1)->_isfixnum = x->_isfixnum = prop | port_file;
+	(x + 1)->_isfixnum = x->_isfixnum = (unsigned char)(prop | port_file);
 	port_file(x) = fp;
 #ifdef USE_COPYING_GC
 	gcell_next(x) = gcell_list;
@@ -497,7 +497,7 @@ pointer mk_port_string(pointer p, int prop)
 	pointer x = get_cell(&p, &NIL);
 
 	type(x) = (T_PORT | T_ATOM);
-	x->_isfixnum = prop | port_string;
+	x->_isfixnum = (unsigned char)(prop | port_string);
 	port_file(x) = (FILE *)p;
 	port_curr(x) = strvalue(p);
 	return x;
@@ -935,7 +935,7 @@ pointer port_from_filename(const char *filename, int prop)
 
 #define BLOCK_SIZE 256
 
-pointer port_from_scratch()
+pointer port_from_scratch(void)
 {
 	return mk_port_string(mk_empty_string(BLOCK_SIZE, '\0'), port_output);
 }
@@ -995,7 +995,7 @@ void port_close(pointer p)
 char    strbuff[256];
 
 /* get new character from input file */
-int inchar()
+int inchar(void)
 {
 	int c;
 
@@ -1025,7 +1025,7 @@ int inchar()
 }
 
 /* back to standard input */
-void flushinput()
+void flushinput(void)
 {
 	FILE *closed = NULL;
 
@@ -1094,7 +1094,7 @@ void putcharacter(const int c)
 	} else {
 		char *endp = strvalue(car(outport)) + strlength(car(outport));
 		if (port_curr(outport) < endp) {
-			*port_curr(outport)++ = c;
+			*port_curr(outport)++ = (unsigned char)c;
 			if (port_curr(outport) == endp) {
 				outport = realloc_port_string(outport);
 			}
@@ -1107,7 +1107,7 @@ char *readstr(char *delim)
 {
 	char   *p = strbuff;
 
-	while (p - strbuff < sizeof(strbuff) && isdelim(delim, (*p++ = inchar())))
+	while (p - strbuff < sizeof(strbuff) && isdelim(delim, (*p++ = (char)inchar())))
 		;
 	if (p == strbuff + 2 && p[-2] == '\\') {
 		*p = 0;
@@ -1119,7 +1119,7 @@ char *readstr(char *delim)
 }
 
 /* read string expression "xxx...xxx" */
-pointer readstrexp()
+pointer readstrexp(void)
 {
 	char *p = strbuff;
 	int c, c1 = 0;
@@ -1139,7 +1139,7 @@ pointer readstrexp()
 				*p = 0;
 				return mk_string(strbuff);
 			default:
-				*p++ = c;
+				*p++ = (char)c;
 				break;
 			}
 		} else if (state == st_bsl) {
@@ -1177,7 +1177,7 @@ pointer readstrexp()
 				state = st_ok;
 				break;
 			default:
-				*p++ = c;
+				*p++ = (char)c;
 				state = st_ok;
 				break;
 			}
@@ -1192,7 +1192,7 @@ pointer readstrexp()
 				if (state == st_x1) {
 					state = st_x2;
 				} else {
-					*p++ = c1;
+					*p++ = (char)c1;
 					state = st_ok;
 				}
 			} else {
@@ -1200,7 +1200,7 @@ pointer readstrexp()
 			}
 		} else {
 			if (c < '0' || c > '7') {
-				*p++ = c1;
+				*p++ = (char)c1;
 				backchar(c);
 				state = st_ok;
 			} else {
@@ -1211,7 +1211,7 @@ pointer readstrexp()
 				if (state == st_oct1) {
 					state = st_oct2;
 				} else {
-					*p++ = c1;
+					*p++ = (char)c1;
 					state = st_ok;
 				}
 			}
@@ -1220,7 +1220,7 @@ pointer readstrexp()
 }
 
 /* skip white characters */
-int skipspace()
+int skipspace(void)
 {
 	int c;
 
@@ -1231,7 +1231,7 @@ int skipspace()
 }
 
 /* get token */
-int token()
+int token(void)
 {
 	int c = skipspace();
 	if (c == EOF) {
@@ -1367,15 +1367,15 @@ char *atom2str(pointer l, int f)
 		if (!f) {
 			p = strvalue(l);
 		} else {
-			printslashstring(strvalue(l));
+			printslashstring((unsigned char *)strvalue(l));
 			p = NULL;
 		}
 	} else if (is_character(l)) {
 		int c = ivalue(l);
 		p = strbuff;
 		if (!f) {
-			p[0] = c;
-			p[1] = 0;
+			p[0] = (char)c;
+			p[1] = '\0';
 		} else {
 			switch (c) {
 			case ' ':
@@ -1688,18 +1688,18 @@ int lcm(int a, int b)
 
 #define Error_0(s) BEGIN                       \
 	args = cons(mk_string((s)), NIL);          \
-	operator = (short)OP_ERR0;                 \
+	operator = OP_ERR0;                        \
 	goto LOOP; END
 
 #define Error_1(s, a) BEGIN                    \
 	args = cons((a), NIL);                     \
 	args = cons(mk_string((s)), args);         \
-	operator = (short)OP_ERR0;                 \
+	operator = OP_ERR0;                        \
 	goto LOOP; END
 
 /* control macros for Eval_Cycle */
 #define s_goto(a) BEGIN                        \
-	operator = (short)(a);                     \
+	operator = (int)(a);                       \
 	goto a; END
 
 #ifndef USE_SCHEME_STACK
@@ -1718,13 +1718,13 @@ int lcm(int a, int b)
 	value = (a);                               \
 	if (dump == dump_base) return 0;           \
 	dump = dump_next(dump);                    \
-	operator = (short)dump_op(dump);           \
+	operator = (int)dump_op(dump);             \
 	args = dump_args(dump);                    \
 	envir = dump_envir(dump);                  \
 	code = dump_code(dump);                    \
 	goto LOOP; END
 
-#define s_next_op() ((short)dump_op(dump_next(dump)))
+#define s_next_op() ((int)dump_op(dump_next(dump)))
 
 pointer s_clone(pointer d) {
 	pointer p;
@@ -1739,7 +1739,7 @@ pointer s_clone(pointer d) {
 	return dump_prev(p);
 }
 
-pointer s_clone_save() {
+pointer s_clone_save(void) {
 	pointer p = NIL;
 
 	for (mark_x = dump_base; mark_x != dump; mark_x = dump_prev(mark_x)) {
@@ -1764,14 +1764,14 @@ pointer s_clone_save() {
 #define s_return(a) BEGIN                      \
 	value = (a);                               \
 	if (dump == NIL) return 0;                 \
-	operator = (short)ivalue(car(dump));       \
+	operator = (int)ivalue(car(dump));         \
 	args = cadr(dump);                         \
 	envir = caddr(dump);                       \
 	code = cadddr(dump);                       \
 	dump = cddddr(dump);                       \
 	goto LOOP; END
 
-#define s_next_op() ((short)ivalue(car(dump)))
+#define s_next_op() ((int)ivalue(car(dump)))
 
 #endif /* USE_SCHEME_STACK */
 
@@ -2226,11 +2226,11 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 }
 
 /* kernel of this intepreter */
-int Eval_Cycle(short operator)
+int Eval_Cycle(int operator)
 {
 	FILE *tmpfp = NULL;
-	int tok;
-	int print_flag;
+	int tok = 0;
+	int print_flag = 0;
 	pointer x, y;
 	struct cell v;
 	long w;
@@ -4936,7 +4936,7 @@ void mk_proc(unsigned short op, char *name)
 }
 
 
-void init_vars_global()
+void init_vars_global(void)
 {
 	pointer x;
 
@@ -4975,7 +4975,7 @@ void init_vars_global()
 }
 
 
-void init_syntax()
+void init_syntax(void)
 {
 	/* init syntax */
 	mk_syntax(OP_LAMBDA, "lambda");
@@ -5002,7 +5002,7 @@ void init_syntax()
 }
 
 
-void init_procs()
+void init_procs(void)
 {
 	/* init procedure */
 	mk_proc(OP_PEVAL, "eval");
@@ -5220,7 +5220,7 @@ void init_procs()
 
 
 /* initialization of Mini-Scheme */
-void scheme_init()
+void scheme_init(void)
 {
 	alloc_cellseg();
 	gc_verbose = 0;
@@ -5250,7 +5250,7 @@ void scheme_init()
 	c_sink = NIL;
 }
 
-void scheme_deinit()
+void scheme_deinit(void)
 {
 	oblist = NIL;
 	inport = NIL;
@@ -5279,7 +5279,7 @@ void scheme_deinit()
 
 int scheme_load_file(FILE *fin)
 {
-	short op;
+	int op;
 
 	if (fin == stdin) {
 		interactive_repl = 1;
@@ -5295,7 +5295,7 @@ int scheme_load_file(FILE *fin)
 
 int scheme_load_string(const char *cmd)
 {
-	short op;
+	int op;
 
 	interactive_repl = 0;
 	inport = port_from_string(cmd, port_input);
@@ -5322,7 +5322,7 @@ void scheme_register_foreign_func(const char *name, foreign_func ff)
 	car(global_env) = cons(x, car(global_env));
 }
 
-void save_from_C_call()
+void save_from_C_call(void)
 {
 	pointer x;
 #ifndef USE_SCHEME_STACK
@@ -5341,7 +5341,7 @@ void save_from_C_call()
 	envir = global_env;
 }
 
-void restore_from_C_call()
+void restore_from_C_call(void)
 {
 #ifndef USE_SCHEME_STACK
 	c_sink = caar(c_nest);
@@ -5391,7 +5391,7 @@ pointer scheme_apply0(const char *procname)
 
 pointer scheme_apply1(const char *procname, pointer argslist)
 {
-	pointer mark_x = argslist;
+	mark_x = argslist;
 	pointer x = mk_symbol(procname);
 	return scheme_eval(cons(x, mark_x));
 }
