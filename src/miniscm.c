@@ -754,7 +754,7 @@ void gc(register pointer *a, register pointer *b)
 #else /* USE_COPYING_GC */
 
 /*--
- *  We use algorithm E (Kunuth, The Art of Computer Programming Vol.1,
+ *  We use algorithm E (Knuth, The Art of Computer Programming Vol.1,
  *  sec.3.5) for marking.
  */
 void mark(register pointer p)
@@ -914,7 +914,7 @@ void gc(register pointer *a, register pointer *b)
 }
 #endif /* USE_COPYING_GC */
 
-/* ========== Rootines for Ports ========== */
+/* ========== Routines for Ports ========== */
 
 pointer port_from_filename(const char *filename, int prop)
 {
@@ -976,7 +976,7 @@ void port_close(pointer p)
 	}
 }
 
-/* ========== Rootines for Reading ========== */
+/* ========== Routines for Reading ========== */
 
 #define TOK_EOF     (-1)
 #define TOK_LPAREN  0
@@ -1277,7 +1277,7 @@ int token(void)
 	}
 }
 
-/* ========== Rootines for Printing ========== */
+/* ========== Routines for Printing ========== */
 #define	ok_abbrev(x)	(is_pair(x) && cdr(x) == NIL)
 
 void printslashstring(unsigned char *s)
@@ -1449,7 +1449,7 @@ int printatom(pointer l, int f)
 }
 
 
-/* ========== Rootines for Evaluation Cycle ========== */
+/* ========== Routines for Evaluation Cycle ========== */
 
 /* make closure. c is code. e is environment */
 pointer mk_closure(pointer c, pointer e)
