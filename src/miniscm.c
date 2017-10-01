@@ -553,8 +553,7 @@ pointer mk_foreign_func(foreign_func ff, pointer *pp)
 	pointer x = get_cell(pp, &NIL);
 
 	type(x) = (T_FOREIGN | T_ATOM);
-	car(x) = (pointer)ff;
-	cdr(x) = NIL;
+	foreignfnc(x) = ff;
 	return x;
 }
 
@@ -2310,7 +2309,7 @@ OP_APPLY:
 			goto LOOP;
 		} else if (is_foreign(code)) {	/* FOREIGN */
 			push_recent_alloc(args);
-			x = ((foreign_func)car(code))(args);
+			x = (foreignfnc(code))(args);
 			s_return(x);
 		} else if (is_closure(code)) {	/* CLOSURE */
 			/* make environment */

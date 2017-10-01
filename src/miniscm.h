@@ -24,6 +24,9 @@ extern "C" {
 
 #define MAXFIL 64	/* stack size of loading files */
 
+typedef struct cell *pointer;
+typedef pointer (*foreign_func)(pointer);
+
 /* cell structure */
 struct cell {
 	unsigned short _flag;
@@ -42,6 +45,7 @@ struct cell {
 			FILE   *_file;
 			char   *_curr;
 		} _port;
+		foreign_func _ff;
 		struct {
 			struct cell *_car;
 			struct cell *_cdr;
@@ -51,9 +55,6 @@ struct cell {
 #endif
 	} _object;
 };
-
-typedef struct cell *pointer;
-typedef pointer(*foreign_func)(pointer);
 
 #define T_STRING         1	/* 0000000000000001 */
 #define T_NUMBER         2	/* 0000000000000010 */
@@ -138,9 +139,10 @@ enum {
 #define port_file(p)    ((p)->_object._port._file)
 #define port_curr(p)    ((p)->_object._port._curr)
 
-#define is_vector(p)    (type(p)&T_VECTOR)
+#define is_vector(p)    (type(p) & T_VECTOR)
 
 #define is_foreign(p)   (type(p) & T_FOREIGN)
+#define foreignfnc(p)   ((p)->_object._ff)
 
 #define is_environment(p) (type(p) & T_ENVIRONMENT)
 #define setenvironment(p) type(p) |= T_ENVIRONMENT
