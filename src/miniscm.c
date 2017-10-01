@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w4 (2017)
+ *	current version is 0.85w5 (2017)
  *
  * Below are the original credits.
  */
@@ -40,7 +40,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w4.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w5.\n"
 #define InitFile "init.scm"
 #endif
 
@@ -127,6 +127,270 @@ void FatalError(char *s);
 
 pointer dump_base; /* pointer to base of allocated dump stack */
 #endif
+
+/* ========== Routines for UTF-8 characters ========== */
+
+/* internal description of "extended" UTF-32
+ *
+ *  0x00000000 - 0x0000007F (UTF-8  0x00 - 7F)
+ *  0x00000080 - 0x000007FF (UTF-8  0xC2 80 - DF BF)
+ *  0x00000800 - 0x0000FFFF (UTF-8  0xE0 A0 80 - EF BF BF)
+ *  0x00010000 - 0x0010FFFF (UTF-8  0xF0 90 80 80 - F4 8F BF BF)
+ *  0xFFFFFF00 - 0xFFFFFF7F (!UTF-8 0x80 - FF)
+ *  0xFFFFFFFF              (EOF)
+ */
+size_t utf32_to_utf8(const int utf32, char *const utf8)
+{
+	if (utf32 < 0x00) {
+		if (utf8 != NULL) {
+			utf8[0] = (char)(-utf32);
+		}
+		return 1;
+	}
+	if (utf32 < 0x80) {
+		if (utf8 != NULL) {
+			utf8[0] = (char)utf32;
+		}
+		return 1;
+	}
+	if (utf32 < 0x800) {
+		if (utf8 != NULL) {
+			utf8[0] = 0xC0 | (char)(utf32 >> 6);
+			utf8[1] = 0x80 | (utf32 & 0x3F);
+		}
+		return 2;
+	}
+	if (utf32 < 0x10000) {
+		if (utf8 != NULL) {
+			utf8[0] = 0xE0 | (char)(utf32 >> 12);
+			utf8[1] = 0x80 | (utf32 >> 6 & 0x3F);
+			utf8[2] = 0x80 | (utf32 & 0x3F);
+		}
+		return 3;
+	}
+	if (utf32 < 0x110000) {
+		if (utf8 != NULL) {
+			utf8[0] = 0xF0 | (char)(utf32 >> 18);
+			utf8[1] = 0x80 | (utf32 >> 12 & 0x3F);
+			utf8[2] = 0x80 | (utf32 >> 6 & 0x3F);
+			utf8[3] = 0x80 | (utf32 & 0x3F);
+		}
+		return 4;
+	}
+	return 0;
+}
+
+int utf32_toupper(int c)
+{
+	return isascii(c) ? toupper(c) : c;	/* only ASCII */
+}
+
+int utf32_tolower(int c)
+{
+	return isascii(c) ? tolower(c) : c;	/* only ASCII */
+}
+
+int utf32_isalpha(int c)
+{
+	return isascii(c) && isalpha(c);	/* only ASCII */
+}
+
+int utf32_isdigit(int c)
+{
+	return isascii(c) && isdigit(c);	/* only ASCII */
+}
+
+int utf32_isspace(int c)
+{
+	return isascii(c) && isspace(c);	/* only ASCII */
+}
+
+int utf32_isupper(int c)
+{
+	return isascii(c) && isupper(c);	/* only ASCII */
+}
+
+int utf32_islower(int c)
+{
+	return isascii(c) && islower(c);	/* only ASCII */
+}
+
+int utf8_fgetc(FILE *fin)
+{
+	int p[4];
+
+	p[0] = fgetc(fin);
+	if (p[0] < 0x80) {
+		return p[0];
+	} else if (p[0] < 0xC2) {
+		return -p[0];
+	} else if (p[0] < 0xE0)  {
+		p[1] = fgetc(fin);
+		if (p[1] < 0x80 || 0xBF < p[1]) {
+			ungetc(p[1], fin);
+			return -p[0];
+		}
+		return ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+	} else if (p[0] < 0xF0) {
+		p[1] = fgetc(fin);
+		if (p[1] < (p[0] == 0xE0 ? 0xA0 : 0x80) || (p[0] == 0xED ? 0x9F : 0xBF) < p[1]) {
+			ungetc(p[1], fin);
+			return -p[0];
+		}
+		p[2] = fgetc(fin);
+		if (p[2] < 0x80 || 0xBF < p[2]) {
+			ungetc(p[2], fin);
+			ungetc(p[1], fin);
+			return -p[0];
+		}
+		return ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+	} else if (p[0] < 0xF5) {
+		p[1] = fgetc(fin);
+		if (p[1] < (p[0] == 0xF0 ? 0x90 : 0x80) || (p[0] == 0xF4 ? 0x8F : 0xBF) < p[1]) {
+			ungetc(p[1], fin);
+			return -p[0];
+		}
+		p[2] = fgetc(fin);
+		if (p[2] < 0x80 || 0xBF < p[2]) {
+			ungetc(p[2], fin);
+			ungetc(p[1], fin);
+			return -p[0];
+		}
+		p[3] = fgetc(fin);
+		if (p[3] < 0x80 || 0xBF < p[3]) {
+			ungetc(p[3], fin);
+			ungetc(p[2], fin);
+			ungetc(p[1], fin);
+			return -p[0];
+		}
+		return ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+	} else {
+		return -p[0];
+	}
+}
+
+size_t utf8_get_next(const char *utf8, int *utf32)
+{
+	const unsigned char *p = (unsigned char *)utf8;
+
+	if (p[0] < 0x80) {
+		if (utf32 != NULL) {
+			*utf32 = p[0];
+		}
+		return 1;
+	} else if (p[0] < 0xC2) {
+		if (utf32 != NULL) {
+			*utf32 = -p[0];
+		}
+		return 1;
+	} else if (p[0] < 0xE0)  {
+		if (p[1] < 0x80 || 0xBF < p[1]) {
+			if (utf32 != NULL) {
+				*utf32 = -p[0];
+			}
+			return 1;
+		}
+		if (utf32 != NULL) {
+			*utf32 = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+		}
+		return 2;
+	} else if (p[0] < 0xF0) {
+		if (p[1] < (p[0] == 0xE0 ? 0xA0 : 0x80) || (p[0] == 0xED ? 0x9F : 0xBF) < p[1]) {
+			if (utf32 != NULL) {
+				*utf32 = -p[0];
+			}
+			return 1;
+		}
+		if (p[2] < 0x80 || 0xBF < p[2]) {
+			if (utf32 != NULL) {
+				*utf32 = -p[0];
+			}
+			return 1;
+		}
+		if (utf32 != NULL) {
+			*utf32 = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+		}
+		return 3;
+	} else if (p[0] < 0xF5) {
+		if (p[1] < (p[0] == 0xF0 ? 0x90 : 0x80) || (p[0] == 0xF4 ? 0x8F : 0xBF) < p[1]) {
+			if (utf32 != NULL) {
+				*utf32 = -p[0];
+			}
+			return 1;
+		}
+		if (p[2] < 0x80 || 0xBF < p[2]) {
+			if (utf32 != NULL) {
+				*utf32 = -p[0];
+			}
+			return 1;
+		}
+		if (p[3] < 0x80 || 0xBF < p[3]) {
+			if (utf32 != NULL) {
+				*utf32 = -p[0];
+			}
+			return 1;
+		}
+		if (utf32 != NULL) {
+			*utf32 = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+		}
+		return 4;
+	} else {
+		if (utf32 != NULL) {
+			*utf32 = -p[0];
+		}
+		return 1;
+	}
+}
+
+size_t utf8_strlen(const char *s)
+{
+	size_t count = 0;
+
+	while (*s) {
+		s += utf8_get_next(s, NULL);
+		count++;
+	}
+	return count;
+}
+
+int utf8_strref(const char *s, size_t pos)
+{
+	int c;
+
+	while (*s) {
+		s += utf8_get_next(s, &c);
+		if (pos-- == 0) return c;
+	}
+	return -1;
+}
+
+int utf8_strpos(const char *s, size_t pos)
+{
+	const char *t = s;
+
+	while (*s) {
+		if (pos-- == 0) return s - t;
+		s += utf8_get_next(s, NULL);
+	}
+	return -1;
+}
+
+int utf8_stricmp(const char *s1, const char *s2)
+{
+	const char *p1 = s1, *p2 = s2;
+	int c1, c2;
+
+	do {
+		p1 += utf8_get_next(p1, &c1);
+		p2 += utf8_get_next(p2, &c2);
+		c1 = utf32_tolower(c1);
+		c2 = utf32_tolower(c2);
+	} while (c1 != 0 && c2 != 0 && c1 == c2);
+
+	return c1 - c2;
+}
+
+/* ========== Routines for Cells ========== */
 
 /* allocate new cell segment */
 #ifdef USE_COPYING_GC
@@ -293,11 +557,10 @@ pointer mk_number(pointer v)
 	return v->_isfixnum ? mk_integer(ivalue(v)) : mk_real(rvalue(v));
 }
 
-/* get new string */
-pointer mk_string(const char *str)
+/* get new memblock */
+pointer mk_memblock(size_t len, pointer *a)
 {
-	size_t len = strlen(str);
-	pointer x = get_consecutive_cells(2 + len / sizeof (struct cell), &NIL);
+	pointer x = get_consecutive_cells(2 + len / sizeof (struct cell), a);
 
 #ifdef USE_COPYING_GC
 	strvalue(x) = (char *)(x + 1);
@@ -305,26 +568,47 @@ pointer mk_string(const char *str)
 	x += 1 + len / sizeof(struct cell);
 	strvalue(x) = (char *)(x - (1 + len / sizeof(struct cell)));
 #endif
-	type(x) = (T_STRING | T_ATOM);
+	type(x) = (T_MEMBLOCK | T_ATOM);
 	strlength(x) = len;
+	return x;
+}
+
+/* get new string */
+pointer get_string_cell(size_t len, pointer *a)
+{
+	pointer x = mk_memblock(len, a);
+	pointer y = get_cell(&x, a);
+
+	type(y) = (T_STRING | T_ATOM);
+	strvalue(y) = (char *)car(x);
+	strlength(y) = len;
+	return y;
+}
+
+pointer mk_string(const char *str)
+{
+	size_t len = strlen(str);
+	pointer x = get_string_cell(len, &NIL);
 	snprintf(strvalue(x), len + 1, "%s", str);
 	return x;
 }
 
-pointer mk_empty_string(size_t len, char fill)
+pointer mk_counted_string(const char *str, size_t len)
 {
-	pointer x = get_consecutive_cells(2 + len / sizeof(struct cell), &NIL);
+	pointer x = get_string_cell(len, &NIL);
+	snprintf(strvalue(x), len + 1, "%s", str);
+	return x;
+}
 
-#ifdef USE_COPYING_GC
-	strvalue(x) = (char *)(x + 1);
-#else
-	x += 1 + len / sizeof(struct cell);
-	strvalue(x) = (char *)(x - (1 + len / sizeof(struct cell)));
-#endif
-	type(x) = (T_STRING | T_ATOM);
-	strlength(x) = len;
-	memset(strvalue(x), fill, len);
-	strvalue(x)[len] = 0;
+pointer mk_empty_string(size_t len, int fill)
+{
+	char utf8[4];
+	size_t i, n = utf32_to_utf8(fill, utf8);
+	pointer x = get_string_cell(n * len, &NIL);
+	for (i = 0; i < len; i++) {
+		memcpy(strvalue(x) + n * i, utf8, n);
+	}
+	strvalue(x)[n * len] = 0;
 	return x;
 }
 
@@ -454,23 +738,23 @@ pointer mk_const(const char *name)
 		}
 		return mk_integer(x);
 	} else if (*name == '\\') { /* #\w (character) */
-		if (stricmp(name + 1, "space") == 0) {
+		if (utf8_stricmp(name + 1, "space") == 0) {
 			return mk_character(' ');
-		} else if (stricmp(name + 1, "newline") == 0) {
+		} else if (utf8_stricmp(name + 1, "newline") == 0) {
 			return mk_character('\n');
-		} else if (stricmp(name + 1, "return") == 0) {
+		} else if (utf8_stricmp(name + 1, "return") == 0) {
 			return mk_character('\r');
-		} else if (stricmp(name + 1, "tab") == 0) {
+		} else if (utf8_stricmp(name + 1, "tab") == 0) {
 			return mk_character('\t');
 		} else if (name[1] == 'x' && name[2] != 0) {
 			int c = 0;
-			if (sscanf(name + 2, "%x", (unsigned int *)&c) == 1 && c < UCHAR_MAX) {
+			if (sscanf(name + 2, "%x", (unsigned int *)&c) == 1 && c < 0x110000) {
 				return mk_character(c);
 			} else {
 				return NIL;
 			}
-		} else if (name[2] == 0) {
-			return mk_character(name[1]);
+		} else if (name[utf8_get_next(name + 1, (int *)&x) + 1] == '\0') {
+			return mk_character(x);
 		} else {
 			return NIL;
 		}
@@ -589,7 +873,7 @@ pointer forward(pointer x)
 	*next = *x;
 	type(x) = T_FORWARDED;
 	x->_object._forwarded = next;
-	if (is_string(next)) {
+	if (is_memblock(next)) {
 		int i;
 		int n = 1 + strlength(next) / sizeof(struct cell);
 		strvalue(next) = (char *)(next + 1);
@@ -687,7 +971,7 @@ void gc(register pointer *a, register pointer *b)
 	*b = forward(*b);
 
 	while (scan < next) {
-		switch (type(scan) & 0x0fff) {
+		switch (type(scan) & 0x1fff) {
 		case T_NUMBER:
 		case T_PROC:
 		case T_CHARACTER:
@@ -695,6 +979,10 @@ void gc(register pointer *a, register pointer *b)
 		case T_FOREIGN:
 			break;
 		case T_STRING:
+			p = forward(car(scan) - 1);
+			strvalue(scan) = strvalue(p);
+			break;
+		case T_MEMBLOCK:
 			scan += 1 + strlength(scan) / sizeof(struct cell);
 			break;
 		case T_PORT:
@@ -762,7 +1050,10 @@ void mark(register pointer p)
 	register pointer t = 0, q;
 
 E2:	setmark(p);
-	if (is_port(p)) {
+	if (is_string(p)) {
+		int n = 1 + strlength(p) / sizeof(struct cell);
+		mark((pointer)strvalue(p) + n);
+	} else if (is_port(p)) {
 		if (is_fileport(p)) {
 			setmark(p + 1);
 		} else {
@@ -878,11 +1169,11 @@ void gc(register pointer *a, register pointer *b)
 	while (--p >= cell_seg) {
 		if (is_mark(p)) {
 			clrmark(p);
-			if (is_string(p)) {
+			if (is_memblock(p)) {
 				p = (pointer)strvalue(p);
 			}
 		} else {
-			if (is_string(p)) {
+			if (is_memblock(p)) {
 				pointer q = (pointer)strvalue(p);
 				do {
 					type(p) = 0;
@@ -949,16 +1240,8 @@ pointer realloc_port_string(pointer p)
 {
 	size_t curr_len = port_curr(p) - strvalue(car(p));
 	size_t new_size = strlength(car(p)) + BLOCK_SIZE;
-	pointer x = get_consecutive_cells(2 + new_size / sizeof(struct cell), &p);
+	pointer x = get_string_cell(new_size, &p);
 
-#ifdef USE_COPYING_GC
-	strvalue(x) = (char *)(x + 1);
-#else
-	x += 1 + new_size / sizeof(struct cell);
-	strvalue(x) = (char *)(x - (1 + new_size / sizeof(struct cell)));
-#endif
-	type(x) = (T_STRING | T_ATOM);
-	strlength(x) = new_size;
 	memcpy(strvalue(x), strvalue(car(p)), strlength(car(p)));
 	memset(strvalue(x) + strlength(car(p)), 0, BLOCK_SIZE);
 	car(p) = x;
@@ -1000,13 +1283,15 @@ int inchar(void)
 	int c;
 
 	if (is_fileport(inport)) {
-		if (feof(port_file(inport))) {
+		if (port_file(inport) == NULL) {
+			return EOF;
+		} else if (feof(port_file(inport))) {
 			fclose(port_file(inport));
 			port_file(inport) = NULL;
 			return EOF;
 		}
 
-		c = fgetc(port_file(inport));
+		c = utf8_fgetc(port_file(inport));
 		if (c == EOF) {
 			if (port_file(inport) == stdin) {
 				fprintf(stderr, "Good-bye\n");
@@ -1018,7 +1303,7 @@ int inchar(void)
 			port_file(inport) = NULL;
 			c = EOF;
 		} else {
-			c = *(port_curr(inport)++);
+			port_curr(inport) += utf8_get_next(port_curr(inport), &c);
 		}
 	}
 	return c;
@@ -1048,7 +1333,7 @@ void flushinput(void)
 }
 
 /* check c is delimiter */
-int isdelim(char *s, char c)
+int isdelim(char *s, int c)
 {
 	if (c == EOF) return 0;
 	while (*s)
@@ -1062,9 +1347,13 @@ void backchar(int c)
 {
 	if (c != EOF) {
 		if (is_fileport(inport)) {
-			ungetc(c, port_file(inport));
+			char utf8[4];
+			int n = utf32_to_utf8(c, utf8);
+			while (--n >= 0) {
+				ungetc(utf8[n], port_file(inport));
+			}
 		} else if (port_curr(inport) != strvalue(car(inport))) {
-			--port_curr(inport);
+			port_curr(inport) -= utf32_to_utf8(c, NULL);
 		}
 	}
 }
@@ -1106,15 +1395,15 @@ void putcharacter(const int c)
 char *readstr(char *delim)
 {
 	char   *p = strbuff;
-
-	while (p - strbuff < sizeof(strbuff) && isdelim(delim, (*p++ = (char)inchar())))
-		;
-	if (p == strbuff + 2 && p[-2] == '\\') {
-		*p = 0;
-	} else {
-		backchar(*--p);
-		*p = '\0';
+	while (p - strbuff < sizeof(strbuff)) {
+		int c = inchar();
+		p += utf32_to_utf8(c, p);
+		if (isdelim(delim, c) == 0) break;
 	}
+	if (p != strbuff + 2 || p[-2] != '\\') {
+		backchar(*--p);
+	}
+	*p = '\0';
 	return strbuff;
 }
 
@@ -1137,9 +1426,9 @@ pointer readstrexp(void)
 				break;
 			case '"':
 				*p = 0;
-				return mk_string(strbuff);
+				return mk_counted_string(strbuff, p - strbuff);
 			default:
-				*p++ = (char)c;
+				p += utf32_to_utf8(c, p);
 				break;
 			}
 		} else if (state == st_bsl) {
@@ -1177,7 +1466,7 @@ pointer readstrexp(void)
 				state = st_ok;
 				break;
 			default:
-				*p++ = (char)c;
+				p += utf32_to_utf8(c, p);
 				state = st_ok;
 				break;
 			}
@@ -1224,7 +1513,7 @@ int skipspace(void)
 {
 	int c;
 
-	while (isspace(c = inchar()))
+	while (utf32_isspace(c = inchar()))
 		;
 	backchar(c);
 	return c;
@@ -1271,6 +1560,8 @@ int token(void)
 			backchar(c);
 			return TOK_SHARP;
 		}
+	case EOF:
+		return TOK_EOF;
 	default:
 		backchar(c);
 		return TOK_ATOM;
@@ -1392,9 +1683,12 @@ char *atom2str(pointer l, int f)
 				break;
 			default:
 				if (c < 32) {
-					sprintf(p, "#\\x%x", c);
+					sprintf(p, "#\\x%x", c < 0 ? -c : c);
 				} else {
-					sprintf(p, "#\\%c", c);
+					char utf8[5];
+					size_t n = utf32_to_utf8(c, utf8);
+					utf8[n] = '\0';
+					sprintf(p, "#\\%s", utf8);
 				}
 				break;
 			}
@@ -2229,8 +2523,8 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 int Eval_Cycle(int operator)
 {
 	FILE *tmpfp = NULL;
-	int tok = 0;
-	int print_flag = 0;
+	int tok;
+	int print_flag;
 	pointer x, y;
 	struct cell v;
 	long w;
@@ -3825,20 +4119,20 @@ OP_DOWINDS2:
 
 	case OP_INT2CHAR:	/* integer->char */
 		if (!validargs("integer->char", 1, 1, TST_NATURAL)) Error_0(msg);
-		s_return(mk_character((unsigned char)ivalue(car(args))));
+		s_return(mk_character(ivalue(car(args))));
 
 	case OP_CHARUPCASE:	/* char-upcase */
 		if (!validargs("char-upcase", 1, 1, TST_CHAR)) Error_0(msg);
-		s_return(mk_character(toupper((unsigned char)ivalue(car(args)))));
+		s_return(mk_character(utf32_toupper(ivalue(car(args)))));
 
 	case OP_CHARDNCASE:	/* char-downcase */
 		if (!validargs("char-downcase", 1, 1, TST_CHAR)) Error_0(msg);
-		s_return(mk_character(tolower((unsigned char)ivalue(car(args)))));
+		s_return(mk_character(utf32_tolower(ivalue(car(args)))));
 
 	case OP_MKSTRING:	/* make-string */
 		if (!validargs("make-string", 1, 2, TST_NATURAL TST_CHAR)) Error_0(msg);
 		if (cdr(args) != NIL) {
-			s_return(mk_empty_string(ivalue(car(args)), (char)ivalue(cadr(args))));
+			s_return(mk_empty_string(ivalue(car(args)), ivalue(cadr(args))));
 		} else {
 			s_return(mk_empty_string(ivalue(car(args)), ' '));
 		}
@@ -3846,33 +4140,47 @@ OP_DOWINDS2:
 	case OP_STRING:		/* string */
 		if (!validargs("string", 0, 65535, TST_CHAR)) Error_0(msg);
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
-			++w;
+			w += utf32_to_utf8(ivalue(car(x)), NULL);
 		}
-		y = mk_empty_string(w, ' ');
+		y = mk_counted_string("", w);
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
-			strvalue(y)[w++] = (char)ivalue(car(x));
+			w += utf32_to_utf8(ivalue(car(x)), strvalue(y) + w);
 		}
 		s_return(y);
 
 	case OP_STRLEN:		/* string-length */
 		if (!validargs("string-length", 1, 1, TST_STRING)) Error_0(msg);
-		s_return(mk_integer(strlength(car(args))));
+		s_return(mk_integer(utf8_strlen(strvalue(car(args)))));
 
 	case OP_STRREF:		/* string-ref */
 		if (!validargs("string-ref", 2, 2, TST_STRING TST_NATURAL)) Error_0(msg);
-		w = ivalue(cadr(args));
-		if (w >= (int)strlength(car(args))) {
+		w = utf8_strref(strvalue(car(args)), ivalue(cadr(args)));
+		if (w == -1) {
 			Error_1("string-ref: out of bounds:", cadr(args));
 		}
-		s_return(mk_character(((unsigned char *)strvalue(car(args)))[w]));
+		s_return(mk_character(w));
 
 	case OP_STRSET:		/* string-set! */
 		if (!validargs("string-set!", 3, 3, TST_STRING TST_NATURAL TST_CHAR)) Error_0(msg);
-		w = ivalue(cadr(args));
-		if (w >= (int)strlength(car(args))) {
+		w = utf8_strpos(strvalue(car(args)), ivalue(cadr(args)));
+		if (w == -1) {
 			Error_1("string-set!: out of bounds:", cadr(args));
+		} else {
+			char utf8[4];
+			int len1 = utf8_get_next(strvalue(car(args)) + w, NULL);
+			int len2 = utf32_to_utf8(ivalue(caddr(args)), utf8);
+			if (len1 == len2) {
+				memcpy(strvalue(car(args)) + w, utf8, len2);
+			} else {
+				int n = strlength(car(args)) + len2 - len1;
+				x = mk_memblock(n, &NIL);
+				memcpy(strvalue(x), strvalue(car(args)), w);
+				memcpy(strvalue(x) + w, utf8, len2);
+				memcpy(strvalue(x) + w + len2, strvalue(car(args)) + w + len1, n - w - len2);
+				strvalue(car(args)) = strvalue(x);
+				strlength(car(args)) = strlength(x);
+			}
 		}
-		strvalue(car(args))[w] = (char)ivalue(caddr(args));
 		s_return(car(args));
 
 	case OP_STREQU:		/* string=? */
@@ -3893,36 +4201,39 @@ OP_DOWINDS2:
 
 	case OP_STRCIEQU:	/* string-ci=? */
 		if (!validargs("string-ci=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) == 0);
+		s_retbool(utf8_stricmp(strvalue(car(args)), strvalue(cadr(args))) == 0);
 	case OP_STRCILSS:		/* string-ci<? */
 		if (!validargs("string-ci<?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) < 0);
+		s_retbool(utf8_stricmp(strvalue(car(args)), strvalue(cadr(args))) < 0);
 	case OP_STRCIGTR:		/* string-ci>? */
 		if (!validargs("string-ci>?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) > 0);
+		s_retbool(utf8_stricmp(strvalue(car(args)), strvalue(cadr(args))) > 0);
 	case OP_STRCILEQ:		/* string-ci<=? */
 		if (!validargs("string-ci<=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) <= 0);
+		s_retbool(utf8_stricmp(strvalue(car(args)), strvalue(cadr(args))) <= 0);
 	case OP_STRCIGEQ:		/* string-ci>=? */
 		if (!validargs("string-ci>=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(stricmp(strvalue(car(args)), strvalue(cadr(args))) >= 0);
+		s_retbool(utf8_stricmp(strvalue(car(args)), strvalue(cadr(args))) >= 0);
 
 	case OP_SUBSTR:		/* substring */
 		if (!validargs("substring", 2, 3, TST_STRING TST_NATURAL)) Error_0(msg);
-		if (ivalue(cadr(args)) > (long)strlength(car(args))) {
+		w = utf8_strlen(strvalue(car(args)));
+		if (ivalue(cadr(args)) > w) {
 			Error_1("substring: start out of bounds:", cadr(args));
-		}
-		if (cddr(args) != NIL) {
-			if (ivalue(caddr(args)) > (long)strlength(car(args)) || ivalue(caddr(args)) < ivalue(cadr(args))) {
-				Error_1("substring: end out of bounds:", caddr(args));
-			}
-			w = ivalue(caddr(args)) - ivalue(cadr(args));
 		} else {
-			w = strlength(car(args)) - ivalue(cadr(args));
+			int start = utf8_strpos(strvalue(car(args)), ivalue(cadr(args))), n;
+			if (cddr(args) != NIL) {
+				if (ivalue(caddr(args)) > w || ivalue(caddr(args)) < ivalue(cadr(args))) {
+					Error_1("substring: end out of bounds:", caddr(args));
+				}
+				n = utf8_strpos(strvalue(car(args)), ivalue(caddr(args))) - start;
+			} else {
+				n = strlength(car(args)) - start;
+			}
+			x = mk_counted_string("", n);
+			memcpy(strvalue(x), strvalue(car(args)) + start, n);
+			strvalue(x)[n] = '\0';
 		}
-		x = mk_empty_string(w, ' ');
-		memcpy(strvalue(x), strvalue(car(args)) + ivalue(cadr(args)), w);
-		strvalue(x)[w] = '\0';
 		s_return(x);
 
 	case OP_STRAPPEND:	/* string-append */
@@ -3930,7 +4241,7 @@ OP_DOWINDS2:
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
 			w += strlength(car(x));
 		}
-		y = mk_empty_string(w, ' ');
+		y = mk_counted_string("", w);
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
 			memcpy(strvalue(y) + w, strvalue(car(x)), strlength(car(x)));
 			w += strlength(car(x));
@@ -3940,24 +4251,28 @@ OP_DOWINDS2:
 	case OP_STR2LIST:	/* string->list */
 		if (!validargs("string->list", 1, 1, TST_STRING)) Error_0(msg);
 		y = NIL;
-		for (x = car(args), w = strlength(x) - 1; w >= 0; w--) {
-			y = cons(mk_character(strvalue(x)[w]), y);
+		w = 0;
+		while (w < (long)strlength(car(args))) {
+			int c;
+			w += utf8_get_next(strvalue(car(args)) + w, &c);
+			y = cons(mk_character(c), y);
 		}
-		s_return(y);
+		s_return(non_alloc_rev(NIL, y));
 
 	case OP_LIST2STR:	/* list->string */
 		if (!validargs("list->string", 1, 1, TST_LIST)) Error_0(msg);
-		x = car(args);
-		w = list_length(x);
-		if (w < 0) {
+		if (list_length(car(args)) < 0) {
 			Error_1("list->string: not a proper list:", x);
 		}
-		y = mk_empty_string(w, ' ');
-		for (w = 0; x != NIL; x = cdr(x)) {
+		for (w = 0, x = car(args); x != NIL; x = cdr(x)) {
 			if (!is_character(car(x))) {
 				Error_1("list->string: not a charactor:", car(x));
 			}
-			strvalue(y)[w++] = (char)ivalue(car(x));
+			w += utf32_to_utf8(ivalue(car(x)), NULL);
+		}
+		y = mk_counted_string("", w);
+		for (w = 0, x = car(args); x != NIL; x = cdr(x)) {
+			w += utf32_to_utf8(ivalue(car(x)), strvalue(y) + w);
 		}
 		s_return(y);
 
@@ -3968,7 +4283,19 @@ OP_DOWINDS2:
 	case OP_STRFILL:	/* string-fill! */
 		if (!validargs("string-fill!", 2, 2, TST_STRING TST_CHAR)) Error_0(msg);
 		x = car(args);
-		memset(strvalue(x), ivalue(cadr(args)), strlength(x));
+		w = utf8_strlen(strvalue(x));
+		if (w > 0) {
+			char utf8[4];
+			int len = utf32_to_utf8(ivalue(cadr(args)), utf8), i;
+			if (strlength(x) != (size_t)(w * len)) {
+				y = mk_memblock(w * len, &x);
+				strvalue(x) = strvalue(y);
+				strlength(x) = strlength(y);
+			}
+			for (i = 0; i < w; i++) {
+				memcpy(strvalue(x) + i * len, utf8, len);
+			}
+		}
 		s_return(x);
 
 	case OP_VECTOR:		/* vector */
@@ -4182,34 +4509,34 @@ OP_VECTOR:
 		s_retbool(ivalue(car(args)) >= ivalue(cadr(args)));
 	case OP_CHARCIEQU:	/* char-ci=? */
 		if (!validargs("char-ci=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(tolower((unsigned char)ivalue(car(args))) == tolower((unsigned char)ivalue(cadr(args))));
+		s_retbool(utf32_tolower(ivalue(car(args))) == utf32_tolower(ivalue(cadr(args))));
 	case OP_CHARCILSS:	/* char-ci<? */
 		if (!validargs("char-ci<?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(tolower((unsigned char)ivalue(car(args))) < tolower((unsigned char)ivalue(cadr(args))));
+		s_retbool(utf32_tolower(ivalue(car(args))) < utf32_tolower(ivalue(cadr(args))));
 	case OP_CHARCIGTR:	/* char-ci>? */
 		if (!validargs("char-ci>?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(tolower((unsigned char)ivalue(car(args))) > tolower((unsigned char)ivalue(cadr(args))));
+		s_retbool(utf32_tolower(ivalue(car(args))) > utf32_tolower(ivalue(cadr(args))));
 	case OP_CHARCILEQ:	/* char-ci<=? */
 		if (!validargs("char-ci<=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(tolower((unsigned char)ivalue(car(args))) <= tolower((unsigned char)ivalue(cadr(args))));
+		s_retbool(utf32_tolower(ivalue(car(args))) <= utf32_tolower(ivalue(cadr(args))));
 	case OP_CHARCIGEQ:	/* char-ci>=? */
 		if (!validargs("char-ci>=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(tolower((unsigned char)ivalue(car(args))) >= tolower((unsigned char)ivalue(cadr(args))));
+		s_retbool(utf32_tolower(ivalue(car(args))) >= utf32_tolower(ivalue(cadr(args))));
 	case OP_CHARAP:		/* char-alphabetic? */
 		if (!validargs("char-alphabetic?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(isascii(ivalue(car(args))) && isalpha(ivalue(car(args))));
+		s_retbool(utf32_isalpha(ivalue(car(args))));
 	case OP_CHARNP:		/* char-numeric? */
 		if (!validargs("char-numeric?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(isascii(ivalue(car(args))) && isdigit(ivalue(car(args))));
+		s_retbool(utf32_isdigit(ivalue(car(args))));
 	case OP_CHARWP:		/* char-whitespace? */
 		if (!validargs("char-whitespace?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(isascii(ivalue(car(args))) && isspace(ivalue(car(args))));
+		s_retbool(utf32_isspace(ivalue(car(args))));
 	case OP_CHARUP:		/* char-upper-case? */
 		if (!validargs("char-upper-case?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(isascii(ivalue(car(args))) && isupper(ivalue(car(args))));
+		s_retbool(utf32_isupper(ivalue(car(args))));
 	case OP_CHARLP:		/* char-lower-case? */
 		if (!validargs("char-lower-case?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(isascii(ivalue(car(args))) && islower(ivalue(car(args))));
+		s_retbool(utf32_islower(ivalue(car(args))));
 	case OP_PROC:		/* procedure? */
 		if (!validargs("procedure?", 1, 1, TST_ANY)) Error_0(msg);
 		/*--

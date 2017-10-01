@@ -68,6 +68,7 @@ struct cell {
 #define T_PORT         512	/* 0000001000000000 */
 #define T_VECTOR      1024	/* 0000010000000000 */
 #define T_FOREIGN     2048	/* 0000100000000000 */
+#define T_MEMBLOCK    4096	/* 0001000000000000 */
 #define T_ENVIRONMENT 8192	/* 0010000000000000 */
 #define T_ATOM       16384	/* 0100000000000000 */	/* only for gc */
 #define CLRATOM      49151	/* 1011111111111111 */	/* only for gc */
@@ -144,6 +145,8 @@ enum {
 #define is_foreign(p)   (type(p) & T_FOREIGN)
 #define foreignfnc(p)   ((p)->_object._ff)
 
+#define is_memblock(p)  (type(p) & T_MEMBLOCK)
+
 #define is_environment(p) (type(p) & T_ENVIRONMENT)
 #define setenvironment(p) type(p) |= T_ENVIRONMENT
 
@@ -184,7 +187,7 @@ pointer mk_integer(long num);
 pointer mk_real(double num);
 pointer mk_number(pointer v);
 pointer mk_string(const char *str);
-pointer mk_empty_string(size_t len, char fill);
+pointer mk_empty_string(size_t len, int fill);
 pointer mk_symbol(const char *name);
 pointer mk_uninterned_symbol(const char *name);
 pointer gensym(void);
