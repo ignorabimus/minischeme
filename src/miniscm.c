@@ -1665,8 +1665,7 @@ char *atom2str(pointer l, int f)
 		int c = ivalue(l);
 		p = strbuff;
 		if (!f) {
-			p[0] = (char)c;
-			p[1] = '\0';
+			*(p + utf32_to_utf8(c, p)) = '\0';
 		} else {
 			switch (c) {
 			case ' ':
@@ -1685,10 +1684,9 @@ char *atom2str(pointer l, int f)
 				if (c < 32) {
 					sprintf(p, "#\\x%x", c < 0 ? -c : c);
 				} else {
-					char utf8[5];
-					size_t n = utf32_to_utf8(c, utf8);
-					utf8[n] = '\0';
-					sprintf(p, "#\\%s", utf8);
+					p[0] = '#';
+					p[1] = '\\';
+					*(p + 2 + utf32_to_utf8(c, p + 2)) = '\0';
 				}
 				break;
 			}
