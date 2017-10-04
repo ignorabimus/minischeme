@@ -4144,6 +4144,7 @@ OP_DOWINDS2:
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
 			w += utf32_to_utf8(ivalue(car(x)), strvalue(y) + w);
 		}
+		strvalue(y)[w] = '\0';
 		s_return(y);
 
 	case OP_STRLEN:		/* string-length */
@@ -4175,6 +4176,7 @@ OP_DOWINDS2:
 				memcpy(strvalue(x), strvalue(car(args)), w);
 				memcpy(strvalue(x) + w, utf8, len2);
 				memcpy(strvalue(x) + w + len2, strvalue(car(args)) + w + len1, n - w - len2);
+				strvalue(x)[n] = '\0';
 				strvalue(car(args)) = strvalue(x);
 				strlength(car(args)) = strlength(x);
 			}
@@ -4244,6 +4246,7 @@ OP_DOWINDS2:
 			memcpy(strvalue(y) + w, strvalue(car(x)), strlength(car(x)));
 			w += strlength(car(x));
 		}
+		strvalue(y)[w] = '\0';
 		s_return(y);
 
 	case OP_STR2LIST:	/* string->list */
@@ -4272,6 +4275,7 @@ OP_DOWINDS2:
 		for (w = 0, x = car(args); x != NIL; x = cdr(x)) {
 			w += utf32_to_utf8(ivalue(car(x)), strvalue(y) + w);
 		}
+		strvalue(y)[w] = '\0';
 		s_return(y);
 
 	case OP_STRCOPY:	/* string-copy */
@@ -4293,6 +4297,7 @@ OP_DOWINDS2:
 			for (i = 0; i < w; i++) {
 				memcpy(strvalue(x) + i * len, utf8, len);
 			}
+			strvalue(x)[w * len] = '\0';
 		}
 		s_return(x);
 
