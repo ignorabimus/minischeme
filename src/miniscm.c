@@ -1212,11 +1212,11 @@ pointer port_from_filename(const char *filename, int prop)
 	FILE *fp = NULL;
 
 	if (prop == port_input) {
-		fp = fopen(filename, "r");
+		fp = fopen(filename, "rb");
 	} else if (prop == port_output) {
-		fp = fopen(filename, "w");
+		fp = fopen(filename, "wb");
 	} else if (prop == (port_input | port_output)) {
-		fp = fopen(filename, "a+");
+		fp = fopen(filename, "a+b");
 	}
 	if (fp == NULL) {
 		return NIL;
@@ -2672,7 +2672,7 @@ OP_APPLYCONT:
 			Error_1("Unable to open", car(args));
 		}
 		load_stack[load_files++] = port_file(inport);
-		if ((port_file(inport) = fopen(strvalue(car(args)), "r")) == NULL) {
+		if ((port_file(inport) = fopen(strvalue(car(args)), "rb")) == NULL) {
 			port_file(inport) = load_stack[--load_files];
 			Error_1("Unable to open", car(args));
 		}
@@ -5743,14 +5743,14 @@ int main(int argc, char *argv[])
 	scheme_init();
 
 	/* Load "init.scm" */
-	if ((fin = fopen(InitFile, "r")) != NULL) {
+	if ((fin = fopen(InitFile, "rb")) != NULL) {
 		ret = scheme_load_file(fin);
 	} else {
 		fprintf(stderr, "Unable to open %s\n", InitFile);
 	}
 
 	if (argc > 1) {
-		fin = fopen(argv[1], "r");
+		fin = fopen(argv[1], "rb");
 		if (fin == NULL) {
 			fprintf(stderr, "Unable to open %s\n", argv[1]);
 			return 1;
