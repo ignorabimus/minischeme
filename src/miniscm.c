@@ -670,21 +670,21 @@ pointer mk_atom(const char *q)
 			has_dec_point = 1;
 			c = *p++;
 		}
-		if (!isdigit(c)) {
+		if (!isdigit((unsigned char)c)) {
 			return mk_symbol(q);
 		}
 	} else if (c == '.') {
 		has_dec_point = 1;
 		c = *p++;
-		if (!isdigit(c)) {
+		if (!isdigit((unsigned char)c)) {
 			return mk_symbol(q);
 		}
-	} else if (!isdigit(c)) {
+	} else if (!isdigit((unsigned char)c)) {
 		return mk_symbol(q);
 	}
 
 	for ( ; (c = *p) != 0; ++p) {
-		if (!isdigit(c)) {
+		if (!isdigit((unsigned char)c)) {
 			if (c == '.') {
 				if (!has_dec_point) {
 					has_dec_point = 1;
@@ -695,8 +695,8 @@ pointer mk_atom(const char *q)
 					has_fp_exp = 1;
 					has_dec_point = 1;
 					p++;
-					if ((*p == '-') || (*p == '+') || isdigit(*p)) {
-					continue;
+					if ((*p == '-') || (*p == '+') || isdigit((unsigned char)*p)) {
+						continue;
 					}
 				}
 			}
