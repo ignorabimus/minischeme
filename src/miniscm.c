@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w5 (2017)
+ *	current version is 0.85w6 (2017)
  *
  * Below are the original credits.
  */
@@ -40,7 +40,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w5.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w6.\n"
 #define InitFile "init.scm"
 #endif
 
@@ -102,6 +102,8 @@ pointer QUOTE;			/* pointer to syntax quote */
 pointer QQUOTE;			/* pointer to symbol quasiquote */
 pointer UNQUOTE;		/* pointer to symbol unquote */
 pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
+
+pointer ELLIPSIS;		/* pointer to symbol ... */
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
 long    fcells = 0;			/* # of free cells */
@@ -944,6 +946,7 @@ void gc(register pointer *a, register pointer *b)
 	QQUOTE = forward(QQUOTE);
 	UNQUOTE = forward(UNQUOTE);
 	UNQUOTESP = forward(UNQUOTESP);
+	ELLIPSIS = forward(ELLIPSIS);
 
 	/* forward current registers */
 	args = forward(args);
@@ -1532,6 +1535,12 @@ int token(void)
 	case ')':
 		return TOK_RPAREN;
 	case '.':
+		if ((c = inchar()) == '.') {
+			backchar(c);
+			backchar(c);
+			return TOK_ATOM;
+		}
+		backchar(c);
 		return TOK_DOT;
 	case '\'':
 		return TOK_QUOTE;
@@ -1691,9 +1700,13 @@ char *atom2str(pointer l, int f)
 				break;
 			}
 		}
-	} else if (is_symbol(l))
-		p = symname(l);
-	else if (is_proc(l)) {
+	} else if (is_symbol(l)) {
+		if (exttype(l) & T_DEFSYNTAX) {
+			p = symname(cdr(l));
+		} else {
+			p = symname(l);
+		}
+	} else if (is_proc(l)) {
 		p = strbuff;
 		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
 	} else if (is_port(l)) {
@@ -1916,6 +1929,308 @@ int equal(register pointer a, register pointer b)
 	}
 }
 
+int matchpattern(pointer p, pointer f, pointer keyword, long *s)
+{
+	pointer x;
+	if (is_symbol(p)) {
+		for (x = keyword; x != NIL; x = cdr(x)) {
+			if (car(p) == car(x)) {
+				return car(p) == car(f);
+			}
+		}
+		(*s)++;
+		return 1;
+	} else if (is_pair(p)) {
+		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS) {
+			for (x = f; x != NIL; x = cdr(x)) {
+				if (!matchpattern(car(p), car(x), keyword, s)) {
+					return 0;
+				}
+			}
+			(*s)++;
+			return 1;
+		} else if (is_pair(f)) {
+			return matchpattern(car(p), car(f), keyword, s) && matchpattern(cdr(p), cdr(f), keyword, s);
+		} else {
+			return 0;
+		}
+	} else if (is_vector(p)) {
+		int v = ivalue(p), i, j;
+		if (v >= 2 && vector_elem(p, v - 1) == ELLIPSIS) {
+			if (is_vector(f) && ivalue(f) >= v - 2) {
+				for (i = 0; i < v - 2; i++) {
+					if (!matchpattern(vector_elem(p, i), vector_elem(f, i), keyword, s)) {
+						return 0;
+					}
+				}
+				for (j = i; j < ivalue(f); j++) {
+					if (!matchpattern(vector_elem(p, i), vector_elem(f, j), keyword, s)) {
+						return 0;
+					}
+				}
+				(*s)++;
+				return 1;
+			} else {
+				return 0;
+			}
+		} else if (is_vector(f) && ivalue(f) == v) {
+			for (i = 0; i < v; i++) {
+				if (!matchpattern(vector_elem(p, i), vector_elem(f, i), keyword, s)) {
+					return 0;
+				}
+			}
+			return 1;
+		} else {
+			return 0;
+		}
+	} else {
+		return equal(p, f);
+	}
+}
+
+/* note: value = (vector of bindings, list of keywords) */
+void bindpattern(pointer p, pointer f, long d, long n, long *s)
+{
+	pointer x;
+	if (is_symbol(p)) {
+		for (x = cdr(value); x != NIL; x = cdr(x)) {
+			if (car(p) == car(x)) {
+				return;
+			}
+		}
+		set_vector_elem(car(value), (*s)++, p);
+		x = vector_elem(car(value), (*s)++);
+		ivalue(car(x)) = d;
+		ivalue(cdr(x)) = n;
+		set_vector_elem(car(value), (*s)++, f);
+	} else if (is_pair(p)) {
+		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS) {
+			long i = 0;
+			set_vector_elem(car(value), (*s)++, car(p));
+			x = vector_elem(car(value), (*s)++);
+			ivalue(car(x)) = d;
+			ivalue(cdr(x)) = n;
+			set_vector_elem(car(value), (*s)++, NULL);
+			for (x = f; x != NIL; x = cdr(x)) {
+				bindpattern(car(p), car(x), d + 1, i++, s);
+			}
+		} else if (is_pair(f)) {
+			bindpattern(car(p), car(f), d, n, s);
+			bindpattern(cdr(p), cdr(f), d, n, s);
+		}
+	} else if (is_vector(p)) {
+		long v = ivalue(p), i, j;
+		if (v >= 2 && vector_elem(p, v - 1) == ELLIPSIS) {
+			if (is_vector(f) && ivalue(f) >= v - 2) {
+				for (i = 0; i < v - 2; i++) {
+					bindpattern(vector_elem(p, i), vector_elem(f, i), d , n, s);
+				}
+				set_vector_elem(car(value), (*s)++, vector_elem(p, i));
+				x = vector_elem(car(value), (*s)++);
+				ivalue(car(x)) = d;
+				ivalue(cdr(x)) = n;
+				set_vector_elem(car(value), (*s)++, NULL);
+				for (j = i; j < ivalue(f); j++) {
+					bindpattern(vector_elem(p, i), vector_elem(f, j), d + 1, j - i, s);
+				}
+			}
+		} else if (is_vector(f) && ivalue(f) == v) {
+			for (i = 0; i < v; i++) {
+				bindpattern(vector_elem(p, i), vector_elem(f, i), d, n, s);
+			}
+		}
+	}
+}
+
+pointer expandsymbol(pointer p)
+{
+	pointer x, y;
+	if (type(p) == T_SYMBOL) {
+		p = cons(envir, p);
+		type(p) = type(cdr(p));
+		exttype(p) |= T_DEFSYNTAX;
+		return p;
+	} else if (is_pair(p)) {
+		mark_x = cons(p, mark_x);
+		x = expandsymbol(caar(mark_x));
+		mark_y = cons(x, mark_y);
+		y = expandsymbol(cdar(mark_x));
+		mark_x = cdr(mark_x);
+		x = car(mark_y);
+		mark_y = cdr(mark_y);
+		return cons(x, y);
+	} else if (is_vector(p)) {
+		long i, len = ivalue(p);
+		mark_x = cons(p, mark_x);
+		y = NIL;
+		for (i = 0; i < len; i++) {
+			mark_y = cons(y, mark_y);
+			x = expandsymbol(vector_elem(car(mark_x), i));
+			y = car(mark_y);
+			mark_y = cdr(mark_y);
+			y = cons(x, y);
+		}
+		mark_x = cdr(mark_x);
+		mark_y = cons(y, mark_y);
+		i = list_length(y);
+		x = mk_vector(i);
+		y = car(mark_y);
+		mark_y = cdr(mark_y);
+		for (; y != NIL; y = cdr(y)) {
+			set_vector_elem(x, --i, car(y));
+		}
+		return x;
+	} else {
+		return p;
+	}
+}
+
+pointer expandpattern(pointer p, long d, long n)
+{
+	pointer x, y = NULL;
+	long i, j;
+	*((long *)strvalue(car(code)) + d) = n;
+	if (is_symbol(p)) {
+		for (x = cdr(value); x != NIL; x = cdr(x)) {
+			if (car(p) == car(x)) {
+				return p;
+			}
+		}
+		for (i = 0; i < ivalue(car(value)); i += 3) {
+			long e_d, e_n;
+			x = vector_elem(car(value), i);
+			e_d = ivalue(car(vector_elem(car(value), i + 1)));
+			e_n = ivalue(cdr(vector_elem(car(value), i + 1)));
+			if (e_d < d) {
+				if (*((long *)strvalue(car(code)) + e_d) == e_n) {
+					*((long *)strvalue(cdr(code)) + e_d) = 1;
+					if (p == x) {
+						for (j = 0; j < e_d; j++) {
+							if (*((long *)strvalue(cdr(code)) + j) == 0) break;
+						}
+						if (j < e_d) continue;
+						y = vector_elem(car(value), i + 2);
+						if (y == NULL) continue;
+						if (is_symbol(y)) {
+							unsigned short t = type(x);
+							p = cons(envir, y);
+							type(p) = t;
+							exttype(p) |= T_DEFSYNTAX;
+							y = p;
+						} else {
+							y = expandsymbol(y);
+						}
+					}
+				} else {
+					*((long *)strvalue(cdr(code)) + e_d) = 0;
+				}
+			} else if (p == x && e_d == d && e_n == n) {
+				for (j = 0; j < d; j++) {
+					if (*((long *)strvalue(cdr(code)) + j) == 0) break;
+				}
+				if (j < d) continue;
+				y = vector_elem(car(value), i + 2);
+				if (y == NULL) return NIL;
+				if (is_symbol(y)) {
+					unsigned short t = type(x);
+					p = cons(envir, y);
+					type(p) = t;
+					exttype(p) |= T_DEFSYNTAX;
+					return p;
+				} else {
+					return expandsymbol(y);
+				}
+			}
+		}
+		if (d > 0) {
+			return y;
+		}
+		return p;
+	} else if (is_pair(p)) {
+		mark_x = cons(p, mark_x);
+		if (is_pair(cdar(mark_x)) && car(cdar(mark_x)) == ELLIPSIS) {
+			if (expandpattern(caar(mark_x), d, n) == NULL) {
+				mark_x = cdr(mark_x);
+				return NULL;
+			}
+			y = NIL;
+			for (i = 0; ; i++) {
+				mark_y = cons(y, mark_y);
+				x = expandpattern(caar(mark_x), d + 1, i);
+				y = car(mark_y);
+				mark_y = cdr(mark_y);
+				if (x == NULL) break;
+				y = cons(x, y);
+			}
+			if (is_pair(cdar(mark_x))) {
+				mark_y = cons(y, mark_y);
+				x = expandpattern(cdr(cdar(mark_x)), d, n);
+				y = car(mark_y);
+				mark_y = cdr(mark_y);
+			}
+			mark_x = cdr(mark_x);
+			if (x == NULL) {
+				x = NIL;
+			}
+			return non_alloc_rev(x, y);
+		}
+		x = expandpattern(caar(mark_x), d, n);
+		mark_y = cons(x, mark_y);
+		y = expandpattern(cdar(mark_x), d, n);
+		mark_x = cdr(mark_x);
+		x = car(mark_y);
+		mark_y = cdr(mark_y);
+		if (x == NULL || y == NULL) {
+			return NULL;
+		}
+		return cons(x, y);
+	} else if (is_vector(p)) {
+		long len = ivalue(p);
+		mark_x = cons(p, mark_x);
+		y = NIL;
+		for (i = 0; i < len; i++) {
+			if (i + 1 < len && vector_elem(car(mark_x), i + 1) == ELLIPSIS) {
+				if (expandpattern(vector_elem(car(mark_x), i), d, n) == NULL) {
+					mark_x = cdr(mark_x);
+					return NULL;
+				}
+				for (j = 0; ; j++) {
+					p = car(mark_x);
+					mark_y = cons(y, mark_y);
+					x = expandpattern(vector_elem(car(mark_x), i), d + 1, j);
+					y = car(mark_y);
+					mark_y = cdr(mark_y);
+					if (x == NULL) break;
+					y = cons(x, y);
+				}
+				i++;
+				continue;
+			}
+			mark_y = cons(y, mark_y);
+			x = expandpattern(vector_elem(car(mark_x), i), d, n);
+			y = car(mark_y);
+			mark_y = cdr(mark_y);
+			if (x == NULL) {
+				mark_x = cdr(mark_x);
+				return NULL;
+			}
+			y = cons(x, y);
+		}
+		mark_x = cdr(mark_x);
+		i = list_length(y);
+		mark_y = cons(y, mark_y);
+		x = mk_vector(i);
+		y = car(mark_y);
+		mark_y = cdr(mark_y);
+		for (; y != NIL; y = cdr(y)) {
+			set_vector_elem(x, --i, car(y));
+		}
+		return x;
+	} else {
+		return p;
+	}
+}
+
 /* make cons list for quasiquote */
 pointer mcons(pointer f, pointer l, pointer r)
 {
@@ -2135,6 +2450,10 @@ enum {
 	OP_DEFMACRO0,
 	OP_1MACRO,
 	OP_DEFMACRO1,
+	OP_DEFSYNTAX0,
+	OP_DEFSYNTAX1,
+	OP_SYNTAXRULES,
+	OP_EXPANDPATTERN,
 	OP_CASE0,
 	OP_CASE1,
 	OP_CASE2,
@@ -2534,24 +2853,37 @@ LOOP:
 	case OP_EVAL:		/* main part of evalution */
 OP_EVAL:
 		if (is_symbol(code)) {	/* symbol */
+			if (exttype(code) & T_DEFSYNTAX) {
+				args = car(code);
+				code = cdr(code);
+			} else {
+				args = NIL;
+			}
 			for (x = envir; x != NIL; x = cdr(x)) {
-				register pointer z = NIL;
+				pointer z = NIL;
+				if (x == args) args = NIL;
 				for (y = car(x); y != NIL; z = y, y = cdr(y)) {
-					if (caar(y) == code) {
-						if (z != NIL) {
-							cdr(z) = cdr(y);
-							cdr(y) = car(x);
-							car(x) = y;
-						}
-						s_return(cdar(y));
+					if (exttype(caar(y)) & T_DEFSYNTAX) {
+						if (args == NIL || cdr(caar(y)) != code) continue;
+					} else {
+						if (args != NIL || caar(y) != code) continue;
 					}
+					if (z != NIL) {
+						cdr(z) = cdr(y);
+						cdr(y) = car(x);
+						car(x) = y;
+					}
+					s_return(cdar(y));
 				}
 			}
 			Error_1("Unbounded variable", code);
 		} else if (is_pair(code)) {
 			if (is_syntax(x = car(code))) {	/* SYNTAX */
 				code = cdr(code);
-				operator = (short)syntaxnum(x);
+				if (exttype(x) & T_DEFSYNTAX) {
+					x = cdr(x);
+				}
+				operator = syntaxnum(x);
 				goto LOOP;
 			} else {/* first, eval top element and eval arguments */
 				s_save(OP_E0ARGS, NIL, code);
@@ -2564,14 +2896,15 @@ OP_EVAL:
 
 	case OP_E0ARGS:	/* eval arguments */
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
-			if (exttype(value) & T_DEFMACRO) {
+			if (exttype(value) & T_DEFSYNTAX) {
+				s_save(OP_DOMACRO, NIL, NIL);
+				s_goto(OP_EXPANDPATTERN);
+			} else if (exttype(value) & T_DEFMACRO) {
 				args = cdr(code);
-				code = value;
 			} else {
-				args = code;
-				code = value;
-				args = cons(args, NIL);
+				args = cons(code, NIL);
 			}
+			code = value;
 			s_save(OP_DOMACRO, NIL, NIL);
 			s_goto(OP_APPLY);
 		} else {
@@ -2597,7 +2930,7 @@ OP_E1ARGS:
 	case OP_APPLY:		/* apply 'code' to 'args' */
 OP_APPLY:
 		if (is_proc(code)) {	/* PROCEDURE */
-			operator = (short)procnum(code);
+			operator = procnum(code);
 			goto LOOP;
 		} else if (is_foreign(code)) {	/* FOREIGN */
 			push_recent_alloc(args);
@@ -2893,18 +3226,29 @@ OP_QQUOTE1:
 		s_goto(OP_EVAL);
 
 	case OP_SET1:		/* set! */
+		if (exttype(code) & T_DEFSYNTAX) {
+			args = car(code);
+			code = cdr(code);
+		} else {
+			args = NIL;
+		}
 		for (x = envir; x != NIL; x = cdr(x)) {
-			register pointer z = NIL;
+			pointer z = NIL;
+			if (x == args) args = NIL;
 			for (y = car(x); y != NIL; z = y, y = cdr(y)) {
-				if (caar(y) == code) {
-					if (z != NIL) {
-						cdr(z) = cdr(y);
-						cdr(y) = car(x);
-						car(x) = y;
-					}
-					cdar(y) = value;
-					s_return(value);
+				if (exttype(caar(y)) & T_DEFSYNTAX) {
+					if (args == NIL || cdr(caar(y)) != code) continue;
 				}
+				else {
+					if (args != NIL || caar(y) != code) continue;
+				}
+				if (z != NIL) {
+					cdr(z) = cdr(y);
+					cdr(y) = car(x);
+					car(x) = y;
+				}
+				cdar(y) = value;
+				s_return(value);
 			}
 		}
 		Error_1("Unbounded variable", code);
@@ -3232,6 +3576,69 @@ OP_DO2:
 		if (x != NIL)
 			cdar(x) = value;
 		else {
+			x = cons(code, value);
+			car(envir) = cons(x, car(envir));
+		}
+		s_return(code);
+
+	case OP_SYNTAXRULES:	/* syntax-rules */
+		if (s_next_op() != OP_DEFSYNTAX1) {
+			Error_0("Malformed syntax of syntax-rules");
+		}
+		s_return(mk_closure(code, envir));
+
+	case OP_EXPANDPATTERN:	/* expand pattern */
+OP_EXPANDPATTERN:
+		if (!is_pair(code)) {
+			Error_0("Syntax error in syntax-rules");
+		}
+		for (x = cdar(value); x != NIL; x = cdr(x)) {
+			args = car(x);
+			if (args == NIL) {
+				Error_0("Syntax error in syntax-rules");
+			}
+			w = 0;
+			if (matchpattern(car(args), code, caar(value), &w)) {
+				long i, j, m = 0;
+				x = mk_vector(w * 3);
+				value = cons(x, caar(value));
+				for (i = 0; i < ivalue(car(value)); i += 3) {
+					mark_x = mk_integer(0);
+					mark_y = mk_integer(0);
+					set_vector_elem(car(value), i + 1, cons(mark_x, mark_y));
+				}
+				w = 0;
+				bindpattern(car(args), code, 0, 0, &w);
+				for (i = 0; i < ivalue(car(value)); i += 3) {
+					j = ivalue(car(vector_elem(car(value), i + 1)));
+					if (j > m) m = j;
+				}
+				mark_x = mk_memblock(m * sizeof(long), &NIL);
+				mark_y = mk_memblock(m * sizeof(long), &NIL);
+				code = cons(mark_x, mark_y);
+				s_return(car(expandpattern(cdr(args), 0, 0)));
+			}
+		}
+		s_return(NIL);
+
+	case OP_DEFSYNTAX0:		/* define-syntax */
+		if (!is_symbol(car(code))) {
+			Error_0("Variable is not symbol");
+		}
+		args = car(code);
+		code = cadr(code);
+		s_save(OP_DEFSYNTAX1, NIL, args);
+		args = NIL;
+		s_goto(OP_EVAL);
+
+	case OP_DEFSYNTAX1:		/* define-syntax */
+		exttype(value) |= T_MACRO | T_DEFSYNTAX;
+		for (x = car(envir); x != NIL; x = cdr(x))
+			if (caar(x) == code)
+				break;
+		if (x != NIL) {
+			cdar(x) = value;
+		} else {
 			x = cons(code, value);
 			car(envir) = cons(x, car(envir));
 		}
@@ -5222,7 +5629,11 @@ OP_PVECFROM:
 		s_return(car(args));
 
 	case OP_MACRO_EXPAND2:	/* macro-expand */
-		if (exttype(code) & T_DEFMACRO) {
+		if (exttype(code) & T_DEFSYNTAX) {
+			value = code;
+			code = car(args);
+			s_goto(OP_EXPANDPATTERN);
+		} else if (exttype(code) & T_DEFMACRO) {
 			args = cdar(args);
 		}
 		code = value;
@@ -5242,24 +5653,24 @@ OP_PVECFROM:
 
 /* ========== Initialization of internal keywords ========== */
 
-void mk_syntax(unsigned short op, char *name)
+void mk_syntax(int op, char *name)
 {
 	pointer x;
 
 	x = cons(mk_string(name), NIL);
 	type(x) = (T_SYNTAX | T_SYMBOL);
-	syntaxnum(x) = op;
+	syntaxnum(x) = (short)op;
 	oblist = cons(x, oblist);
 }
 
-void mk_proc(unsigned short op, char *name)
+void mk_proc(int op, char *name)
 {
 	pointer x, y;
 
 	x = mk_symbol(name);
 	y = get_cell(&x, &NIL);
 	type(y) = (T_PROC | T_ATOM);
-	ivalue(y) = (long) op;
+	ivalue(y) = (long)op;
 	set_num_integer(y);
 	x = cons(x, y);
 	car(global_env) = cons(x, car(global_env));
@@ -5329,6 +5740,8 @@ void init_syntax(void)
 	mk_syntax(OP_CASE0, "case");
 	mk_syntax(OP_WHEN0, "when");
 	mk_syntax(OP_UNLESS0, "unless");
+	mk_syntax(OP_SYNTAXRULES, "syntax-rules");
+	mk_syntax(OP_DEFSYNTAX0, "define-syntax");
 }
 
 
@@ -5565,6 +5978,7 @@ void scheme_init(void)
 	QQUOTE = mk_symbol("quasiquote");
 	UNQUOTE = mk_symbol("unquote");
 	UNQUOTESP = mk_symbol("unquote-splicing");
+	ELLIPSIS = mk_symbol("...");
 #ifndef USE_SCHEME_STACK
 	dump_base = mk_dumpstack(NIL);
 	dump = dump_base;
