@@ -174,7 +174,7 @@ and you'll get
 * [x] length
 * [x] let
 * [x] let*
-* [ ] let-syntax
+* [x] let-syntax
 * [x] letrec
 * [ ] letrec-syntax
 * [x] list
