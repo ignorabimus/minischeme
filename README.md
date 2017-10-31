@@ -140,7 +140,7 @@ and you'll get
 * [x] current-input-port
 * [x] current-output-port
 * [x] define
-* [ ] define-syntax
+* [x] define-syntax
 * [x] delay
 * [ ] denominator
 * [x] display
@@ -258,7 +258,7 @@ and you'll get
 * [x] substring
 * [x] symbol->string
 * [x] symbol?
-* [ ] syntax-rules
+* [x] syntax-rules
 * [x] tan
 * [ ] transcript-off
 * [ ] transcript-on
