@@ -176,7 +176,7 @@ and you'll get
 * [x] let*
 * [x] let-syntax
 * [x] letrec
-* [ ] letrec-syntax
+* [x] letrec-syntax
 * [x] list
 * [x] list->string
 * [x] list->vector

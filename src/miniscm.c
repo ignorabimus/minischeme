@@ -2454,6 +2454,8 @@ enum {
 	OP_DEFSYNTAX1,
 	OP_LETSYNTAX0,
 	OP_LETSYNTAX1,
+	OP_LETRECSYNTAX0,
+	OP_LETRECSYNTAX1,
 	OP_SYNTAXRULES,
 	OP_EXPANDPATTERN,
 	OP_CASE0,
@@ -3584,7 +3586,8 @@ OP_DO2:
 		s_return(code);
 
 	case OP_SYNTAXRULES:	/* syntax-rules */
-		if (s_next_op() != OP_DEFSYNTAX1 && s_next_op() != OP_LETSYNTAX1) {
+		w = s_next_op();
+		if (w != OP_DEFSYNTAX1 && w != OP_LETSYNTAX1 && w != OP_LETRECSYNTAX1) {
 			Error_0("Malformed syntax of syntax-rules");
 		}
 		s_return(mk_closure(code, envir));
@@ -3674,6 +3677,43 @@ OP_EXPANDPATTERN:
 
 		envir = cons(NIL, envir);
 		setenvironment(envir);
+		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
+			exttype(car(args)) |= T_MACRO | T_DEFSYNTAX;
+			y = cons(caar(mark_x), car(args));
+			car(envir) = cons(y, car(envir));
+		}
+		code = cdr(code);
+		args = NIL;
+		s_goto(OP_BEGIN);
+
+	case OP_LETRECSYNTAX0:	/* letrec-syntax */
+		envir = cons(NIL, envir);
+		setenvironment(envir);
+		args = NIL;
+		value = code;
+		code = car(code);
+		/* fall through */
+
+	case OP_LETRECSYNTAX1:	/* letrec-syntax */
+		args = cons(value, args);
+		if (is_pair(code)) {
+			/* continue */
+			s_save(OP_LETRECSYNTAX1, args, cdr(code));
+			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
+				Error_1("Bad syntax of binding spec in letrec-syntax :", car(code));
+			}
+			if (!is_symbol(caar(code))) {
+				Error_0("Variable is not symbol");
+			}
+			code = cadar(code);
+			args = NIL;
+			s_goto(OP_EVAL);
+		}
+		/* end */
+		args = reverse(args);
+		code = car(args);
+		args = cdr(args);
+
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			exttype(car(args)) |= T_MACRO | T_DEFSYNTAX;
 			y = cons(caar(mark_x), car(args));
@@ -5782,6 +5822,7 @@ void init_syntax(void)
 	mk_syntax(OP_SYNTAXRULES, "syntax-rules");
 	mk_syntax(OP_DEFSYNTAX0, "define-syntax");
 	mk_syntax(OP_LETSYNTAX0, "let-syntax");
+	mk_syntax(OP_LETRECSYNTAX0, "letrec-syntax");
 }
 
 
