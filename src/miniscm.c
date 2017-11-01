@@ -3201,12 +3201,26 @@ OP_QQUOTE1:
 		s_goto(OP_EVAL);
 
 	case OP_DEF1:	/* define */
-		for (x = car(envir); x != NIL; x = cdr(x))
-			if (caar(x) == code)
-				break;
-		if (x != NIL)
+		if (exttype(code) & T_DEFSYNTAX) {
+			if (envir == car(code)) {
+				args = NIL;
+			} else {
+				args = car(code);
+			}
+			code = cdr(code);
+		} else {
+			args = NIL;
+		}
+		for (x = car(envir); x != NIL; x = cdr(x)) {
+			if (exttype(caar(x)) & T_DEFSYNTAX) {
+				if (args != NIL && cdr(caar(x)) == code) break;
+			} else {
+				if (args == NIL && caar(x) == code) break;
+			}
+		}
+		if (x != NIL) {
 			cdar(x) = value;
-		else {
+		} else {
 			x = cons(code, value);
 			car(envir) = cons(x, car(envir));
 		}
@@ -3214,14 +3228,29 @@ OP_QQUOTE1:
 
 	case OP_DEFP:	/* defined? */
 		if (!validargs("defined?", 1, 2, TST_SYMBOL TST_ENVIRONMENT)) Error_0(msg);
+		code = car(args);
 		if (cdr(args) != NIL) {
 			x = cadr(args);
 		} else {
 			x = envir;
 		}
-		for (x = car(x); x != NIL; x = cdr(x))
-			if (caar(x) == car(args))
-				break;
+		if (exttype(code) & T_DEFSYNTAX) {
+			if (x == car(code)) {
+				args = NIL;
+			} else {
+				args = car(code);
+			}
+			code = cdr(code);
+		} else {
+			args = NIL;
+		}
+		for (x = car(x); x != NIL; x = cdr(x)) {
+			if (exttype(caar(x)) & T_DEFSYNTAX) {
+				if (args != NIL && cdr(caar(x)) == code) break;
+			} else {
+				if (args == NIL && caar(x) == code) break;
+			}
+		}
 		s_retbool(x != NIL);
 
 	case OP_SET0:		/* set! */
@@ -3242,8 +3271,7 @@ OP_QQUOTE1:
 			for (y = car(x); y != NIL; z = y, y = cdr(y)) {
 				if (exttype(caar(y)) & T_DEFSYNTAX) {
 					if (args == NIL || cdr(caar(y)) != code) continue;
-				}
-				else {
+				} else {
 					if (args != NIL || caar(y) != code) continue;
 				}
 				if (z != NIL) {
