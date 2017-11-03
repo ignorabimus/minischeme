@@ -2091,6 +2091,7 @@ pointer expandpattern(pointer p, long d, long n)
 	long i, j;
 	*((long *)strvalue(car(code)) + d) = n;
 	if (is_symbol(p)) {
+		int find = 0;
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
 			if (car(p) == car(x)) {
 				return p;
@@ -2099,6 +2100,9 @@ pointer expandpattern(pointer p, long d, long n)
 		for (i = 0; i < ivalue(car(value)); i += 3) {
 			long e_d, e_n;
 			x = vector_elem(car(value), i);
+			if (x == p) {
+				find = 1;
+			}
 			e_d = ivalue(car(vector_elem(car(value), i + 1)));
 			e_n = ivalue(cdr(vector_elem(car(value), i + 1)));
 			if (e_d < d) {
@@ -2112,7 +2116,7 @@ pointer expandpattern(pointer p, long d, long n)
 						y = vector_elem(car(value), i + 2);
 						if (y == NULL) continue;
 						if (is_symbol(y)) {
-							unsigned short t = type(x);
+							unsigned short t = type(y);
 							p = cons(envir, y);
 							type(p) = t;
 							exttype(p) |= T_DEFSYNTAX;
@@ -2132,7 +2136,7 @@ pointer expandpattern(pointer p, long d, long n)
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
 				if (is_symbol(y)) {
-					unsigned short t = type(x);
+					unsigned short t = type(y);
 					p = cons(envir, y);
 					type(p) = t;
 					exttype(p) |= T_DEFSYNTAX;
@@ -2142,7 +2146,7 @@ pointer expandpattern(pointer p, long d, long n)
 				}
 			}
 		}
-		if (d > 0) {
+		if (d > 0 && find) {
 			return y;
 		}
 		return p;
