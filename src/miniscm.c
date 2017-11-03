@@ -2045,7 +2045,7 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 pointer expandsymbol(pointer p)
 {
 	pointer x, y;
-	if (type(p) == T_SYMBOL) {
+	if (type(p) == T_SYMBOL && !(exttype(p) & T_DEFSYNTAX)) {
 		p = cons(envir, p);
 		type(p) = type(cdr(p));
 		exttype(p) |= T_DEFSYNTAX;
@@ -2115,10 +2115,9 @@ pointer expandpattern(pointer p, long d, long n)
 						if (j < e_d) continue;
 						y = vector_elem(car(value), i + 2);
 						if (y == NULL) continue;
-						if (is_symbol(y)) {
-							unsigned short t = type(y);
+						if (is_symbol(y) && !(exttype(y) & T_DEFSYNTAX)) {
 							p = cons(envir, y);
-							type(p) = t;
+							type(p) = type(cdr(p));
 							exttype(p) |= T_DEFSYNTAX;
 							y = p;
 						} else {
@@ -2135,10 +2134,9 @@ pointer expandpattern(pointer p, long d, long n)
 				if (j < d) continue;
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
-				if (is_symbol(y)) {
-					unsigned short t = type(y);
+				if (is_symbol(y) && !(exttype(y) & T_DEFSYNTAX)) {
 					p = cons(envir, y);
-					type(p) = t;
+					type(p) = type(cdr(p));
 					exttype(p) |= T_DEFSYNTAX;
 					return p;
 				} else {
