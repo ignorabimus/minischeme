@@ -1941,7 +1941,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 		(*s)++;
 		return 1;
 	} else if (is_pair(p)) {
-		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && (is_pair(f) || f == NIL)) {
+		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && list_length(f) >= 0) {
 			for (x = f; is_pair(x); x = cdr(x)) {
 				if (!matchpattern(car(p), car(x), keyword, s)) {
 					return 0;
@@ -2004,7 +2004,7 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 		ivalue(cdr(x)) = n;
 		set_vector_elem(car(value), (*s)++, f);
 	} else if (is_pair(p)) {
-		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && (is_pair(f) || f == NIL)) {
+		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && list_length(f) >= 0) {
 			long i = 0;
 			set_vector_elem(car(value), (*s)++, car(p));
 			x = vector_elem(car(value), (*s)++);
