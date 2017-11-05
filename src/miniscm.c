@@ -2045,8 +2045,8 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 pointer expandsymbol(pointer p)
 {
 	pointer x, y;
-	if (type(p) == T_SYMBOL && !(exttype(p) & T_DEFSYNTAX)) {
-		p = cons(envir, p);
+	if (type(p) == T_SYMBOL) {
+		p = cons(cdr(args), (exttype(p) & T_DEFSYNTAX) ? cdr(p) : p);
 		type(p) = type(cdr(p));
 		exttype(p) |= T_DEFSYNTAX;
 		return p;
@@ -2115,11 +2115,10 @@ pointer expandpattern(pointer p, long d, long n)
 						if (j < e_d) continue;
 						y = vector_elem(car(value), i + 2);
 						if (y == NULL) continue;
-						if (is_symbol(y) && !(exttype(y) & T_DEFSYNTAX)) {
-							p = cons(envir, y);
-							type(p) = type(cdr(p));
-							exttype(p) |= T_DEFSYNTAX;
-							y = p;
+						if (is_symbol(y)) {
+							y = cons(cdr(args), (exttype(y) & T_DEFSYNTAX) ? cdr(y) : y);
+							type(y) = type(cdr(y));
+							exttype(y) |= T_DEFSYNTAX;
 						} else {
 							y = expandsymbol(y);
 						}
@@ -2134,11 +2133,11 @@ pointer expandpattern(pointer p, long d, long n)
 				if (j < d) continue;
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
-				if (is_symbol(y) && !(exttype(y) & T_DEFSYNTAX)) {
-					p = cons(envir, y);
-					type(p) = type(cdr(p));
-					exttype(p) |= T_DEFSYNTAX;
-					return p;
+				if (is_symbol(y)) {
+					y = cons(cdr(args), (exttype(y) & T_DEFSYNTAX) ? cdr(y) : y);
+					type(y) = type(cdr(y));
+					exttype(y) |= T_DEFSYNTAX;
+					return y;
 				} else {
 					return expandsymbol(y);
 				}
@@ -2862,24 +2861,36 @@ OP_EVAL:
 			if (exttype(code) & T_DEFSYNTAX) {
 				args = car(code);
 				code = cdr(code);
+				for (x = car(envir); x != NIL; x = cdr(x)) {
+					if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+						s_return(cdar(x));
+					}
+				}
+				for (x = car(args); x != NIL; x = cdr(x)) {
+					if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
+						s_return(cdar(x));
+					}
+				}
+				for (x = cdr(envir); x != NIL; x = cdr(x)) {
+					for (y = car(x); y != NIL; y = cdr(y)) {
+						if (caar(y) == code) {
+							s_return(cdar(y));
+						}
+					}
+				}
 			} else {
-				args = NIL;
-			}
-			for (x = envir; x != NIL; x = cdr(x)) {
-				pointer z = NIL;
-				if (x == args) args = NIL;
-				for (y = car(x); y != NIL; z = y, y = cdr(y)) {
-					if (exttype(caar(y)) & T_DEFSYNTAX) {
-						if (args == NIL || cdr(caar(y)) != code) continue;
-					} else {
-						if (args != NIL || caar(y) != code) continue;
+				for (x = envir; x != NIL; x = cdr(x)) {
+					pointer z = NIL;
+					for (y = car(x); y != NIL; z = y, y = cdr(y)) {
+						if (caar(y) == code) {
+							if (z != NIL) {
+								cdr(z) = cdr(y);
+								cdr(y) = car(x);
+								car(x) = y;
+							}
+							s_return(cdar(y));
+						}
 					}
-					if (z != NIL) {
-						cdr(z) = cdr(y);
-						cdr(y) = car(x);
-						car(x) = y;
-					}
-					s_return(cdar(y));
 				}
 			}
 			Error_1("Unbounded variable", code);
@@ -2903,6 +2914,8 @@ OP_EVAL:
 	case OP_E0ARGS:	/* eval arguments */
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
 			if (exttype(value) & T_DEFSYNTAX) {
+				args = cons(NIL, envir);
+				envir = cons(NIL, closure_env(value));
 				s_save(OP_DOMACRO, NIL, NIL);
 				s_goto(OP_EXPANDPATTERN);
 			} else if (exttype(value) & T_DEFMACRO) {
@@ -3204,20 +3217,26 @@ OP_QQUOTE1:
 
 	case OP_DEF1:	/* define */
 		if (exttype(code) & T_DEFSYNTAX) {
-			if (envir == car(code)) {
-				args = NIL;
-			} else {
-				args = car(code);
-			}
+			args = car(code);
 			code = cdr(code);
+			for (x = car(envir); x != NIL; x = cdr(x)) {
+				if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+					break;
+				}
+			}
+			if (x == NIL) {
+				envir = args;
+				for (x = car(envir); x != NIL; x = cdr(x)) {
+					if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
+						break;
+					}
+				}
+			}
 		} else {
-			args = NIL;
-		}
-		for (x = car(envir); x != NIL; x = cdr(x)) {
-			if (exttype(caar(x)) & T_DEFSYNTAX) {
-				if (args != NIL && cdr(caar(x)) == code) break;
-			} else {
-				if (args == NIL && caar(x) == code) break;
+			for (x = car(envir); x != NIL; x = cdr(x)) {
+				if (caar(x) == code) {
+					break;
+				}
 			}
 		}
 		if (x != NIL) {
@@ -3231,29 +3250,47 @@ OP_QQUOTE1:
 	case OP_DEFP:	/* defined? */
 		if (!validargs("defined?", 1, 2, TST_SYMBOL TST_ENVIRONMENT)) Error_0(msg);
 		code = car(args);
-		if (cdr(args) != NIL) {
-			x = cadr(args);
-		} else {
-			x = envir;
-		}
 		if (exttype(code) & T_DEFSYNTAX) {
-			if (x == car(code)) {
-				args = NIL;
+			if (cdr(args) != NIL) {
+				args = cadr(args);
 			} else {
-				args = car(code);
+				args = envir;
 			}
-			code = cdr(code);
+			if (args == envir) {
+				for (x = car(envir); x != NIL; x = cdr(x)) {
+					if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == cdr(code)) {
+						s_return(T);
+					}
+				}
+			}
+			if (args == envir || args == caar(code)) {
+				for (x = caar(code); x != NIL; x = cdr(x)) {
+					if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == cdr(code)) {
+						s_return(T);
+					}
+				}
+				args = cdr(envir);
+			}
+			for (x = args; x != NIL; x = cdr(x)) {
+				for (y = car(x); y != NIL; y = cdr(y)) {
+					if (caar(y) == cdr(code)) {
+						s_return(T);
+					}
+				}
+			}
 		} else {
-			args = NIL;
-		}
-		for (x = car(x); x != NIL; x = cdr(x)) {
-			if (exttype(caar(x)) & T_DEFSYNTAX) {
-				if (args != NIL && cdr(caar(x)) == code) break;
-			} else {
-				if (args == NIL && caar(x) == code) break;
+			if (cdr(args) != NIL) {
+				envir = cadr(args);
+			}
+			for (x = envir; x != NIL; x = cdr(x)) {
+				for (y = car(x); y != NIL; y = cdr(y)) {
+					if (caar(y) == code) {
+						s_return(T);
+					}
+				}
 			}
 		}
-		s_retbool(x != NIL);
+		s_return(F);
 
 	case OP_SET0:		/* set! */
 		s_save(OP_SET1, NIL, car(code));
@@ -3264,25 +3301,30 @@ OP_QQUOTE1:
 		if (exttype(code) & T_DEFSYNTAX) {
 			args = car(code);
 			code = cdr(code);
+			for (x = car(envir); x != NIL; x = cdr(x)) {
+				if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+					s_return(cdar(x) = value);
+				}
+			}
+			for (x = car(args); x != NIL; x = cdr(x)) {
+				if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
+					s_return(cdar(x) = value);
+				}
+			}
+			for (x = cdr(envir); x != NIL; x = cdr(x)) {
+				for (y = car(x); y != NIL; y = cdr(y)) {
+					if (caar(y) == code) {
+						s_return(cdar(y) = value);
+					}
+				}
+			}
 		} else {
-			args = NIL;
-		}
-		for (x = envir; x != NIL; x = cdr(x)) {
-			pointer z = NIL;
-			if (x == args) args = NIL;
-			for (y = car(x); y != NIL; z = y, y = cdr(y)) {
-				if (exttype(caar(y)) & T_DEFSYNTAX) {
-					if (args == NIL || cdr(caar(y)) != code) continue;
-				} else {
-					if (args != NIL || caar(y) != code) continue;
+			for (x = envir; x != NIL; x = cdr(x)) {
+				for (y = car(x); y != NIL; y = cdr(y)) {
+					if (caar(y) == code) {
+						s_return(cdar(y) = value);
+					}
 				}
-				if (z != NIL) {
-					cdr(z) = cdr(y);
-					cdr(y) = car(x);
-					car(x) = y;
-				}
-				cdar(y) = value;
-				s_return(value);
 			}
 		}
 		Error_1("Unbounded variable", code);
@@ -3628,13 +3670,13 @@ OP_EXPANDPATTERN:
 			Error_0("Syntax error in syntax-rules");
 		}
 		for (x = cdar(value); x != NIL; x = cdr(x)) {
-			args = car(x);
-			if (args == NIL) {
+			if (car(x) == NIL) {
 				Error_0("Syntax error in syntax-rules");
 			}
 			w = 0;
-			if (matchpattern(car(args), code, caar(value), &w)) {
+			if (matchpattern(caar(x), code, caar(value), &w)) {
 				long i, j, m = 0;
+				car(args) = car(x);
 				x = mk_vector(w * 3);
 				value = cons(x, caar(value));
 				for (i = 0; i < ivalue(car(value)); i += 3) {
@@ -3643,7 +3685,7 @@ OP_EXPANDPATTERN:
 					set_vector_elem(car(value), i + 1, cons(mark_x, mark_y));
 				}
 				w = 0;
-				bindpattern(car(args), code, 0, 0, &w);
+				bindpattern(caar(args), code, 0, 0, &w);
 				for (i = 0; i < ivalue(car(value)); i += 3) {
 					j = ivalue(car(vector_elem(car(value), i + 1)));
 					if (j > m) m = j;
@@ -3651,7 +3693,7 @@ OP_EXPANDPATTERN:
 				mark_x = mk_memblock(m * sizeof(long), &NIL);
 				mark_y = mk_memblock(m * sizeof(long), &NIL);
 				code = cons(mark_x, mark_y);
-				s_return(car(expandpattern(cdr(args), 0, 0)));
+				s_return(car(expandpattern(cdar(args), 0, 0)));
 			}
 		}
 		s_return(NIL);
