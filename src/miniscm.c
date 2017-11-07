@@ -1545,7 +1545,7 @@ int token(void)
 	case '\'':
 		return TOK_QUOTE;
 	case ';':
-		while ((c = inchar()) != '\n' && c != EOF)
+		while ((c = inchar()) != '\n' && c != '\r' && c != EOF)
 			;
 		if (c == EOF) {
 			return TOK_EOF;
@@ -5538,11 +5538,11 @@ OP_RDSEXPR:
 			tok = token();
 			s_goto(OP_RDSEXPR);
 		case TOK_ATOM:
-			s_return(mk_atom(readstr("();\t\n ")));
+			s_return(mk_atom(readstr("();\t\n\r ")));
 		case TOK_DQUOTE:
 			s_return(readstrexp());
 		case TOK_SHARP:
-			if ((x = mk_const(readstr("();\t\n "))) == NIL) {
+			if ((x = mk_const(readstr("();\t\n\r "))) == NIL) {
 				Error_0("Undefined sharp expression");
 			} else {
 				s_return(x);
