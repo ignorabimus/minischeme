@@ -2425,13 +2425,11 @@ enum {
 	OP_SET1,
 	OP_LET0,
 	OP_LET1,
-	OP_LET2,
 	OP_LET0AST,
 	OP_LET1AST,
 	OP_LET2AST,
 	OP_LET0REC,
 	OP_LET1REC,
-	OP_LET2REC,
 	OP_DO0,
 	OP_DO1,
 	OP_DO2,
@@ -2926,25 +2924,23 @@ OP_EVAL:
 			code = value;
 			s_save(OP_DOMACRO, NIL, NIL);
 			s_goto(OP_APPLY);
-		} else {
-			code = cdr(code);
-			s_goto(OP_E1ARGS);
 		}
+		code = cdr(code);
+		/* fall through */
 
 	case OP_E1ARGS:	/* eval arguments */
-OP_E1ARGS:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_E1ARGS, args, cdr(code));
 			code = car(code);
 			args = NIL;
 			s_goto(OP_EVAL);
-		} else {	/* end */
-			args = reverse(args);
-			code = car(args);
-			args = cdr(args);
-			s_goto(OP_APPLY);
 		}
+		/* end */
+		args = reverse(args);
+		code = car(args);
+		args = cdr(args);
+		/* fall through */
 
 	case OP_APPLY:		/* apply 'code' to 'args' */
 OP_APPLY:
@@ -3028,7 +3024,7 @@ OP_APPLYCONT:
 			port_file(inport) = load_stack[--load_files];
 			Error_1("Unable to open", car(args));
 		}
-		s_goto(OP_T0LVL);
+		/* fall through */
 
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
@@ -3095,8 +3091,7 @@ OP_READ_INTERNAL:
 		}
 		if (cdr(args) == NIL) {
 			y = envir;
-		}
-		else {
+		} else {
 			y = cadr(args);
 		}
 		s_return(mk_closure(x, y));
@@ -3357,10 +3352,9 @@ OP_BEGIN:
 		args = NIL;
 		value = code;
 		code = is_symbol(car(code)) ? cadr(code) : car(code);
-		s_goto(OP_LET1);
+		/* fall through */
 
 	case OP_LET1:		/* let (caluculate parameters) */
-OP_LET1:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1, args, cdr(code));
@@ -3370,15 +3364,12 @@ OP_LET1:
 			code = cadar(code);
 			args = NIL;
 			s_goto(OP_EVAL);
-		} else {	/* end */
-			args = reverse(args);
-			code = car(args);
-			args = cdr(args);
-			s_goto(OP_LET2);
 		}
+		/* end */
+		args = reverse(args);
+		code = car(args);
+		args = cdr(args);
 
-	case OP_LET2:		/* let */
-OP_LET2:
 		envir = cons(NIL, envir);
 		setenvironment(envir);
 		for (mark_x = is_symbol(car(code)) ? cadr(code) : car(code);
@@ -3387,19 +3378,17 @@ OP_LET2:
 			car(envir) = cons(y, car(envir));
 		}
 		if (is_symbol(car(code))) {	/* named let */
-			for (mark_x = cadr(code), args = NIL; mark_x != NIL; mark_x = cdr(mark_x))
-				args = cons(caar(mark_x), args);
-			y = reverse(args);
-			y = cons(y, cddr(code));
+			for (mark_x = cadr(code), y = NIL; mark_x != NIL; mark_x = cdr(mark_x))
+				y = cons(caar(mark_x), y);
+			y = cons(non_alloc_rev(NIL, y), cddr(code));
 			y = mk_closure(y, envir);
 			y = cons(car(code), y);
 			car(envir) = cons(y, car(envir));
 			code = cddr(code);
-			args = NIL;
 		} else {
 			code = cdr(code);
-			args = NIL;
 		}
+		args = NIL;
 		s_goto(OP_BEGIN);
 
 	case OP_LET0AST:	/* let* */
@@ -3414,16 +3403,11 @@ OP_LET2:
 		s_goto(OP_EVAL);
 
 	case OP_LET1AST:	/* let* (make new frame) */
-		envir = cons(value, envir);	/* save value for gc */
+		envir = cons(NIL, envir);
 		setenvironment(envir);
-#ifdef USE_COPYING_GC
-		value = car(envir);
-#endif
-		car(envir) = NIL;
-		s_goto(OP_LET2AST);
+		/* fall through */
 
 	case OP_LET2AST:	/* let* (caluculate parameters) */
-OP_LET2AST:
 		x = cons(caar(code), value);
 		car(envir) = cons(x, car(envir));
 		code = cdr(code);
@@ -3447,10 +3431,9 @@ OP_LET2AST:
 		args = NIL;
 		value = code;
 		code = car(code);
-		s_goto(OP_LET1REC);
+		/* fall through */
 
 	case OP_LET1REC:	/* letrec (caluculate parameters) */
-OP_LET1REC:
 		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET1REC, args, cdr(code));
@@ -3460,15 +3443,12 @@ OP_LET1REC:
 			code = cadar(code);
 			args = NIL;
 			s_goto(OP_EVAL);
-		} else {	/* end */
-			args = reverse(args);
-			code = car(args);
-			args = cdr(args);
-			s_goto(OP_LET2REC);
 		}
+		/* end */
+		args = reverse(args);
+		code = car(args);
+		args = cdr(args);
 
-	case OP_LET2REC:	/* letrec */
-OP_LET2REC:
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			y = cons(caar(mark_x), car(args));
 			car(envir) = cons(y, car(envir));
