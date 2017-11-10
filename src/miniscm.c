@@ -518,6 +518,7 @@ pointer cons(pointer a, pointer b)
 	register pointer x = get_cell(&a, &b);
 
 	type(x) = T_PAIR;
+	exttype(x) = 0;
 	car(x) = a;
 	cdr(x) = b;
 	return x;
