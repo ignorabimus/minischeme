@@ -2246,8 +2246,9 @@ pointer mcons(pointer f, pointer l, pointer r)
 	} else {
 		args = l;
 		x = cons(r, NIL);
-		x = cons(args, x);
-		return cons(mk_symbol("cons"), x);
+		args = cons(args, x);
+		x = mk_symbol("cons");
+		return cons(x, args);
 	}
 }
 
@@ -2262,8 +2263,9 @@ pointer mappend(pointer f, pointer l, pointer r)
 	} else {
 		args = l;
 		x = cons(r, NIL);
-		x = cons(args, x);
-		return cons(mk_symbol("append"), x);
+		args = cons(args, x);
+		x = mk_symbol("append");
+		return cons(x, args);
 	}
 }
 
@@ -2303,7 +2305,8 @@ int lcm(int a, int b)
 
 #define Error_1(s, a) BEGIN                    \
 	args = cons((a), NIL);                     \
-	args = cons(mk_string((s)), args);         \
+	code = mk_string(s);                       \
+	args = cons(code, args);                   \
 	operator = OP_ERR0;                        \
 	goto LOOP; END
 
@@ -2316,7 +2319,8 @@ int lcm(int a, int b)
 
 #define s_save(a, b, c) BEGIN                  \
 	if (dump_prev(dump) == NIL) {              \
-		dump_prev(dump) = mk_dumpstack(dump);  \
+		pointer d = mk_dumpstack(dump);        \
+		dump_prev(dump) = d;                   \
 	}                                          \
 	dump_op(dump) = (pointer)(a);              \
 	dump_args(dump) = (b);                     \
@@ -2916,6 +2920,7 @@ OP_EVAL:
 			if (exttype(value) & T_DEFSYNTAX) {
 				args = cons(NIL, envir);
 				envir = cons(NIL, closure_env(value));
+				setenvironment(envir);
 				s_save(OP_DOMACRO, NIL, NIL);
 				s_goto(OP_EXPANDPATTERN);
 			} else if (exttype(value) & T_DEFMACRO) {
@@ -2963,7 +2968,8 @@ OP_APPLY:
 					Error_0("Few arguments");
 				} else {
 					y = cons(car(mark_x), car(args));
-					car(envir) = cons(y, car(envir));
+					y = cons(y, car(envir));
+					car(envir) = y;
 				}
 			}
 			if (mark_x == NIL) {
@@ -2974,7 +2980,8 @@ OP_APPLY:
 				 */
 			} else if (is_symbol(mark_x)) {
 				mark_x = cons(mark_x, args);
-				car(envir) = cons(mark_x, car(envir));
+				mark_x = cons(mark_x, car(envir));
+				car(envir) = mark_x;
 			} else {
 				Error_0("Syntax error in closure");
 			}
@@ -3158,27 +3165,26 @@ OP_QQUOTE1:
 		}
 
 	case OP_QQUOTE2:	/* quasiquote -- 'vector */
-		x = cons(value, NIL);
-		x = cons(mk_symbol("vector"), x);
-		s_return(cons(mk_symbol("apply"), x));
+		args = cons(value, NIL);
+		x = mk_symbol("vector");
+		args = cons(x, args);
+		x = mk_symbol("apply");
+		s_return(cons(x, args));
 
 	case OP_QQUOTE3:	/* quasiquote -- 'quasiquote */
-		args = value;
 		x = cons(QQUOTE, NIL);
 		x = cons(QUOTE, x);
-		s_return(mcons(code, x, args));
+		s_return(mcons(code, x, value));
 
 	case OP_QQUOTE4:	/* quasiquote -- 'unquote */
-		args = value;
 		x = cons(UNQUOTE, NIL);
 		x = cons(QUOTE, x);
-		s_return(mcons(code, x, args));
+		s_return(mcons(code, x, value));
 
 	case OP_QQUOTE5:	/* quasiquote -- 'unquote-splicing */
-		args = value;
 		x = cons(UNQUOTESP, NIL);
 		x = cons(QUOTE, x);
-		s_return(mcons(code, x, args));
+		s_return(mcons(code, x, value));
 
 	case OP_QQUOTE6:	/* quasiquote -- 'cons */
 		s_save(OP_QQUOTE7, value, code);
@@ -3240,7 +3246,8 @@ OP_QQUOTE1:
 			cdar(x) = value;
 		} else {
 			x = cons(code, value);
-			car(envir) = cons(x, car(envir));
+			x = cons(x, car(envir));
+			car(envir) = x;
 		}
 		s_return(code);
 
@@ -3377,7 +3384,8 @@ OP_BEGIN:
 		for (mark_x = is_symbol(car(code)) ? cadr(code) : car(code);
 		     args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			y = cons(caar(mark_x), car(args));
-			car(envir) = cons(y, car(envir));
+			y = cons(y, car(envir));
+			car(envir) = y;
 		}
 		if (is_symbol(car(code))) {	/* named let */
 			for (mark_x = cadr(code), y = NIL; mark_x != NIL; mark_x = cdr(mark_x))
@@ -3385,7 +3393,8 @@ OP_BEGIN:
 			y = cons(non_alloc_rev(NIL, y), cddr(code));
 			y = mk_closure(y, envir);
 			y = cons(car(code), y);
-			car(envir) = cons(y, car(envir));
+			y = cons(y, car(envir));
+			car(envir) = y;
 			code = cddr(code);
 		} else {
 			code = cdr(code);
@@ -3411,7 +3420,8 @@ OP_BEGIN:
 
 	case OP_LET2AST:	/* let* (caluculate parameters) */
 		x = cons(caar(code), value);
-		car(envir) = cons(x, car(envir));
+		x = cons(x, car(envir));
+		car(envir) = x;
 		code = cdr(code);
 		if (is_pair(code)) {	/* continue */
 			s_save(OP_LET2AST, args, code);
@@ -3453,7 +3463,8 @@ OP_BEGIN:
 
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			y = cons(caar(mark_x), car(args));
-			car(envir) = cons(y, car(envir));
+			y = cons(y, car(envir));
+			car(envir) = y;
 		}
 		code = cdr(code);
 		args = NIL;
@@ -3487,7 +3498,8 @@ OP_BEGIN:
 OP_DO2:
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			y = cons(caar(mark_x), car(args));
-			car(envir) = cons(y, car(envir));
+			y = cons(y, car(envir));
+			car(envir) = y;
 		}
 		s_save(OP_DO3, NIL, code);
 		code = car(cadr(code));
@@ -3635,7 +3647,8 @@ OP_DO2:
 			cdar(x) = value;
 		else {
 			x = cons(code, value);
-			car(envir) = cons(x, car(envir));
+			x = cons(x, car(envir));
+			car(envir) = x;
 		}
 		s_return(code);
 
@@ -3699,7 +3712,8 @@ OP_EXPANDPATTERN:
 			cdar(x) = value;
 		} else {
 			x = cons(code, value);
-			car(envir) = cons(x, car(envir));
+			x = cons(x, car(envir));
+			car(envir) = x;
 		}
 		s_return(code);
 
@@ -3734,7 +3748,8 @@ OP_EXPANDPATTERN:
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			exttype(car(args)) |= T_MACRO | T_DEFSYNTAX;
 			y = cons(caar(mark_x), car(args));
-			car(envir) = cons(y, car(envir));
+			y = cons(y, car(envir));
+			car(envir) = y;
 		}
 		code = cdr(code);
 		args = NIL;
@@ -3771,7 +3786,8 @@ OP_EXPANDPATTERN:
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			exttype(car(args)) |= T_MACRO | T_DEFSYNTAX;
 			y = cons(caar(mark_x), car(args));
-			car(envir) = cons(y, car(envir));
+			y = cons(y, car(envir));
+			car(envir) = y;
 		}
 		code = cdr(code);
 		args = NIL;
@@ -3874,7 +3890,8 @@ OP_EXPANDPATTERN:
 		if (value == 0) {
 			car(args) = NIL;
 		} else {
-			car(args) = cons(value, car(args));
+			x = cons(value, car(args));
+			car(args) = x;
 		}
 		mark_y = NIL;
 		for (mark_x = cdr(args); mark_x != NIL; mark_x = cdr(mark_x)) {
@@ -3951,7 +3968,8 @@ OP_EXPANDPATTERN:
 		s_goto(OP_APPLY);
 
 	case OP_DYNAMICWIND1:	/* dynamic-wind -- body */
-		winders = cons(cons(car(args), caddr(args)), winders);
+		x = cons(car(args), caddr(args));
+		winders = cons(x, winders);
 		s_save(OP_DYNAMICWIND2, args, code);
 		code = cadr(args);
 		args = NIL;
@@ -3959,7 +3977,8 @@ OP_EXPANDPATTERN:
 
 	case OP_DYNAMICWIND2:	/* dynamic-wind -- after */
 		winders = cdr(winders);
-		s_save(OP_DYNAMICWIND3, cons(value, args), code);
+		value = cons(value, args);
+		s_save(OP_DYNAMICWIND3, value, code);
 		code = caddr(args);
 		args = NIL;
 		s_goto(OP_APPLY);
@@ -4791,14 +4810,15 @@ OP_DOWINDS2:
 
 	case OP_STR2LIST:	/* string->list */
 		if (!validargs("string->list", 1, 1, TST_STRING)) Error_0(msg);
-		y = NIL;
+		code = NIL;
 		w = 0;
 		while (w < (long)strlength(car(args))) {
 			int c;
 			w += utf8_get_next(strvalue(car(args)) + w, &c);
-			y = cons(mk_character(c), y);
+			x = mk_character(c);
+			code = cons(x, code);
 		}
-		s_return(non_alloc_rev(NIL, y));
+		s_return(non_alloc_rev(NIL, code));
 
 	case OP_LIST2STR:	/* list->string */
 		if (!validargs("list->string", 1, 1, TST_LIST)) Error_0(msg);
@@ -5136,7 +5156,8 @@ OP_VECTOR:
 
 	case OP_FORCED:		/* force */
 		setresultready(code);
-		car(code) = cons(value, NIL);
+		x = cons(value, NIL);
+		car(code) = x;
 		cdr(code) = NIL;
 		s_return(caar(code));
 
@@ -5226,7 +5247,8 @@ OP_ERR1:
 			cdar(x) = caddr(args);
 		else {
 			x = cons(y, caddr(args));
-			symprop(car(args)) = cons(x, symprop(car(args)));
+			x = cons(x, symprop(car(args)));
+			symprop(car(args)) = x;
 		}
 		s_return(T);
 
@@ -5568,9 +5590,11 @@ OP_RDSEXPR:
 	case OP_RDQQUOTEVEC:
 		x = cons(value, NIL);
 		x = cons(QQUOTE, x);
-		x = cons(x, NIL);
-		x = cons(mk_symbol("vector"), x);
-		s_return(cons(mk_symbol("apply"), x));
+		args = cons(x, NIL);
+		x = mk_symbol("vector");
+		args = cons(x, args);
+		x = mk_symbol("apply");
+		s_return(cons(x, args));
 
 	case OP_RDUNQUOTE:
 		x = cons(value, NIL);
@@ -5589,7 +5613,8 @@ OP_RDSEXPR:
 OP_P0LIST:
 		if (is_vector(args)) {
 			putstr("#(");
-			args = cons(args, mk_integer(0));
+			x = mk_integer(0);
+			args = cons(args, x);
 			s_goto(OP_PVECFROM);
 		} else if (!is_pair(args)) {
 			printatom(args, print_flag);
@@ -5806,7 +5831,8 @@ void mk_proc(int op, char *name)
 	ivalue(y) = (long)op;
 	set_num_integer(y);
 	x = cons(x, y);
-	car(global_env) = cons(x, car(global_env));
+	x = cons(x, car(global_env));
+	car(global_env) = x;
 }
 
 
@@ -5836,7 +5862,8 @@ void init_vars_global(void)
 	setenvironment(global_env);
 	/* init else */
 	x = cons(mk_symbol("else"), T);
-	car(global_env) = cons(x, car(global_env));
+	x = cons(x, car(global_env));
+	car(global_env) = x;
 	type(&_ZERO) = T_NUMBER;
 	set_num_integer(&_ZERO);
 	ivalue(&_ZERO) = 0;
@@ -6198,7 +6225,8 @@ void scheme_register_foreign_func(const char *name, foreign_func ff)
 		}
 	}
 	x = cons(s, f);
-	car(global_env) = cons(x, car(global_env));
+	x = cons(x, car(global_env));
+	car(global_env) = x;
 }
 
 void save_from_C_call(void)
@@ -6270,8 +6298,9 @@ pointer scheme_apply0(const char *procname)
 
 pointer scheme_apply1(const char *procname, pointer argslist)
 {
+	pointer x;
 	mark_x = argslist;
-	pointer x = mk_symbol(procname);
+	x = mk_symbol(procname);
 	return scheme_eval(cons(x, mark_x));
 }
 
