@@ -992,7 +992,8 @@ void gc(register pointer *a, register pointer *b)
 			if (is_strport(scan)) {
 				size_t curr_len = port_curr(scan) - strvalue(car(scan));
 				car(scan) = forward(car(scan));
-				port_curr(scan) = strvalue(car(scan)) + curr_len;
+				p = forward(caar(scan) - 1);
+				port_curr(scan) = strvalue(p) + curr_len;
 			}
 			break;
 		case T_SYMBOL:
