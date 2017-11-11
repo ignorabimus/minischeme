@@ -1280,6 +1280,11 @@ void port_close(pointer p)
 #define TOK_SHARP   10
 #define TOK_VEC     11
 
+#ifndef ONLY_R5RS_PARENTHESES
+#define TOK_PAREN_SQUARE 16
+#define TOK_PAREN_CURLY  32
+#endif
+
 char    strbuff[256];
 
 /* get new character from input file */
@@ -1536,6 +1541,16 @@ int token(void)
 		return TOK_LPAREN;
 	case ')':
 		return TOK_RPAREN;
+#ifndef ONLY_R5RS_PARENTHESES
+	case '[':
+		return TOK_LPAREN | TOK_PAREN_SQUARE;
+	case ']':
+		return TOK_RPAREN | TOK_PAREN_SQUARE;
+	case '{':
+		return TOK_LPAREN | TOK_PAREN_CURLY;
+	case '}':
+		return TOK_RPAREN | TOK_PAREN_CURLY;
+#endif
 	case '.':
 		if ((c = inchar()) == '.') {
 			backchar(c);
@@ -1567,6 +1582,12 @@ int token(void)
 	case '#':
 		if ((c = inchar()) == '(') {
 			return TOK_VEC;
+#ifndef ONLY_R5RS_PARENTHESES
+		} else if (c == '[') {
+			return TOK_VEC | TOK_PAREN_SQUARE;
+		} else if (c == '{') {
+			return TOK_VEC | TOK_PAREN_CURLY;
+#endif
 		} else {
 			backchar(c);
 			return TOK_SHARP;
@@ -5504,49 +5525,66 @@ OP_ERR1:
 
 	case OP_RDSEXPR:
 OP_RDSEXPR:
-		switch (tok) {
+		switch (tok & 0x0f) {
 		case TOK_EOF:
 			s_return(EOF_OBJ);
 		case TOK_VEC:
-			s_save(OP_RDVEC, NIL, NIL);
+			s_save(OP_RDVEC, NIL, code);
 			/* fall through */
 		case TOK_LPAREN:
+			w = tok >> 4;
 			tok = token();
-			if (tok == TOK_RPAREN) {
-				s_return(NIL);
+			if ((tok & 0x0f) == TOK_RPAREN) {
+				if (w == (tok >> 4)) {
+					s_return(NIL);
+				}
+				Error_0("syntax error -- unexpected parenthesis");
 			} else if (tok == TOK_DOT) {
 				Error_0("syntax error -- illegal dot expression");
 			} else {
-				s_save(OP_RDLIST, NIL, NIL);
+#ifndef ONLY_R5RS_PARENTHESES
+				code = mk_integer(w);
+#else
+				code = NIL;
+#endif
+				s_save(OP_RDLIST, NIL, code);
 				s_goto(OP_RDSEXPR);
 			}
 		case TOK_QUOTE:
-			s_save(OP_RDQUOTE, NIL, NIL);
+			s_save(OP_RDQUOTE, NIL, code);
 			tok = token();
 			s_goto(OP_RDSEXPR);
 		case TOK_BQUOTE:
 			tok = token();
-			if (tok == TOK_VEC) {
-				s_save(OP_RDQQUOTEVEC, NIL, NIL);
-				tok = TOK_LPAREN;
+			if ((tok & 0x0f) == TOK_VEC) {
+				s_save(OP_RDQQUOTEVEC, NIL, code);
+				tok = TOK_LPAREN | (tok >> 4);
 			} else {
-				s_save(OP_RDQQUOTE, NIL, NIL);
+				s_save(OP_RDQQUOTE, NIL, code);
 			}
 			s_goto(OP_RDSEXPR);
 		case TOK_COMMA:
-			s_save(OP_RDUNQUOTE, NIL, NIL);
+			s_save(OP_RDUNQUOTE, NIL, code);
 			tok = token();
 			s_goto(OP_RDSEXPR);
 		case TOK_ATMARK:
-			s_save(OP_RDUQTSP, NIL, NIL);
+			s_save(OP_RDUQTSP, NIL, code);
 			tok = token();
 			s_goto(OP_RDSEXPR);
 		case TOK_ATOM:
+#ifndef ONLY_R5RS_PARENTHESES
+			s_return(mk_atom(readstr("()[]{};\t\n\r ")));
+#else
 			s_return(mk_atom(readstr("();\t\n\r ")));
+#endif
 		case TOK_DQUOTE:
 			s_return(readstrexp());
 		case TOK_SHARP:
+#ifndef ONLY_R5RS_PARENTHESES
+			if ((x = mk_const(readstr("()[]{};\t\n\r "))) == NIL) {
+#else
 			if ((x = mk_const(readstr("();\t\n\r "))) == NIL) {
+#endif
 				Error_0("Undefined sharp expression");
 			} else {
 				s_return(x);
@@ -5561,22 +5599,37 @@ OP_RDSEXPR:
 		tok = token();
 		if (tok == TOK_EOF) {
 			s_return(EOF_OBJ);
-		} else if (tok == TOK_RPAREN) {
+		} else if ((tok & 0x0f) == TOK_RPAREN) {
+#ifndef ONLY_R5RS_PARENTHESES
+			if (ivalue(code) == (tok >> 4)) {
+				s_return(non_alloc_rev(NIL, args));
+			}
+			Error_0("syntax error -- unexpected parenthesis");
+#else
 			s_return(non_alloc_rev(NIL, args));
+#endif
 		} else if (tok == TOK_DOT) {
-			s_save(OP_RDDOT, args, NIL);
+			s_save(OP_RDDOT, args, code);
 			tok = token();
 			s_goto(OP_RDSEXPR);
 		} else {
-			s_save(OP_RDLIST, args, NIL);
+			s_save(OP_RDLIST, args, code);
 			s_goto(OP_RDSEXPR);
 		}
 
 	case OP_RDDOT:
-		if (token() != TOK_RPAREN) {
-			Error_0("syntax error -- illegal dot expression");
-		} else {
+		tok = token();
+		if ((tok & 0x0f) == TOK_RPAREN) {
+#ifndef ONLY_R5RS_PARENTHESES
+			if (ivalue(code) == (tok >> 4)) {
+				s_return(non_alloc_rev(value, args));
+			}
+			Error_0("syntax error -- unexpected parenthesis");
+#else
 			s_return(non_alloc_rev(value, args));
+#endif
+		} else {
+			Error_0("syntax error -- illegal dot expression");
 		}
 
 	case OP_RDQUOTE:
