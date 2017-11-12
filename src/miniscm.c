@@ -1964,11 +1964,16 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 		(*s)++;
 		return 1;
 	} else if (is_pair(p)) {
-		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && list_length(f) >= 0) {
-			for (x = f; is_pair(x); x = cdr(x)) {
+		long len_f;
+		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && (len_f = list_length(f)) >= 0) {
+			len_f -= list_length(cddr(p));
+			for (x = f; len_f-- > 0; x = cdr(x)) {
 				if (!matchpattern(car(p), car(x), keyword, s)) {
 					return 0;
 				}
+			}
+			if (is_pair(x) && !matchpattern(cddr(p), x, keyword, s)) {
+				return 0;
 			}
 			(*s)++;
 			return 1;
@@ -1978,30 +1983,27 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 			return 0;
 		}
 	} else if (is_vector(p)) {
-		int v = ivalue(p), i, j;
-		if (v >= 2 && vector_elem(p, v - 1) == ELLIPSIS) {
-			if (is_vector(f) && ivalue(f) >= v - 2) {
-				for (i = 0; i < v - 2; i++) {
-					if (!matchpattern(vector_elem(p, i), vector_elem(f, i), keyword, s)) {
-						return 0;
+		if (is_vector(f)) {
+			long i, j;
+			for (i = 0, j = 0; i < ivalue(p) && j < ivalue(f); i++, j++) {
+				if (i + 1 < ivalue(p) && vector_elem(p, i + 1) == ELLIPSIS) {
+					for (; j < ivalue(f) && j - i < 2 + ivalue(f) - ivalue(p); j++) {
+						if (!matchpattern(vector_elem(p, i), vector_elem(f, j), keyword, s)) {
+							return 0;
+						}
 					}
+					if (j < ivalue(f)) { i++; j--; continue; }
+					i += 2;
+					break;
 				}
-				for (j = i; j < ivalue(f); j++) {
-					if (!matchpattern(vector_elem(p, i), vector_elem(f, j), keyword, s)) {
-						return 0;
-					}
-				}
-				(*s)++;
-				return 1;
-			} else {
-				return 0;
-			}
-		} else if (is_vector(f) && ivalue(f) == v) {
-			for (i = 0; i < v; i++) {
-				if (!matchpattern(vector_elem(p, i), vector_elem(f, i), keyword, s)) {
+				if (!matchpattern(vector_elem(p, i), vector_elem(f, j), keyword, s)) {
 					return 0;
 				}
 			}
+			if (i != ivalue(p) || j != ivalue(f)) {
+				return 0;
+			}
+			(*s)++;
 			return 1;
 		} else {
 			return 0;
@@ -2027,39 +2029,43 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 		ivalue(cdr(x)) = n;
 		set_vector_elem(car(value), (*s)++, f);
 	} else if (is_pair(p)) {
-		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && list_length(f) >= 0) {
+		long len_f;
+		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && (len_f = list_length(f)) >= 0) {
 			long i = 0;
 			set_vector_elem(car(value), (*s)++, car(p));
 			x = vector_elem(car(value), (*s)++);
 			ivalue(car(x)) = d;
 			ivalue(cdr(x)) = n;
 			set_vector_elem(car(value), (*s)++, NULL);
-			for (x = f; is_pair(x); x = cdr(x)) {
+			len_f -= list_length(cddr(p));
+			for (x = f; len_f-- > 0; x = cdr(x)) {
 				bindpattern(car(p), car(x), d + 1, i++, s);
+			}
+			if (is_pair(x)) {
+				bindpattern(cddr(p), x, d, n, s);
 			}
 		} else if (is_pair(f)) {
 			bindpattern(car(p), car(f), d, n, s);
 			bindpattern(cdr(p), cdr(f), d, n, s);
 		}
 	} else if (is_vector(p)) {
-		long v = ivalue(p), i, j;
-		if (v >= 2 && vector_elem(p, v - 1) == ELLIPSIS) {
-			if (is_vector(f) && ivalue(f) >= v - 2) {
-				for (i = 0; i < v - 2; i++) {
-					bindpattern(vector_elem(p, i), vector_elem(f, i), d , n, s);
+		if (is_vector(f)) {
+			long i, j;
+			for (i = 0, j = 0; i < ivalue(p) && j < ivalue(f); i++, j++) {
+				if (i + 1 < ivalue(p) && vector_elem(p, i + 1) == ELLIPSIS) {
+					set_vector_elem(car(value), (*s)++, vector_elem(p, i));
+					x = vector_elem(car(value), (*s)++);
+					ivalue(car(x)) = d;
+					ivalue(cdr(x)) = n;
+					set_vector_elem(car(value), (*s)++, NULL);
+					for (; j < ivalue(f) && j - i < 2 + ivalue(f) - ivalue(p); j++) {
+						bindpattern(vector_elem(p, i), vector_elem(f, j), d + 1, j - i, s);
+					}
+					if (j < ivalue(f)) { i++; j--; continue; }
+					i += 2;
+					break;
 				}
-				set_vector_elem(car(value), (*s)++, vector_elem(p, i));
-				x = vector_elem(car(value), (*s)++);
-				ivalue(car(x)) = d;
-				ivalue(cdr(x)) = n;
-				set_vector_elem(car(value), (*s)++, NULL);
-				for (j = i; j < ivalue(f); j++) {
-					bindpattern(vector_elem(p, i), vector_elem(f, j), d + 1, j - i, s);
-				}
-			}
-		} else if (is_vector(f) && ivalue(f) == v) {
-			for (i = 0; i < v; i++) {
-				bindpattern(vector_elem(p, i), vector_elem(f, i), d, n, s);
+				bindpattern(vector_elem(p, i), vector_elem(f, j), d, n, s);
 			}
 		}
 	}
