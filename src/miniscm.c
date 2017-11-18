@@ -1952,10 +1952,24 @@ int equal(register pointer a, register pointer b)
 	}
 }
 
+int is_ellipsis(pointer p)
+{
+	pointer x, y;
+	for (x = envir; x != NIL; x = cdr(x)) {
+		for (y = car(x); y != NIL; y = cdr(y)) {
+			if (caar(y) == p) {
+				return cdar(y) == ELLIPSIS;
+			}
+		}
+	}
+	return p == ELLIPSIS;
+}
+
 int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 {
 	pointer x;
 	if (is_symbol(p)) {
+		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = keyword; x != NIL; x = cdr(x)) {
 			if (car(p) == car(x)) {
 				return car(p) == car(f);
@@ -1965,7 +1979,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 		return 1;
 	} else if (is_pair(p)) {
 		long len_f;
-		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && (len_f = list_length(f)) >= 0) {
+		if (is_pair(cdr(p)) && is_ellipsis(cadr(p)) && (len_f = list_length(f)) >= 0) {
 			len_f -= list_length(cddr(p));
 			for (x = f; len_f-- > 0; x = cdr(x)) {
 				if (!matchpattern(car(p), car(x), keyword, s)) {
@@ -1986,7 +2000,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 		if (is_vector(f)) {
 			long i, j;
 			for (i = 0, j = 0; i < ivalue(p) && j < ivalue(f); i++, j++) {
-				if (i + 1 < ivalue(p) && vector_elem(p, i + 1) == ELLIPSIS) {
+				if (i + 1 < ivalue(p) && is_ellipsis(vector_elem(p, i + 1))) {
 					for (; j < ivalue(f) && j - i < 2 + ivalue(f) - ivalue(p); j++) {
 						if (!matchpattern(vector_elem(p, i), vector_elem(f, j), keyword, s)) {
 							return 0;
@@ -2018,6 +2032,7 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 {
 	pointer x;
 	if (is_symbol(p)) {
+		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
 			if (car(p) == car(x)) {
 				return;
@@ -2030,7 +2045,7 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 		set_vector_elem(car(value), (*s)++, f);
 	} else if (is_pair(p)) {
 		long len_f;
-		if (is_pair(cdr(p)) && cadr(p) == ELLIPSIS && (len_f = list_length(f)) >= 0) {
+		if (is_pair(cdr(p)) && is_ellipsis(cadr(p)) && (len_f = list_length(f)) >= 0) {
 			long i = 0;
 			set_vector_elem(car(value), (*s)++, car(p));
 			x = vector_elem(car(value), (*s)++);
@@ -2052,7 +2067,7 @@ void bindpattern(pointer p, pointer f, long d, long n, long *s)
 		if (is_vector(f)) {
 			long i, j;
 			for (i = 0, j = 0; i < ivalue(p) && j < ivalue(f); i++, j++) {
-				if (i + 1 < ivalue(p) && vector_elem(p, i + 1) == ELLIPSIS) {
+				if (i + 1 < ivalue(p) && is_ellipsis(vector_elem(p, i + 1))) {
 					set_vector_elem(car(value), (*s)++, vector_elem(p, i));
 					x = vector_elem(car(value), (*s)++);
 					ivalue(car(x)) = d;
@@ -2121,6 +2136,7 @@ pointer expandpattern(pointer p, long d, long n)
 	*((long *)strvalue(car(code)) + d) = n;
 	if (is_symbol(p)) {
 		int find = 0;
+		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
 			if (car(p) == car(x)) {
 				return p;
@@ -2178,7 +2194,7 @@ pointer expandpattern(pointer p, long d, long n)
 		return p;
 	} else if (is_pair(p)) {
 		mark_x = cons(p, mark_x);
-		if (is_pair(cdar(mark_x)) && car(cdar(mark_x)) == ELLIPSIS) {
+		if (is_pair(cdar(mark_x)) && is_ellipsis(car(cdar(mark_x)))) {
 			if (expandpattern(caar(mark_x), d, n) == NULL) {
 				mark_x = cdr(mark_x);
 				return NULL;
@@ -2219,7 +2235,7 @@ pointer expandpattern(pointer p, long d, long n)
 		mark_x = cons(p, mark_x);
 		y = NIL;
 		for (i = 0; i < len; i++) {
-			if (i + 1 < len && vector_elem(car(mark_x), i + 1) == ELLIPSIS) {
+			if (i + 1 < len && is_ellipsis(vector_elem(car(mark_x), i + 1))) {
 				if (expandpattern(vector_elem(car(mark_x), i), d, n) == NULL) {
 					mark_x = cdr(mark_x);
 					return NULL;
@@ -2948,6 +2964,12 @@ OP_EVAL:
 				args = cons(NIL, envir);
 				envir = cons(NIL, closure_env(value));
 				setenvironment(envir);
+				if (is_symbol(caar(value))) {
+					x = cons(caar(value), ELLIPSIS);
+					x = cons(x, car(envir));
+					car(envir) = x;
+					car(value) = cdar(value);
+				}
 				s_save(OP_DOMACRO, NIL, NIL);
 				s_goto(OP_EXPANDPATTERN);
 			} else if (exttype(value) & T_DEFMACRO) {
