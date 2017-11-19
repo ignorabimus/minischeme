@@ -2006,6 +2006,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 							return 0;
 						}
 					}
+					(*s)++;
 					if (j < ivalue(f)) { i++; j--; continue; }
 					i += 2;
 					break;
@@ -2017,7 +2018,6 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 			if (i != ivalue(p) || j != ivalue(f)) {
 				return 0;
 			}
-			(*s)++;
 			return 1;
 		} else {
 			return 0;
