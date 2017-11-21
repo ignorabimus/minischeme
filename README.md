@@ -10,7 +10,8 @@ Features
 * based on Mini-Scheme 0.85k4-a
 * continuations support without using 'SCHEME STACK' (#undef USE_SCHEME_STACK)
 * implemented a Copying GC using the Cheney's algorithm (#define USE_COPYING_GC)
-* implemented Hygienic macro (Legacy macro 'define-macro' also supported)
+* implemented Hygienic macro 'syntax-rules' (supports SRFI 46)
+* implemented Legacy macro 'define-macro'
 * supports UTF-8 multibyte characters (limitations: NO normalization nor toupper/tolower, ...)
 * reinventing the [tinyscheme](https://github.com/ignorabimus/tinyscheme "Experimental fork of TinyScheme and extensions TSX, RE.") :)
 
