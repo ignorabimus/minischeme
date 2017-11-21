@@ -2129,7 +2129,7 @@ pointer expandsymbol(pointer p)
 	}
 }
 
-pointer expandpattern(pointer p, long d, long n)
+pointer expandpattern(pointer p, long d, long n, long *e)
 {
 	pointer x, y = NULL;
 	long i, j;
@@ -2158,6 +2158,9 @@ pointer expandpattern(pointer p, long d, long n)
 							if (*((long *)strvalue(cdr(code)) + j) == 0) break;
 						}
 						if (j < e_d) continue;
+						if (*e < e_d) {
+							*e = e_d;
+						}
 						y = vector_elem(car(value), i + 2);
 						if (y == NULL) continue;
 						if (is_symbol(y)) {
@@ -2176,6 +2179,9 @@ pointer expandpattern(pointer p, long d, long n)
 					if (*((long *)strvalue(cdr(code)) + j) == 0) break;
 				}
 				if (j < d) continue;
+				if (*e < d) {
+					*e = d;
+				}
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
 				if (is_symbol(y)) {
@@ -2195,22 +2201,23 @@ pointer expandpattern(pointer p, long d, long n)
 	} else if (is_pair(p)) {
 		mark_x = cons(p, mark_x);
 		if (is_pair(cdar(mark_x)) && is_ellipsis(car(cdar(mark_x)))) {
-			if (expandpattern(caar(mark_x), d, n) == NULL) {
+			if (expandpattern(caar(mark_x), d, n, e) == NULL) {
 				mark_x = cdr(mark_x);
 				return NULL;
 			}
 			y = NIL;
 			for (i = 0; ; i++) {
 				mark_y = cons(y, mark_y);
-				x = expandpattern(caar(mark_x), d + 1, i);
+				*e = 0;
+				x = expandpattern(caar(mark_x), d + 1, i, e);
 				y = car(mark_y);
 				mark_y = cdr(mark_y);
-				if (x == NULL) break;
+				if (x == NULL || *e < d + 1) break;
 				y = cons(x, y);
 			}
 			if (is_pair(cdar(mark_x))) {
 				mark_y = cons(y, mark_y);
-				x = expandpattern(cdr(cdar(mark_x)), d, n);
+				x = expandpattern(cdr(cdar(mark_x)), d, n, e);
 				y = car(mark_y);
 				mark_y = cdr(mark_y);
 			}
@@ -2220,9 +2227,9 @@ pointer expandpattern(pointer p, long d, long n)
 			}
 			return non_alloc_rev(x, y);
 		}
-		x = expandpattern(caar(mark_x), d, n);
+		x = expandpattern(caar(mark_x), d, n, e);
 		mark_y = cons(x, mark_y);
-		y = expandpattern(cdar(mark_x), d, n);
+		y = expandpattern(cdar(mark_x), d, n, e);
 		mark_x = cdr(mark_x);
 		x = car(mark_y);
 		mark_y = cdr(mark_y);
@@ -2236,24 +2243,25 @@ pointer expandpattern(pointer p, long d, long n)
 		y = NIL;
 		for (i = 0; i < len; i++) {
 			if (i + 1 < len && is_ellipsis(vector_elem(car(mark_x), i + 1))) {
-				if (expandpattern(vector_elem(car(mark_x), i), d, n) == NULL) {
+				if (expandpattern(vector_elem(car(mark_x), i), d, n, e) == NULL) {
 					mark_x = cdr(mark_x);
 					return NULL;
 				}
 				for (j = 0; ; j++) {
 					p = car(mark_x);
 					mark_y = cons(y, mark_y);
-					x = expandpattern(vector_elem(car(mark_x), i), d + 1, j);
+					*e = 0;
+					x = expandpattern(vector_elem(car(mark_x), i), d + 1, j, e);
 					y = car(mark_y);
 					mark_y = cdr(mark_y);
-					if (x == NULL) break;
+					if (x == NULL || *e < d + 1) break;
 					y = cons(x, y);
 				}
 				i++;
 				continue;
 			}
 			mark_y = cons(y, mark_y);
-			x = expandpattern(vector_elem(car(mark_x), i), d, n);
+			x = expandpattern(vector_elem(car(mark_x), i), d, n, e);
 			y = car(mark_y);
 			mark_y = cdr(mark_y);
 			if (x == NULL) {
@@ -3737,7 +3745,7 @@ OP_EXPANDPATTERN:
 				mark_x = mk_memblock(m * sizeof(long), &NIL);
 				mark_y = mk_memblock(m * sizeof(long), &NIL);
 				code = cons(mark_x, mark_y);
-				s_return(car(expandpattern(cdar(args), 0, 0)));
+				s_return(car(expandpattern(cdar(args), 0, 0, &w)));
 			}
 		}
 		s_return(NIL);
