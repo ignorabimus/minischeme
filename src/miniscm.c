@@ -2921,9 +2921,11 @@ OP_EVAL:
 						s_return(cdar(x));
 					}
 				}
-				for (x = car(args); x != NIL; x = cdr(x)) {
-					if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
-						s_return(cdar(x));
+				for (x = args; x != NIL; x = cdr(x)) {
+					for (y = car(x); y != NIL; y = cdr(y)) {
+						if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
+							s_return(cdar(y));
+						}
 					}
 				}
 				for (x = cdr(envir); x != NIL; x = cdr(x)) {
@@ -3325,9 +3327,11 @@ OP_QQUOTE1:
 				}
 			}
 			if (args == envir || args == caar(code)) {
-				for (x = caar(code); x != NIL; x = cdr(x)) {
-					if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == cdr(code)) {
-						s_return(T);
+				for (x = car(code); x != NIL; x = cdr(x)) {
+					for (y = car(x); y != NIL; y = cdr(y)) {
+						if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == cdr(code)) {
+							s_return(T);
+						}
 					}
 				}
 				args = cdr(envir);
@@ -3367,9 +3371,11 @@ OP_QQUOTE1:
 					s_return(cdar(x) = value);
 				}
 			}
-			for (x = car(args); x != NIL; x = cdr(x)) {
-				if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
-					s_return(cdar(x) = value);
+			for (x = args; x != NIL; x = cdr(x)) {
+				for (y = car(x); y != NIL; y = cdr(y)) {
+					if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
+						s_return(cdar(y) = value);
+					}
 				}
 			}
 			for (x = cdr(envir); x != NIL; x = cdr(x)) {
