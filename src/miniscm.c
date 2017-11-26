@@ -145,7 +145,7 @@ size_t utf32_to_utf8(const int utf32, char *const utf8)
 {
 	if (utf32 < 0x00) {
 		if (utf8 != NULL) {
-			utf8[0] = (char)(-utf32);
+			utf8[0] = (char)(utf32 == -1 ? -1 : -utf32);
 		}
 		return 1;
 	}
