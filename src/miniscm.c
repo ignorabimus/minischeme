@@ -145,7 +145,7 @@ size_t utf32_to_utf8(const int utf32, char *const utf8)
 {
 	if (utf32 < 0x00) {
 		if (utf8 != NULL) {
-			utf8[0] = (char)(utf32 == -1 ? -1 : -utf32);
+			utf8[0] = (char)(-utf32);
 		}
 		return 1;
 	}
@@ -1407,6 +1407,10 @@ char *readstr(char *delim)
 	char   *p = strbuff;
 	while (p - strbuff < sizeof(strbuff)) {
 		int c = inchar();
+		if (c == EOF) {
+			*p = '\0';
+			return strbuff;
+		}
 		p += utf32_to_utf8(c, p);
 		if (isdelim(delim, c) == 0) break;
 	}
