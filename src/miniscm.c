@@ -132,6 +132,34 @@ pointer dump_base; /* pointer to base of allocated dump stack */
 
 /* ========== Routines for UTF-8 characters ========== */
 
+unsigned char getc_save[4];	/* getc save buffer */
+int getc_save_count = 0;	/* getc save count */
+
+int internal_fgetc(FILE *fin)
+{
+	if (fin == stdin && getc_save_count > 0) {
+		return getc_save[--getc_save_count];
+	}
+	return fgetc(fin);
+}
+
+void internal_ungetc(int c, FILE *fin)
+{
+	if (fin == stdin) {
+		if (getc_save_count < sizeof(getc_save)) {
+			getc_save[getc_save_count++] = (unsigned char)c;
+		} else {
+			ungetc(c, fin);
+		}
+	} else {
+		if (ftell(fin) > 0) {
+			fseek(fin, -1, SEEK_CUR);
+		} else {
+			ungetc(c, fin);
+		}
+	}
+}
+
 /* internal description of "extended" UTF-32
  *
  *  0x00000000 - 0x0000007F (UTF-8  0x00 - 7F)
@@ -221,48 +249,48 @@ int utf8_fgetc(FILE *fin)
 {
 	int p[4];
 
-	p[0] = fgetc(fin);
+	p[0] = internal_fgetc(fin);
 	if (p[0] < 0x80) {
 		return p[0];
 	} else if (p[0] < 0xC2) {
 		return -p[0];
 	} else if (p[0] < 0xE0)  {
-		p[1] = fgetc(fin);
+		p[1] = internal_fgetc(fin);
 		if (p[1] < 0x80 || 0xBF < p[1]) {
-			ungetc(p[1], fin);
+			internal_ungetc(p[1], fin);
 			return -p[0];
 		}
 		return ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
 	} else if (p[0] < 0xF0) {
-		p[1] = fgetc(fin);
+		p[1] = internal_fgetc(fin);
 		if (p[1] < (p[0] == 0xE0 ? 0xA0 : 0x80) || (p[0] == 0xED ? 0x9F : 0xBF) < p[1]) {
-			ungetc(p[1], fin);
+			internal_ungetc(p[1], fin);
 			return -p[0];
 		}
-		p[2] = fgetc(fin);
+		p[2] = internal_fgetc(fin);
 		if (p[2] < 0x80 || 0xBF < p[2]) {
-			ungetc(p[2], fin);
-			ungetc(p[1], fin);
+			internal_ungetc(p[2], fin);
+			internal_ungetc(p[1], fin);
 			return -p[0];
 		}
 		return ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
 	} else if (p[0] < 0xF5) {
-		p[1] = fgetc(fin);
+		p[1] = internal_fgetc(fin);
 		if (p[1] < (p[0] == 0xF0 ? 0x90 : 0x80) || (p[0] == 0xF4 ? 0x8F : 0xBF) < p[1]) {
-			ungetc(p[1], fin);
+			internal_ungetc(p[1], fin);
 			return -p[0];
 		}
-		p[2] = fgetc(fin);
+		p[2] = internal_fgetc(fin);
 		if (p[2] < 0x80 || 0xBF < p[2]) {
-			ungetc(p[2], fin);
-			ungetc(p[1], fin);
+			internal_ungetc(p[2], fin);
+			internal_ungetc(p[1], fin);
 			return -p[0];
 		}
-		p[3] = fgetc(fin);
+		p[3] = internal_fgetc(fin);
 		if (p[3] < 0x80 || 0xBF < p[3]) {
-			ungetc(p[3], fin);
-			ungetc(p[2], fin);
-			ungetc(p[1], fin);
+			internal_ungetc(p[3], fin);
+			internal_ungetc(p[2], fin);
+			internal_ungetc(p[1], fin);
 			return -p[0];
 		}
 		return ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
@@ -1360,7 +1388,7 @@ void backchar(int c)
 			char utf8[4];
 			int n = utf32_to_utf8(c, utf8);
 			while (--n >= 0) {
-				ungetc(utf8[n], port_file(inport));
+				internal_ungetc(utf8[n], port_file(inport));
 			}
 		} else if (port_curr(inport) != strvalue(car(inport))) {
 			port_curr(inport) -= utf32_to_utf8(c, NULL);
