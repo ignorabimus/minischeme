@@ -108,7 +108,7 @@ pointer ELLIPSIS;		/* pointer to symbol ... */
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
 long    fcells = 0;			/* # of free cells */
 
-FILE   *load_stack[MAXFIL];	/* stack of loading files */
+pointer load_stack[MAXFIL];	/* stack of loading files */
 int     load_files;			/* # of loading files */
 
 jmp_buf error_jmp;
@@ -956,6 +956,7 @@ void gc(register pointer *a, register pointer *b)
 	register pointer scan;
 	register pointer p, q;
 	char temp[32];
+	int i;
 
 	if (gc_verbose)
 		printf("gc...");
@@ -997,6 +998,9 @@ void gc(register pointer *a, register pointer *b)
 	mark_y = forward(mark_y);
 	c_nest = forward(c_nest);
 	c_sink = forward(c_sink);
+	for (i = 0; i < load_files; i++) {
+		load_stack[i] = forward(load_stack[i]);
+	}
 
 	/* forward variables a, b */
 	*a = forward(*a);
@@ -1158,6 +1162,7 @@ void mark_dump(pointer base, pointer curr)
 void gc(register pointer *a, register pointer *b)
 {
 	register pointer p;
+	int i;
 
 	if (gc_verbose)
 		printf("gc...");
@@ -1189,6 +1194,9 @@ void gc(register pointer *a, register pointer *b)
 	mark(mark_y);
 	mark(c_nest);
 	mark(c_sink);
+	for (i = 0; i < load_files; i++) {
+		mark(load_stack[i]);
+	}
 
 	/* mark variables a, b */
 	mark(*a);
@@ -1350,23 +1358,17 @@ int inchar(void)
 /* back to standard input */
 void flushinput(void)
 {
-	FILE *closed = NULL;
-
-	if (is_fileport(inport) && port_file(inport) != stdin) {
-		if (port_file(inport)) {
+	while (load_files > 0) {
+		inport = load_stack[--load_files];
+		if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
 			fclose(port_file(inport));
-			closed = port_file(inport);
 		}
-		port_file(inport) = stdin;
-	} else if (is_strport(inport)) {
-		port_file(inport) = stdin;
-		inport->_isfixnum = port_input | port_file;
 	}
 
-	while (load_files > 0) {
-		if (load_stack[--load_files] != stdin && load_stack[load_files] != closed) {
-			fclose(load_stack[load_files]);
-		}
+	if (is_fileport(inport)) {
+		port_file(inport) = stdin;
+	} else {
+		inport = load_stack[0];
 	}
 }
 
@@ -3119,11 +3121,11 @@ OP_APPLYCONT:
 		if (load_files == MAXFIL) {
 			Error_1("Unable to open", car(args));
 		}
-		load_stack[load_files++] = port_file(inport);
-		if ((port_file(inport) = fopen(strvalue(car(args)), "rb")) == NULL) {
-			port_file(inport) = load_stack[--load_files];
+		if ((tmpfp = fopen(strvalue(car(args)), "rb")) == NULL) {
 			Error_1("Unable to open", car(args));
 		}
+		load_stack[load_files++] = inport;
+		inport = mk_port(tmpfp, port_input);
 		/* fall through */
 
 	case OP_T0LVL:	/* top level */
@@ -3132,7 +3134,7 @@ OP_T0LVL:
 			if (load_files == 0) {
 				break;
 			}
-			port_file(inport) = load_stack[--load_files];
+			inport = load_stack[--load_files];
 		}
 		if (port_file(inport) == stdin) {
 			putstr("\n");
