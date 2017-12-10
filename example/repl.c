@@ -63,18 +63,27 @@ static int get_input_length(const char *input)
 			}
 			break;
 		case '(':
-		case ')':
 		case '[':
-		case ']':
 		case '{':
+			if (dquotes == 0) {
+				if (p - input > 0 && n_paren <= 0 && s_paren <= 0 && c_paren <= 0) {
+					return p - input;
+				}
+				if (*p == '(') n_paren++;
+				else if (*p == '[') s_paren++;
+				else c_paren++;
+			}
+			break;
+		case ')':
+		case ']':
 		case '}':
 			if (dquotes == 0) {
-				if (*p == '(') n_paren++;
-				else if (*p == ')') n_paren--;
-				else if (*p == '[') s_paren++;
+				if (*p == ')') n_paren--;
 				else if (*p == ']') s_paren--;
-				else if (*p == '{') c_paren++;
 				else c_paren--;
+				if (n_paren <= 0 && s_paren <= 0 && c_paren <= 0) {
+					return p - input + 1;
+				}
 			}
 			break;
 		default:
