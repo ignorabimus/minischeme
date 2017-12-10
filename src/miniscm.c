@@ -4920,7 +4920,7 @@ OP_DOWINDS2:
 	case OP_LIST2STR:	/* list->string */
 		if (!validargs("list->string", 1, 1, TST_LIST)) Error_0(msg);
 		if (list_length(car(args)) < 0) {
-			Error_1("list->string: not a proper list:", x);
+			Error_1("list->string: not a proper list:", car(args));
 		}
 		for (w = 0, x = car(args); x != NIL; x = cdr(x)) {
 			if (!is_character(car(x))) {
