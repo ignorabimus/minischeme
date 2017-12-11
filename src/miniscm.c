@@ -1022,7 +1022,7 @@ void gc(register pointer *a, register pointer *b)
 			scan += 1 + strlength(scan) / sizeof(struct cell);
 			break;
 		case T_PORT:
-			if (is_strport(scan)) {
+			if (is_strport(scan) && port_file(scan) != NULL) {
 				size_t curr_len = port_curr(scan) - strvalue(car(scan));
 				car(scan) = forward(car(scan));
 				p = forward(caar(scan) - 1);
