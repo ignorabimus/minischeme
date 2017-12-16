@@ -2124,7 +2124,8 @@ pointer expandsymbol(pointer p)
 {
 	pointer x, y;
 	if (type(p) == T_SYMBOL) {
-		p = cons(cdr(args), (exttype(p) & T_DEFSYNTAX) ? cdr(p) : p);
+		if (exttype(p) & T_DEFSYNTAX) return p;
+		p = cons(cdr(args), p);
 		type(p) = type(cdr(p));
 		exttype(p) |= T_DEFSYNTAX;
 		return p;
@@ -2197,13 +2198,7 @@ pointer expandpattern(pointer p, long d, long n, long *e)
 						}
 						y = vector_elem(car(value), i + 2);
 						if (y == NULL) continue;
-						if (is_symbol(y)) {
-							y = cons(cdr(args), (exttype(y) & T_DEFSYNTAX) ? cdr(y) : y);
-							type(y) = type(cdr(y));
-							exttype(y) |= T_DEFSYNTAX;
-						} else {
-							y = expandsymbol(y);
-						}
+						y = expandsymbol(y);
 					}
 				} else {
 					*((long *)strvalue(cdr(code)) + e_d) = 0;
@@ -2218,14 +2213,7 @@ pointer expandpattern(pointer p, long d, long n, long *e)
 				}
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
-				if (is_symbol(y)) {
-					y = cons(cdr(args), (exttype(y) & T_DEFSYNTAX) ? cdr(y) : y);
-					type(y) = type(cdr(y));
-					exttype(y) |= T_DEFSYNTAX;
-					return y;
-				} else {
-					return expandsymbol(y);
-				}
+				return expandsymbol(y);
 			}
 		}
 		if (d > 0 && find) {
