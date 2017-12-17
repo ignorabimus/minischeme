@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w6 (2017)
+ *	current version is 0.85w7 (2017)
  *
  * Below are the original credits.
  */
@@ -40,7 +40,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w6.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w7.\n"
 #define InitFile "init.scm"
 #endif
 
@@ -2543,6 +2543,8 @@ enum {
 	OP_WHEN1,
 	OP_UNLESS0,
 	OP_UNLESS1,
+	OP_RECEIVE0,
+	OP_RECEIVE1,
 
 	OP_PEVAL,
 	OP_PAPPLY,
@@ -3089,8 +3091,8 @@ OP_APPLYCONT:
 #else
 		dump = cdr(code);
 #endif
-		if (s_next_op() == OP_WITHVALUES1) {
-			args = cons(args, NIL);
+		w = s_next_op();
+		if (w == OP_WITHVALUES1 || w == OP_RECEIVE1) {
 			type(args) |= T_VALUES;
 			s_return(args);
 		} else {
@@ -3938,6 +3940,38 @@ OP_EXPANDPATTERN:
 			s_return(NIL);
 		}
 
+	case OP_RECEIVE0:	/* receive */
+		s_save(OP_RECEIVE1, NIL, code);
+		code = cadr(code);
+		s_goto(OP_EVAL);
+
+	case OP_RECEIVE1:	/* receive */
+		if (type(value) & T_VALUES) {
+			type(value) &= ~T_VALUES;
+			args = value;
+		} else {
+			args = cons(value, NIL);
+		}
+		envir = cons(NIL, envir);
+		setenvironment(envir);
+		for (mark_x = car(code); is_pair(mark_x); mark_x = cdr(mark_x), args = cdr(args)) {
+			if (args == NIL) {
+				Error_0("Few arguments");
+			} else {
+				y = cons(car(mark_x), car(args));
+				y = cons(y, car(envir));
+				car(envir) = y;
+			}
+		}
+		if (is_symbol(mark_x)) {
+			mark_x = cons(mark_x, args);
+			mark_x = cons(mark_x, car(envir));
+			car(envir) = mark_x;
+		}
+		code = cddr(code);
+		args = NIL;
+		s_goto(OP_BEGIN);
+
 	case OP_PAPPLY:	/* apply */
 		if (!validargs("apply", 2, 65535, TST_NONE)) Error_0(msg);
 		code = car(args);
@@ -4020,8 +4054,8 @@ OP_EXPANDPATTERN:
 
 	case OP_VALUES:			/* values */
 		if (!validargs("values", 0, 65535, TST_NONE)) Error_0(msg);
-		if (s_next_op() == OP_WITHVALUES1) {
-			args = cons(args, NIL);
+		w = s_next_op();
+		if (w == OP_WITHVALUES1 || w == OP_RECEIVE1) {
 			type(args) |= T_VALUES;
 			s_return(args);
 		} else {
@@ -4037,9 +4071,9 @@ OP_EXPANDPATTERN:
 
 	case OP_WITHVALUES1:	/* call-with-values */
 		code = cadr(args);
-		if (is_pair(value) && (type(value) & T_VALUES)) {
+		if (type(value) & T_VALUES) {
 			type(value) &= ~T_VALUES;
-			args = car(value);
+			args = value;
 		} else {
 			args = cons(value, NIL);
 		}
@@ -6021,6 +6055,7 @@ void init_syntax(void)
 	mk_syntax(OP_DEFSYNTAX0, "define-syntax");
 	mk_syntax(OP_LETSYNTAX0, "let-syntax");
 	mk_syntax(OP_LETRECSYNTAX0, "letrec-syntax");
+	mk_syntax(OP_RECEIVE0, "receive");
 }
 
 
