@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w8 (2018)
+ *	current version is 0.85w9 (2018)
  *
  * Below are the original credits.
  */
@@ -40,7 +40,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w8.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w9.\n"
 #define InitFile "init.scm"
 #endif
 
@@ -108,7 +108,7 @@ pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
 pointer ELLIPSIS;		/* pointer to symbol ... */
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
-long    fcells = 0;			/* # of free cells */
+size_t  fcells = 0;			/* # of free cells */
 
 pointer load_stack[MAXFIL];	/* stack of loading files */
 int     load_files;			/* # of loading files */
@@ -118,7 +118,7 @@ jmp_buf error_jmp;
 char    gc_verbose;		/* if gc_verbose is not zero, print gc status */
 int     interactive_repl = 0;
 
-void gc(register pointer *a, register pointer *b);
+void gc(pointer *a, pointer *b);
 void FatalError(char *s);
 
 #ifndef USE_SCHEME_STACK
@@ -401,7 +401,7 @@ int utf8_strpos(const char *s, size_t pos)
 	const char *t = s;
 
 	while (*s) {
-		if (pos-- == 0) return s - t;
+		if (pos-- == 0) return (int)(s - t);
 		s += utf8_get_next(s, NULL);
 	}
 	return -1;
@@ -438,8 +438,8 @@ void alloc_cellseg(void)
 #else
 void alloc_cellseg(void)
 {
-	register pointer p;
-	register long i;
+	pointer p;
+	int i;
 
 	p = free_cell = cell_seg;
 	fcells += CELL_SEGSIZE;
@@ -455,10 +455,10 @@ void alloc_cellseg(void)
 #endif
 
 /* get new cell.  parameter a, b is marked by gc. */
-pointer get_cell(register pointer *a, register pointer *b)
+pointer get_cell(pointer *a, pointer *b)
 {
 #ifndef USE_COPYING_GC
-	register pointer x;
+	pointer x;
 #endif
 
 	if (fcells == 0) {
@@ -480,7 +480,7 @@ pointer get_cell(register pointer *a, register pointer *b)
 }
 
 #ifdef USE_COPYING_GC
-pointer find_consecutive_cells(int n)
+pointer find_consecutive_cells(size_t n)
 {
 	if (fcells >= n) {
 		pointer p = free_cell;
@@ -492,13 +492,13 @@ pointer find_consecutive_cells(int n)
 	return NIL;
 }
 #else
-pointer find_consecutive_cells(int n)
+pointer find_consecutive_cells(size_t n)
 {
 	pointer *pp = &free_cell;
 
 	while (*pp != NIL) {
 		pointer p = *pp;
-		int cnt;
+		size_t cnt;
 		for (cnt = 1; cnt < n; cnt++) {
 			if (cdr(p) != p + 1) {
 				break;
@@ -517,13 +517,13 @@ pointer find_consecutive_cells(int n)
 }
 #endif
 
-pointer get_consecutive_cells(int n, pointer *a)
+pointer get_consecutive_cells(size_t n, pointer *a, pointer *b)
 {
 	pointer x;
 
 	x = find_consecutive_cells(n);
 	if (x == NIL) {
-		gc(a, &NIL);
+		gc(a, b);
 		x = find_consecutive_cells(n);
 		if (x == NIL) {
 			FatalError("run out of cells  --- unable to recover consecutive cells");
@@ -545,7 +545,7 @@ void push_recent_alloc(pointer recent)
 /* get new cons cell */
 pointer cons(pointer a, pointer b)
 {
-	register pointer x = get_cell(&a, &b);
+	pointer x = get_cell(&a, &b);
 
 	type(x) = T_PAIR;
 	exttype(x) = 0;
@@ -554,9 +554,9 @@ pointer cons(pointer a, pointer b)
 	return x;
 }
 
-pointer mk_character(register int c)
+pointer mk_character(int c)
 {
-	register pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_CHARACTER | T_ATOM);
 	ivalue(x) = c;
@@ -564,19 +564,31 @@ pointer mk_character(register int c)
 	return x;
 }
 
-pointer mk_integer(register long num)
+pointer mk_integer(int32_t num)
 {
-	register pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
 	ivalue(x) = num;
+	bignum(x) = NIL;
 	set_num_integer(x);
 	return x;
 }
 
-pointer mk_real(register double num)
+pointer mk_bignum(int32_t col, pointer bn)
 {
-	register pointer x = get_cell(&NIL, &NIL);
+	pointer x = get_cell(&bn, &NIL);
+
+	type(x) = (T_NUMBER | T_ATOM);
+	ivalue(x) = col;
+	bignum(x) = bn;
+	set_num_integer(x);
+	return x;
+}
+
+pointer mk_real(double num)
+{
+	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
 	rvalue(x) = num;
@@ -587,13 +599,13 @@ pointer mk_real(register double num)
 /* get number atom */
 pointer mk_number(pointer v)
 {
-	return v->_isfixnum ? mk_integer(ivalue(v)) : mk_real(rvalue(v));
+	return v->_isfixnum ? (bignum(v) == NIL ? mk_integer(ivalue(v)) : mk_bignum(ivalue(v), bignum(v))) : mk_real(rvalue(v));
 }
 
 /* get new memblock */
-pointer mk_memblock(size_t len, pointer *a)
+pointer mk_memblock(size_t len, pointer *a, pointer *b)
 {
-	pointer x = get_consecutive_cells(2 + len / sizeof (struct cell), a);
+	pointer x = get_consecutive_cells(2 + len / sizeof(struct cell), a, b);
 
 #ifdef USE_COPYING_GC
 	strvalue(x) = (char *)(x + 1);
@@ -606,10 +618,51 @@ pointer mk_memblock(size_t len, pointer *a)
 	return x;
 }
 
+pointer mk_integer_from_str(const char *s, size_t len)
+{
+	int32_t i, j, col, sign;
+	pointer m, x;
+	uint32_t *temp;
+
+	for (i = 0; isspace(s[i]); i++);
+	if (s[i] == '-') {
+		sign = -1;
+		i++;
+	} else if (s[i] == '+') {
+		sign = 1;
+		i++;
+	} else {
+		sign = 1;
+	}
+	col = ((int32_t)((len - i) * log(10) / log(2) + 1) + 31) / 32;
+	m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
+	temp = (uint32_t *)strvalue(m);
+	memset(temp, 0, col * sizeof(uint32_t));
+	for (col = 1; isdigit(s[i]); i++) {
+		uint64_t t = (uint64_t)(s[i] - '0') << 32;
+		for (j = 0; j < col; j++) {
+			t = (uint64_t)temp[j] * 10 + (t >> 32);
+			temp[j] = (uint32_t)(t & UINT32_MAX);
+		}
+		if (t >> 32) temp[col++] = (uint32_t)(t >> 32);
+	}
+	x = get_cell(&m, &NIL);
+	type(x) = (T_NUMBER | T_ATOM);
+	if (col == 1 && (sign == 1 && temp[0] <= INT32_MAX || sign == -1 && temp[0] <= INT32_MAX + 1UL)) {
+		ivalue(x) = sign * temp[0];
+		bignum(x) = NIL;
+	} else {
+		ivalue(x) = sign * col;
+		bignum(x) = m;
+	}
+	set_num_integer(x);
+	return x;
+}
+
 /* get new string */
 pointer get_string_cell(size_t len, pointer *a)
 {
-	pointer x = mk_memblock(len, a);
+	pointer x = mk_memblock(len, a, &NIL);
 	pointer y = get_cell(&x, a);
 
 	type(y) = (T_STRING | T_ATOM);
@@ -648,7 +701,7 @@ pointer mk_empty_string(size_t len, int fill)
 /* get new symbol */
 pointer mk_symbol(const char *name)
 {
-	register pointer x, y = NIL;
+	pointer x, y = NIL;
 
 	/* fisrt check oblist */
 	for (x = oblist; x != NIL; y = x, x = cdr(x)) {
@@ -671,7 +724,7 @@ pointer mk_symbol(const char *name)
 /* get new uninterned-symbol */
 pointer mk_uninterned_symbol(const char *name)
 {
-	register pointer x;
+	pointer x;
 
 	x = cons(mk_string(name), NIL);
 	type(x) = T_SYMBOL;
@@ -739,7 +792,7 @@ pointer mk_atom(const char *q)
 	if (has_dec_point) {
 		return mk_real(atof(q));
 	}
-	return mk_integer(atol(q));
+	return mk_integer_from_str(q, p - q);
 }
 
 /* make constant */
@@ -797,7 +850,7 @@ pointer mk_const(const char *name)
 
 pointer mk_port(FILE *fp, int prop)
 {
-	pointer x = get_consecutive_cells(2, &NIL);
+	pointer x = get_consecutive_cells(2, &NIL, &NIL);
 
 	type(x + 1) = type(x) = (T_PORT | T_ATOM);
 	(x + 1)->_isfixnum = x->_isfixnum = (unsigned char)(prop | port_file);
@@ -823,7 +876,7 @@ pointer mk_port_string(pointer p, int prop)
 void fill_vector(pointer v, pointer a)
 {
 	int i;
-	int n = 1 + ivalue(v) / 2 + ivalue(v) % 2;
+	int n = 1 + (int)ivalue(v) / 2 + (int)ivalue(v) % 2;
 
 	for (i = 1; i < n; i++) {
 		type(v + i) = T_PAIR;
@@ -834,7 +887,7 @@ void fill_vector(pointer v, pointer a)
 pointer mk_vector(int len)
 {
 	int n = 1 + len / 2 + len % 2;
-	pointer x = get_consecutive_cells(n, &NIL);
+	pointer x = get_consecutive_cells(n, &NIL, &NIL);
 
 	type(x) = (T_VECTOR | T_ATOM);
 	ivalue(x) = len;
@@ -878,7 +931,7 @@ pointer mk_foreign_func(foreign_func ff, pointer *pp)
 /* get dump stack */
 pointer mk_dumpstack(pointer next)
 {
-	pointer x = get_consecutive_cells(3, &next);
+	pointer x = get_consecutive_cells(3, &next, &NIL);
 
 	type(x) = T_PAIR;
 	type(x + 1) = T_NUMBER;
@@ -907,8 +960,8 @@ pointer forward(pointer x)
 	type(x) = T_FORWARDED;
 	x->_object._forwarded = next;
 	if (is_memblock(next)) {
-		int i;
-		int n = 1 + strlength(next) / sizeof(struct cell);
+		size_t i;
+		size_t n = 1 + strlength(next) / sizeof(struct cell);
 		strvalue(next) = (char *)(next + 1);
 		for (i = 0; i < n; i++) {
 			*++next = *++x;
@@ -921,7 +974,7 @@ pointer forward(pointer x)
 		return next++ - 1;
 	} else if (is_vector(next)) {
 		int i;
-		int n = ivalue(next) / 2 + ivalue(next) % 2;
+		int n = (int)ivalue(next) / 2 + (int)ivalue(next) % 2;
 		for (i = 0; i < n; i++) {
 			*++next = *++x;
 			type(x) = T_FORWARDED;
@@ -953,10 +1006,10 @@ void forward_dump(pointer base, pointer curr)
 }
 #endif
 
-void gc(register pointer *a, register pointer *b)
+void gc(pointer *a, pointer *b)
 {
-	register pointer scan;
-	register pointer p, q;
+	pointer scan;
+	pointer p, q;
 	char temp[32];
 	int i;
 
@@ -1012,6 +1065,10 @@ void gc(register pointer *a, register pointer *b)
 	while (scan < next) {
 		switch (type(scan) & 0x1fff) {
 		case T_NUMBER:
+			if (scan->_isfixnum) {
+				bignum(scan) = forward(bignum(scan));
+			}
+			break;
 		case T_PROC:
 		case T_CHARACTER:
 		case T_VECTOR:
@@ -1076,7 +1133,7 @@ void gc(register pointer *a, register pointer *b)
 	}
 
 	if (gc_verbose)
-		printf(" done %ld cells are recovered.\n", fcells);
+		printf(" done %zu cells are recovered.\n", fcells);
 }
 
 #else /* USE_COPYING_GC */
@@ -1085,13 +1142,13 @@ void gc(register pointer *a, register pointer *b)
  *  We use algorithm E (Knuth, The Art of Computer Programming Vol.1,
  *  sec.3.5) for marking.
  */
-void mark(register pointer p)
+void mark(pointer p)
 {
-	register pointer t = 0, q;
+	pointer t = 0, q;
 
 E2:	setmark(p);
 	if (is_string(p)) {
-		int n = 1 + strlength(p) / sizeof(struct cell);
+		size_t n = 1 + strlength(p) / sizeof(struct cell);
 		mark((pointer)strvalue(p) + n);
 	} else if (is_port(p)) {
 		if (is_fileport(p)) {
@@ -1101,7 +1158,7 @@ E2:	setmark(p);
 		}
 	} else if (is_vector(p)) {
 		int i;
-		int n = 1 + ivalue(p) / 2 + ivalue(p) % 2;
+		int n = 1 + (int)ivalue(p) / 2 + (int)ivalue(p) % 2;
 		for (i = 1; i < n; i++) {
 			mark(p + i);
 		}
@@ -1162,9 +1219,9 @@ void mark_dump(pointer base, pointer curr)
 #endif
 
 /* garbage collection. parameter a, b is marked. */
-void gc(register pointer *a, register pointer *b)
+void gc(pointer *a, pointer *b)
 {
-	register pointer p;
+	pointer p;
 	int i;
 
 	if (gc_verbose)
@@ -1246,7 +1303,7 @@ void gc(register pointer *a, register pointer *b)
 	}
 
 	if (gc_verbose)
-		printf(" done %ld cells are recovered.\n", fcells);
+		printf(" done %zu cells are recovered.\n", fcells);
 }
 #endif /* USE_COPYING_GC */
 
@@ -1390,9 +1447,9 @@ void backchar(int c)
 	if (c != EOF) {
 		if (is_fileport(inport)) {
 			char utf8[4];
-			int n = utf32_to_utf8(c, utf8);
-			while (--n >= 0) {
-				internal_ungetc(utf8[n], port_file(inport));
+			size_t n = utf32_to_utf8(c, utf8);
+			while (n > 0) {
+				internal_ungetc(utf8[--n], port_file(inport));
 			}
 		} else if (port_curr(inport) != strvalue(car(inport))) {
 			port_curr(inport) -= utf32_to_utf8(c, NULL);
@@ -1445,7 +1502,7 @@ char *readstr(char *delim)
 			*p = '\0';
 			return strvalue(strbuff);
 		} else if ((len = p - strvalue(strbuff)) + 4 > strlength(strbuff)) {
-			pointer x = mk_memblock(strlength(strbuff) + 256, &NIL);
+			pointer x = mk_memblock(strlength(strbuff) + 256, &NIL, &NIL);
 			memcpy(strvalue(x), strvalue(strbuff), strlength(strbuff));
 			strbuff = x;
 			p = strvalue(strbuff) + len;
@@ -1472,7 +1529,7 @@ pointer readstrexp(void)
 		if (c == EOF) {
 			return F;
 		} else if ((len = p - strvalue(strbuff)) + 4 > strlength(strbuff)) {
-			pointer x = mk_memblock(strlength(strbuff) + 256, &NIL);
+			pointer x = mk_memblock(strlength(strbuff) + 256, &NIL, &NIL);
 			memcpy(strvalue(x), strvalue(strbuff), strlength(strbuff));
 			strbuff = x;
 			p = strvalue(strbuff) + len;
@@ -1705,10 +1762,40 @@ char *atom2str(pointer l, int f)
 		p = strvalue(strbuff);
 		if (f <= 1 || f == 10) {
 			if (l->_isfixnum) {
-				sprintf(p, "%ld", ivalue(l));
+				if (bignum(l) == NIL) {
+					sprintf(p, "%d", ivalue(l));
+				} else {
+					int32_t i, col = abs(ivalue(l));
+					size_t len = (size_t)((col * 32 * log(2) + 3) / log(10)) + 1;
+					pointer q = mk_memblock(col * sizeof(uint32_t), &l, &NIL);
+					uint32_t *temp = (uint32_t *)strvalue(q);
+					memcpy(temp, strvalue(bignum(l)), col * sizeof(uint32_t));
+					if (len >= strlength(strbuff)) {
+						strbuff = mk_memblock((len + 255) / 256 * 256, &l, &q);
+						p = strvalue(strbuff);
+					}
+					p = &p[strlength(strbuff) - 1];
+					*p = 0;
+					while (col > 0) {
+						uint64_t t = 0;
+						for (i = col - 1; i >= 0; i--) {
+							t = t << 32 | temp[i];
+							temp[i] = (uint32_t)(t / 10);
+							t = t % 10;
+						}
+						while (col > 0) {
+							if (temp[col - 1] > 0) {
+								break;
+							}
+							col--;
+						}
+						*--p = (char)t + '0';
+					}
+					if (ivalue(l) < 0) *--p = '-';
+				}
 			} else {
 				sprintf(p, "%.10g", rvalue(l));
-				f = strcspn(p, ".e");
+				f = (int)strcspn(p, ".e");
 				if (p[f] == 0) {
 					p[f] = '.';
 					p[f + 1] = '0';
@@ -1716,21 +1803,83 @@ char *atom2str(pointer l, int f)
 				}
 			}
 		} else if (f == 16) {
-			if (ivalue(l) >= 0)
-				sprintf(p, "%lx", ivalue(l));
-			else
-				sprintf(p, "-%lx", -ivalue(l));
+			if (bignum(l) == NIL) {
+				if (ivalue(l) >= 0) {
+					sprintf(p, "%x", ivalue(l));
+				} else {
+					sprintf(p, "-%x", -ivalue(l));
+				}
+			} else {
+				int32_t i, j, col = abs(ivalue(l));
+				size_t len = col * 8 + 1;
+				if (len >= strlength(strbuff)) {
+					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
+					p = strvalue(strbuff);
+				}
+				p = &p[strlength(strbuff) - 1];
+				*p = 0;
+				for (i = 0; i < col; i++) {
+					for (j = 0; j < 8; j++) {
+						uint32_t n = ((uint32_t *)strvalue(bignum(l)))[i] >> (4 * j);
+						if (i < col - 1 || n != 0) {
+							char c = n & 0xf;
+							*--p = (c < 10) ? c + '0' : c - 10 + 'a';
+						}
+					}
+				}
+				if (ivalue(l) < 0) *--p = '-';
+			}
 		} else if (f == 8) {
-			if (ivalue(l) >= 0)
-				sprintf(p, "%lo", ivalue(l));
-			else
-				sprintf(p, "-%lo", -ivalue(l));
+			if (bignum(l) == NIL) {
+				if (ivalue(l) >= 0)
+					sprintf(p, "%o", ivalue(l));
+				else
+					sprintf(p, "-%o", -ivalue(l));
+			} else {
+				int32_t i, j, col = abs(ivalue(l));
+				size_t len = col * 11 + 1;
+				if (len >= strlength(strbuff)) {
+					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
+					p = strvalue(strbuff);
+				}
+				p = &p[strlength(strbuff) - 1];
+				*p = 0;
+				for (i = 0; i < col; i++) {
+					for (j = 0; j < 11; j++) {
+						uint32_t n = ((uint32_t *)strvalue(bignum(l)))[i] >> (3 * j);
+						if (i < col - 1 || n != 0) {
+							*--p = (n & 0x7) + '0';
+						}
+					}
+				}
+				if (ivalue(l) < 0) *--p = '-';
+			}
 		} else if (f == 2) {
-			unsigned long b = (ivalue(l) < 0) ? -ivalue(l) : ivalue(l);
-			p = &p[strlength(strbuff) - 1];
-			*p = 0;
-			do { *--p = (b & 1) ? '1' : '0'; b >>= 1; } while (b != 0);
-			if (ivalue(l) < 0) *--p = '-';
+			if (bignum(l) == NIL) {
+				uint32_t b = (ivalue(l) < 0) ? -ivalue(l) : ivalue(l);
+				p = &p[strlength(strbuff) - 1];
+				*p = 0;
+				do { *--p = (b & 1) ? '1' : '0'; b >>= 1; } while (b != 0);
+				if (ivalue(l) < 0) *--p = '-';
+			} else {
+				int32_t i, j, col = abs(ivalue(l));
+				size_t len = col * 32 + 1;
+				if (len >= strlength(strbuff)) {
+					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
+					p = strvalue(strbuff);
+				}
+				p = &p[strlength(strbuff) - 1];
+				*p = 0;
+				for (i = 0; i < col; i++) {
+					for (j = 0; j < 32; j++) {
+						uint32_t n = ((uint32_t *)strvalue(bignum(l)))[i] >> j;
+						if (i < col - 1 || n != 0) {
+							*--p = (n & 0x1) + '0';
+						}
+					}
+				}
+				if (ivalue(l) < 0) *--p = '-';
+			}
 		} else {
 			p = NULL;
 		}
@@ -1742,7 +1891,7 @@ char *atom2str(pointer l, int f)
 			p = NULL;
 		}
 	} else if (is_character(l)) {
-		int c = ivalue(l);
+		int c = (int)ivalue(l);
 		p = strvalue(strbuff);
 		if (!f) {
 			*(p + utf32_to_utf8(c, p)) = '\0';
@@ -1779,7 +1928,7 @@ char *atom2str(pointer l, int f)
 		}
 	} else if (is_proc(l)) {
 		p = strvalue(strbuff);
-		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
+		sprintf(p, "#<PROCEDURE %d>", procnum(l));
 	} else if (is_port(l)) {
 		if (port_file(l) != NULL) {
 			p = "#<PORT>";
@@ -1802,7 +1951,7 @@ char *atom2str(pointer l, int f)
 		p = "#<CONTINUATION>";
 	} else if (is_foreign(l)) {
 		p = strvalue(strbuff);
-		sprintf(p, "#<FOREIGN PROCEDURE %ld>", procnum(l));
+		sprintf(p, "#<FOREIGN PROCEDURE %d>", procnum(l));
 	} else {
 		p = "#<ERROR>";
 	}
@@ -1810,7 +1959,7 @@ char *atom2str(pointer l, int f)
 }
 
 /* print atoms */
-int printatom(pointer l, int f)
+size_t printatom(pointer l, int f)
 {
 	char *p = atom2str(l, f);
 
@@ -1824,13 +1973,709 @@ int printatom(pointer l, int f)
 	return 0;
 }
 
+/* ========== Routines for Numerical operations ========== */
+
+/* greatest common divisor */
+static int64_t gcd(int32_t x, int32_t y)
+{
+	int32_t z;
+	while (x != 0) {
+		z = x;
+		x = y % x;
+		y = z;
+	}
+	return llabs(y);
+}
+
+/* least common multiple */
+static int64_t lcm(int32_t x, int32_t y)
+{
+	if (x == 0 || y == 0) {
+		return 0;
+	}
+	return llabs(x / gcd(x, y) * y);
+}
+
+/* the first bit1 position */
+static int32_t find1_32(uint32_t val)
+{
+	static const int32_t clz_table_4bit[16] = { 4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0 };
+	int32_t n = 32;
+
+	if ((val & 0xFFFF0000) == 0) { n -= 16; val <<= 16; }
+	if ((val & 0xFF000000) == 0) { n -= 8; val <<= 8; }
+	if ((val & 0xF0000000) == 0) { n -= 4; val <<= 4; }
+
+	return n - clz_table_4bit[val >> (32 - 4)];
+}
+
+/* if x == y */
+static int bn_eq(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i;
+	if (colx != coly) {
+		return  0;
+	}
+	for (i = colx - 1; i >= 0; i--) {
+		if (x[i] != y[i]) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* if x > y */
+static int bn_gt(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i;
+	if (colx > coly) {
+		return  1;
+	} else if (colx < coly) {
+		return 0;
+	}
+	for (i = colx - 1; i >= 0; i--) {
+		if (x[i] > y[i]) {
+			return 1;
+		} else if (x[i] < y[i]) {
+			return 0;
+		}
+	}
+	return 0;
+}
+
+/* if x >= y */
+static int bn_ge(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i;
+	if (colx > coly) {
+		return  1;
+	} else if (colx < coly) {
+		return 0;
+	}
+	for (i = colx - 1; i >= 0; i--) {
+		if (x[i] > y[i]) {
+			return 1;
+		} else if (x[i] < y[i]) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* z = x + y */
+static int bn_add(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i, col = (colx < coly) ? colx : coly;
+	uint64_t t = 0;
+	for (i = 0; i < col; i++) {
+		t = (uint64_t)x[i] + y[i] + (t >> 32);
+		z[i] = (uint32_t)t;
+	}
+	if (colx > coly) {
+		*colz = colx;
+		for (; i < colx; i++) {
+			t = x[i] + (t >> 32);
+			z[i] = (uint32_t)t;
+		}
+	} else {
+		*colz = coly;
+		for (; i < coly; i++) {
+			t = y[i] + (t >> 32);
+			z[i] = (uint32_t)t;
+		}
+	}
+	if (t >>= 32) {
+		if (*colz >= 256) return 0;
+		z[(*colz)++] = (uint32_t)t;
+	}
+	return 1;
+}
+
+/* z = x - y */
+static int bn_sub(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i;
+	uint32_t carry = 0;
+	for (i = 0; i < coly; i++) {
+		uint64_t t = y[i] + carry;
+		if (x[i] >= t) {
+			z[i] = (uint32_t)(x[i] - t);
+			carry = 0;
+		} else {
+			z[i] = (uint32_t)(((uint64_t)1 << 32) + x[i] - t);
+			carry = 1;
+		}
+	}
+	*colz = colx;
+	for (; i < colx; i++) {
+		if (x[i] >= carry) {
+			z[i] = (uint32_t)(x[i] - carry);
+			carry = 0;
+		} else {
+			z[i] = (uint32_t)(((uint64_t)1 << 32) + x[i] - carry);
+			carry = 1;
+		}
+	}
+	while (*colz > 0) {
+		if (z[*colz - 1] > 0) {
+			break;
+		}
+		(*colz)--;
+	}
+	return 1;
+}
+
+/* z = x * y */
+static int bn_mul(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i, j;
+	memset(z, 0, sizeof(uint32_t) * (colx + coly));
+	for (i = 0; i < colx; i++) {
+		uint64_t t = 0;
+		for (j = 0; j < coly; j++) {
+			t = z[i + j] + (uint64_t)x[i] * y[j] + (t >> 32);
+			z[i + j] = (uint32_t)t;
+		}
+		if (t >>= 32) {
+			z[i + j] = (uint32_t)t;
+		}
+	}
+	*colz = colx + coly;
+	while (*colz > 0) {
+		if (z[*colz - 1] > 0) {
+			break;
+		}
+		(*colz)--;
+	}
+	return 1;
+}
+
+/* z = x << n */
+static int bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
+{
+	int32_t i, q = n / 32, r = n & 0x1F;
+
+	if (r == 0) {
+		if (colx + q > 256) {
+			return 0;
+		}
+		for (i = colx - 1; i >= 0; --i) {
+			z[i + q] = x[i];
+		}
+		memset(z, 0, sizeof(int32_t) * q);
+		*colz = colx + q;
+	} else {
+		int32_t col = 0;
+		if (x[colx - 1] >> (32 - r)) {
+			col++;
+			z[colx + q] = 0;
+		}
+		if (colx + q + col > 256) {
+			return 0;
+		}
+		for (i = colx - 1; i >= 0; --i) {
+			z[i + q + 1] |= x[i] >> (32 - r);
+			z[i + q] = x[i] << r;
+		}
+		memset(z, 0, sizeof(int32_t) * q);
+		*colz = colx + q + col;
+	}
+	while (*colz > 0) {
+		if (z[*colz - 1] > 0) {
+			break;
+		}
+		(*colz)--;
+	}
+	return 1;
+}
+
+/* z = x >> n */
+static int bn_sftr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
+{
+	int32_t i, q = n / 32, r = n & 0x1F;
+
+	if (r == 0) {
+		if (colx - q <= 0) {
+			*colz = 0;
+		} else {
+			for (i = q; i < colx; i++) {
+				z[i - q] = x[i];
+			}
+			*colz = colx - q;
+		}
+	} else {
+		if (colx - q <= 0) {
+			*colz = 0;
+		} else {
+			int32_t col = 0;
+			if ((x[colx - 1] >> r) == 0) {
+				col--;
+			}
+			z[0] = x[q] >> r;
+			for (i = q + 1; i < colx; i++) {
+				z[i - q - 1] |= x[i] << (32 - r);
+				z[i - q] = x[i] >> r;
+			}
+			*colz = colx - q + col;
+		}
+	}
+	while (*colz > 0) {
+		if (z[*colz - 1] > 0) {
+			break;
+		}
+		(*colz)--;
+	}
+	return 1;
+}
+
+/* q = x / y + r */
+static int bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+{
+	int32_t i;
+	if (coly == 1) {
+		uint64_t t = 0;
+		for (i = colx - 1; i >= 0; i--) {
+			t = t << 32 | x[i];
+			q[i] = (uint32_t)(t / y[0]);
+			t = t % y[0];
+		}
+		*colq = colx;
+		while (*colq > 0) {
+			if (q[*colq - 1] > 0) {
+				break;
+			}
+			(*colq)--;
+		}
+		r[0] = (int32_t)t;
+		*colr = 1;
+	} else {
+		uint32_t *t_a = r + *colr, *t_b = t_a + 1 + colx, *t_x = t_b + 1 + coly;
+		int32_t cola, colb, d = 32 - find1_32(y[coly - 1]);
+		if (d == 0) {
+			memcpy(t_a, x, sizeof(uint32_t) * colx);
+			memcpy(t_b, y, sizeof(uint32_t) * coly);
+			cola = colx;
+			colb = coly;
+		} else {
+			if (!bn_sftl(t_a, &cola, x, colx, d)) {
+				return 0;
+			}
+			if (!bn_sftl(t_b, &colb, y, coly, d)) {
+				return 0;
+			}
+		}
+		*colq = cola - colb;
+		i = *colq;
+		if (t_a[cola - 1] >= t_b[colb - 1]) {
+			if (!bn_sftl(t_x, &colx, t_b, colb, *colq * 32)) {
+				return 0;
+			}
+			q[(*colq)++] = 1;
+			if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
+				return 0;
+			}
+		}
+		while (--i >= 0 && cola > 1) {
+			uint64_t aa = (uint64_t)t_a[cola - 1] << 32 | t_a[cola - 2];
+			uint32_t qq = (uint32_t)(aa / t_b[colb - 1]);
+			if (cola > 2 && colb > 1) {
+				uint64_t rr = aa % t_b[colb - 1];
+				while ((rr << 32 | t_a[cola - 3]) < (uint64_t)qq * t_b[colb - 2]) {
+					qq--;
+					rr += t_b[colb - 2];
+					if (rr > UINT32_MAX) break;
+				}
+			}
+			do {
+				if (!bn_mul(t_x, &colx, t_b, colb, (uint32_t *)&qq, 1)) {
+					return 0;
+				}
+				--qq;
+				if (!bn_sftl(t_x, &colx, t_x, colx, i * 32)) {
+					return 0;
+				}
+			} while (bn_gt(t_x, colx, t_a, cola));
+			q[i] = qq + 1;
+			if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
+				return 0;
+			}
+		}
+		while (*colq > 0) {
+			if (q[*colq - 1] > 0) {
+				break;
+			}
+			(*colq)--;
+		}
+
+		if (d > 0) {
+			if (!bn_sftr(r, colr, t_a, cola, d)) {
+				return 0;
+			}
+		} else {
+			memcpy(r, t_a, cola * 32);
+			*colr = cola;
+			while (*colr > 0) {
+				if (r[*colr - 1] > 0) {
+					break;
+				}
+				(*colr)--;
+			}
+		}
+	}
+	return 1;
+}
+
+static double get_rvalue(pointer x)
+{
+	if (x->_isfixnum) {
+		if (bignum(x) == NIL) {
+			return (double)ivalue(x);
+		} else {
+			int32_t colx = abs(ivalue(x)), bitx = find1_32(((uint32_t *)strvalue(bignum(x)))[colx - 1]);
+			uint64_t d = (uint64_t)((uint32_t *)strvalue(bignum(x)))[colx - 1] << (64 - bitx);
+			d += (uint64_t)((uint32_t *)strvalue(bignum(x)))[colx - 2] << (32 - bitx);
+			if (bitx < 32 && colx > 2) {
+				d += (uint64_t)((uint32_t *)strvalue(bignum(x)))[colx - 3] >> bitx;
+			}
+			return (ivalue(x) < 0 ? -1 : 1) * ldexp((double)d, bitx + (colx - 3) * 32);
+		}
+	} else {
+		return rvalue(x);
+	}
+}
+
+static void bignum_from_int64(pointer x, int64_t d)
+{
+	type(x) = T_NUMBER;
+	set_num_integer(x);
+	if (INT32_MIN <= d && d <= INT32_MAX) {
+		ivalue(x) = (int32_t)d;
+		bignum(x) = NIL;
+	} else if (-((int64_t)UINT32_MAX + 1) <= d && d <= UINT32_MAX) {
+		ivalue(x) = d < 0 ? -1 : 1;
+		bignum(x) = mk_memblock(1 * sizeof(uint32_t), &x, &NIL);
+		if (d < 0) d = (uint32_t)~d + 1;
+		((uint32_t *)strvalue(bignum(x)))[0] = (uint32_t)d;
+	} else {
+		ivalue(x) = d < 0 ? -2 : 2;
+		bignum(x) = mk_memblock(2 * sizeof(uint32_t), &x, &NIL);
+		if (d < 0) d = (uint64_t)~d + 1;
+		((uint32_t *)strvalue(bignum(x)))[1] = (uint32_t)(d >> 32);
+		((uint32_t *)strvalue(bignum(x)))[0] = (uint32_t)d;
+	}
+}
+
+static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
+{
+	int64_t d = (int64_t)sign * ((uint32_t *)strvalue(m))[0];
+	type(z) = T_NUMBER;
+	set_num_integer(z);
+	if (col <= 1 && INT32_MIN <= d && d <= INT32_MAX) {
+		ivalue(z) = (int32_t)d;
+		bignum(z) = NIL;
+	} else {
+		ivalue(z) = sign * col;
+		bignum(z) = m;
+	}
+}
+
+/* if |x| == |y| */
+static int bignum_eq(pointer x, pointer y)
+{
+	return bn_eq((uint32_t *)strvalue(bignum(x)), abs(ivalue(x)), (uint32_t *)strvalue(bignum(y)), abs(ivalue(y)));
+}
+
+/* if |x| > |y| */
+static int bignum_gt(pointer x, pointer y)
+{
+	return bn_gt((uint32_t *)strvalue(bignum(x)), abs(ivalue(x)), (uint32_t *)strvalue(bignum(y)), abs(ivalue(y)));
+}
+
+/* if |x| >= |y| */
+static int bignum_ge(pointer x, pointer y)
+{
+	return bn_ge((uint32_t *)strvalue(bignum(x)), abs(ivalue(x)), (uint32_t *)strvalue(bignum(y)), abs(ivalue(y)));
+}
+
+/* z = |x| */
+static int bignum_abs(pointer z, pointer x)
+{
+	if (bignum(z) == NIL) {
+		bignum_from_int64(z, ivalue(x) < 0 ? (uint32_t)~ivalue(x) + 1 : ivalue(x));
+	} else {
+		pointer m = mk_memblock(abs(ivalue(x)) * sizeof(uint32_t), &z, &x);
+		memcpy(strvalue(m), strvalue(bignum(x)), abs(ivalue(x)) * sizeof(uint32_t));
+		bignum_adjust(z, m, abs(ivalue(x)), 1);
+	}
+	return 1;
+}
+
+/* z = sign * (|x|+|y|) */
+static int bignum_add(pointer z, pointer x, pointer y, int32_t sign)
+{
+	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), col = (colx > coly ? colx : coly) + 1;
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &y);
+	if (bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)strvalue(bignum(y)), coly) == 0) {
+		return 0;
+	}
+	bignum_adjust(z, m, col, sign);
+	return 1;
+}
+
+/* z = sign * (|x|+|val|) */
+static int bignum_add_imm(pointer z, pointer x, int32_t val, int32_t sign)
+{
+	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
+	int32_t colx = abs(ivalue(x)), col = (colx > 1 ? colx : 1) + 1;
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &NIL);
+	if (bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	bignum_adjust(z, m, col, sign);
+	return 1;
+}
+
+/* z = sign * (|x|-|y|) */
+static int bignum_sub(pointer z, pointer x, pointer y, int32_t sign)
+{
+	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), col = colx;
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &y);
+	if (bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)strvalue(bignum(y)), coly) == 0) {
+		return 0;
+	}
+	bignum_adjust(z, m, col, sign);
+	return 1;
+}
+
+/* z = sign * (|x|-|val|) */
+static int bignum_sub_imm(pointer z, pointer x, int32_t val, int32_t sign)
+{
+	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
+	int32_t colx = abs(ivalue(x)), col = colx;
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &NIL);
+	if (bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	bignum_adjust(z, m, col, sign);
+	return 1;
+}
+
+/* z = x * y */
+static int bignum_mul(pointer z, pointer x, pointer y)
+{
+	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), col = colx + coly;
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &y);
+	if (bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, ((uint32_t *)strvalue(bignum(y))), coly) == 0) {
+		return 0;
+	}
+	bignum_adjust(z, m, col, (ivalue(x) < 0 ? -1 : 1) * (ivalue(y) < 0 ? -1 : 1));
+	return 1;
+}
+
+/* z = x * val */
+static int bignum_mul_imm(pointer z, pointer x, int32_t val)
+{
+	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
+	int32_t colx = abs(ivalue(x)), col = colx + 1;
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &NIL);
+	if (bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	bignum_adjust(z, m, col, (ivalue(x) < 0 ? -1 : 1) * (val < 0 ? -1 : 1));
+	return 1;
+}
+
+/* q = x / y + r*/
+static int32_t bignum_div(pointer q, pointer r, pointer x, pointer y)
+{
+	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), colq = colx, colr = coly, sign = (ivalue(x) < 0 ? -1 : 1) * (ivalue(y) < 0 ? -1 : 1);
+	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &y);
+	pointer a = cons(x, y), b = mk_memblock(2 * (colq + colr + 1) * sizeof(uint32_t), &m, &a);
+	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(b);
+	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(car(a))), colx, (uint32_t *)strvalue(bignum(cdr(a))), coly) == 0) {
+		return 0;
+	}
+	bignum_adjust(q, m, colq, sign);
+
+	m = mk_memblock(colr * sizeof(uint32_t), &q, &b);
+	memcpy((uint32_t *)strvalue(m), t_r, colr * sizeof(uint32_t));
+	bignum_adjust(r, m, colr, ivalue(x) < 0 ? -1 : 1);
+	return 1;
+}
+
+/* q = x / val + r */
+static int bignum_div_imm(pointer q, pointer r, pointer x, int32_t val)
+{
+	int32_t colx = abs(ivalue(x)), colq = colx, colr, sign = (ivalue(x) < 0 ? -1 : 1) * (val < 0 ? -1 : 1);
+	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL);
+	uint32_t *t_q = (uint32_t *)strvalue(m), tr, y = val < 0 ? (uint32_t)~val + 1 : val;
+	if (bn_div(t_q, &colq, &tr, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	bignum_adjust(q, m, colq, sign);
+
+	type(r) = T_NUMBER;
+	set_num_integer(r);
+	ivalue(r) = (int32_t)tr * (ivalue(x) < 0 ? -1 : 1);
+	bignum(r) = NIL;
+	return 1;
+}
+
+/* r = gcd(x, y) */
+static int bignum_gcd(pointer r, pointer x, pointer y)
+{
+	int32_t cols = abs(ivalue(x)), colt = abs(ivalue(y));
+	pointer s, t, u;
+	t = mk_memblock(colt * sizeof(uint32_t), &x, &y);
+	memcpy(strvalue(t), strvalue(bignum(y)), colt * sizeof(uint32_t));
+	s = mk_memblock(cols * sizeof(uint32_t), &x, &t);
+	memcpy(strvalue(s), strvalue(bignum(x)), cols * sizeof(uint32_t));
+	u = mk_memblock(2 * (colt + cols + 1) * sizeof(uint32_t), &s, &t);
+	while (colt > 1 || (colt == 1 && ((uint32_t *)strvalue(t))[0] > 0)) {
+		int32_t colq = cols, colr = colt;
+		uint32_t *t_q = (uint32_t *)strvalue(s), *t_r = (uint32_t *)strvalue(u);
+		if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(s), cols, (uint32_t *)strvalue(t), colt) == 0) {
+			return 0;
+		}
+		memcpy(strvalue(s), strvalue(t), colt * sizeof(uint32_t));
+		cols = colt;
+		if (bn_sub((uint32_t *)strvalue(t), &colt, (uint32_t *)strvalue(t), colt, t_r, colr) == 0) {
+			return 0;
+		}
+		if (bn_gt((uint32_t *)strvalue(t), colt, t_r, colr)) {
+			memcpy(strvalue(t), t_r, colr * sizeof(uint32_t));
+			colt = colr;
+		}
+	}
+	bignum_adjust(r, s, cols, 1);
+	return 1;
+}
+
+/* r = gcd(x, val) */
+static int bignum_gcd_imm(pointer r, pointer x, int32_t val)
+{
+	int32_t colx = abs(ivalue(x)), colq = colx, colr;
+	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL), n = mk_memblock(sizeof(uint32_t), &x, &m);
+	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(n), y = val < 0 ? (uint32_t)~val + 1 : val;
+	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	if (t_r[0] > 0) {
+		t_r[0] = (uint32_t)gcd(t_r[0], y);
+	} else {
+		t_r[0] = y;
+	}
+	bignum_adjust(r, n, 1, 1);
+	return 1;
+}
+
+/* r = lcm(x, y) */
+static int bignum_lcm(pointer r, pointer x, pointer y)
+{
+	int32_t colq, colr, cols = abs(ivalue(x)), colt = abs(ivalue(y));
+	pointer s, t, u;
+	uint32_t *t_q, *t_r;
+	t = mk_memblock((colt + cols) * sizeof(uint32_t), &x, &y);
+	memcpy(strvalue(t), strvalue(bignum(y)), colt * sizeof(uint32_t));
+	s = mk_memblock(cols * sizeof(uint32_t), &x, &t);
+	memcpy(strvalue(s), strvalue(bignum(x)), cols * sizeof(uint32_t));
+	u = mk_memblock(2 * (colt + cols + 1) * sizeof(uint32_t), &s, &t);
+	t_q = (uint32_t *)strvalue(s);
+	t_r = (uint32_t *)strvalue(u);
+	while (colt > 1 || (colt == 1 && ((uint32_t *)strvalue(t))[0] > 0)) {
+		colq = cols;
+		colr = colt;
+		if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(s), cols, (uint32_t *)strvalue(t), colt) == 0) {
+			return 0;
+		}
+		memcpy(strvalue(s), strvalue(t), colt * sizeof(uint32_t));
+		cols = colt;
+		if (bn_sub((uint32_t *)strvalue(t), &colt, (uint32_t *)strvalue(t), colt, t_r, colr) == 0) {
+			return 0;
+		}
+		if (bn_gt((uint32_t *)strvalue(t), colt, t_r, colr)) {
+			memcpy(strvalue(t), t_r, colr * sizeof(uint32_t));
+			colt = colr;
+		}
+	}
+	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), abs(ivalue(x)), (uint32_t *)strvalue(s), cols) == 0) {
+		return 0;
+	}
+	if (bn_mul((uint32_t *)strvalue(t), &colt, t_q, colq, (uint32_t *)strvalue(bignum(y)), abs(ivalue(y))) == 0) {
+		return 0;
+	}
+	bignum_adjust(r, t, colt, 1);
+	return 1;
+}
+
+/* r = lcm(x, val) */
+static int bignum_lcm_imm(pointer r, pointer x, int32_t val)
+{
+	int32_t colx = abs(ivalue(x)), colq = colx, colr;
+	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL), n = mk_memblock(sizeof(uint32_t), &x, &m);
+	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(n), y = val < 0 ? (uint32_t)~val + 1 : val;
+	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	if (t_r[0] > 0) {
+		y = (uint32_t)gcd(t_r[0], y);
+	}
+	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	n = mk_memblock((colq + 1) * sizeof(uint32_t), &x, &m);
+	if (bn_mul((uint32_t *)strvalue(n), &colr, (uint32_t *)strvalue(m), colq, (uint32_t *)&y, 1) == 0) {
+		return 0;
+	}
+	bignum_adjust(r, n, colr, 1);
+	return 1;
+}
+
+/* z = pow(x, val) */
+static int bignum_pow(pointer z, pointer x, int32_t val)
+{
+	int32_t colx = bignum(x) == NIL ? 1 : abs(ivalue(x));
+	uint32_t v_x = bignum(x) == NIL ? (ivalue(x) < 0 ? (uint32_t)~ivalue(x) + 1 : ivalue(x)) : ((uint32_t *)strvalue(bignum(x)))[colx - 1];
+	int32_t colz = ((find1_32(v_x) + 32 * (colx - 1)) * val + 31) / 32;
+	int32_t sign = ivalue(x) < 0 && (val & 0x1) ? -1 : 1;
+	pointer m_x = mk_memblock(colz * sizeof(uint32_t), &x, &NIL);
+	pointer m_z = mk_memblock(colz * sizeof(uint32_t), &x, &m_x);
+	uint32_t *t_x, *t_z, *tmp;
+	if (bignum(x) == NIL) {
+		((uint32_t *)strvalue(m_x))[0] = v_x;
+	} else {
+		memcpy((uint32_t *)strvalue(m_x), strvalue(bignum(x)), colx * sizeof(uint32_t));
+	}
+	tmp = (uint32_t *)strvalue(mk_memblock(colz * sizeof(uint32_t), &m_x, &m_z));
+	t_x = (uint32_t *)strvalue(m_x);
+	t_z = (uint32_t *)strvalue(m_z);
+	t_z[0] = 1;
+	colz = 1;
+	while (val > 0) {
+		if (val & 0x1) {
+			val--;
+			if (bn_mul(tmp, &colz, t_z, colz, t_x, colx) == 0) {
+				return 0;
+			}
+			memcpy(t_z, tmp, colz * sizeof(uint32_t));
+		} else {
+			val >>= 1;
+			if (bn_mul(tmp, &colx, t_x, colx, t_x, colx) == 0) {
+				return 0;
+			}
+			memcpy(t_x, tmp, colx * sizeof(uint32_t));
+		}
+	}
+	bignum_adjust(z, m_z, colz, sign);
+	return 1;
+}
 
 /* ========== Routines for Evaluation Cycle ========== */
 
 /* make closure. c is code. e is environment */
 pointer mk_closure(pointer c, pointer e)
 {
-	register pointer x = get_cell(&c, &e);
+	pointer x = get_cell(&c, &e);
 
 	type(x) = T_CLOSURE;
 	exttype(x) = 0;
@@ -1842,7 +2687,7 @@ pointer mk_closure(pointer c, pointer e)
 /* make continuation. */
 pointer mk_continuation(pointer d)
 {
-	register pointer x = get_cell(&NIL, &d);
+	pointer x = get_cell(&NIL, &d);
 
 	type(x) = T_CONTINUATION;
 	car(x) = NIL;
@@ -1864,7 +2709,7 @@ pointer reverse(pointer a) /* a must be checked by gc */
 /* reverse list --- no make new cells */
 pointer non_alloc_rev(pointer term, pointer list)
 {
-	register pointer p = list, result = term, q;
+	pointer p = list, result = term, q;
 
 	while (p != NIL) {
 		q = cdr(p);
@@ -1947,7 +2792,7 @@ pointer shared_tail(pointer a, pointer b)
 }
 
 /* equivalence of atoms */
-int eqv(register pointer a, register pointer b)
+int eqv(pointer a, pointer b)
 {
 	if (is_string(a)) {
 		if (is_string(b))
@@ -1955,10 +2800,23 @@ int eqv(register pointer a, register pointer b)
 		else
 			return 0;
 	} else if (is_number(a)) {
-		if (is_number(b))
-			return (ivalue(a) == ivalue(b));
-		else
+		if (is_number(b)) {
+			if (a->_isfixnum && b->_isfixnum) {
+				if (bignum(a) == NIL && bignum(b) == NIL) {
+					return (ivalue(a) == ivalue(b));
+				} else if (bignum(a) != NIL && bignum(b) != NIL && (ivalue(a) < 0) == (ivalue(b) < 0)) {
+					return bignum_eq(a, b);
+				} else {
+					return 0;
+				}
+			} else if (!a->_isfixnum && !b->_isfixnum) {
+				return (rvalue(a) == rvalue(b));
+			} else {
+				return 0;
+			}
+		} else {
 			return 0;
+		}
 	} else if (is_character(a)) {
 		if (is_character(b))
 			return (ivalue(a) == ivalue(b));
@@ -1969,7 +2827,7 @@ int eqv(register pointer a, register pointer b)
 }
 
 /* equivalence of pairs, vectors and strings recursively */
-int equal(register pointer a, register pointer b)
+int equal(pointer a, pointer b)
 {
 	if (is_pair(a)) {
 		if (is_pair(b))
@@ -2013,7 +2871,7 @@ int is_ellipsis(pointer p)
 	return p == ELLIPSIS;
 }
 
-int matchpattern(pointer p, pointer f, pointer keyword, long *s)
+int matchpattern(pointer p, pointer f, pointer keyword, int *s)
 {
 	pointer x;
 	if (is_symbol(p)) {
@@ -2076,7 +2934,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, long *s)
 }
 
 /* note: value = (vector of bindings, list of keywords) */
-void bindpattern(pointer p, pointer f, long d, long n, long *s)
+void bindpattern(pointer p, pointer f, int d, int n, int *s)
 {
 	pointer x;
 	if (is_symbol(p)) {
@@ -2153,7 +3011,7 @@ pointer expandsymbol(pointer p)
 		mark_y = cdr(mark_y);
 		return cons(x, y);
 	} else if (is_vector(p)) {
-		long i, len = ivalue(p);
+		int i, len = (int)ivalue(p);
 		mark_x = cons(p, mark_x);
 		y = NIL;
 		for (i = 0; i < len; i++) {
@@ -2178,11 +3036,11 @@ pointer expandsymbol(pointer p)
 	}
 }
 
-pointer expandpattern(pointer p, long d, long n, long *e)
+pointer expandpattern(pointer p, int d, int n, int *e)
 {
 	pointer x, y = NULL;
-	long i, j;
-	*((long *)strvalue(car(code)) + d) = n;
+	int i, j;
+	*((int *)strvalue(car(code)) + d) = n;
 	if (is_symbol(p)) {
 		int find = 0;
 		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
@@ -2192,19 +3050,19 @@ pointer expandpattern(pointer p, long d, long n, long *e)
 			}
 		}
 		for (i = 0; i < ivalue(car(value)); i += 3) {
-			long e_d, e_n;
+			int e_d, e_n;
 			x = vector_elem(car(value), i);
 			if (x == p) {
 				find = 1;
 			}
-			e_d = ivalue(car(vector_elem(car(value), i + 1)));
-			e_n = ivalue(cdr(vector_elem(car(value), i + 1)));
+			e_d = (int)ivalue(car(vector_elem(car(value), i + 1)));
+			e_n = (int)ivalue(cdr(vector_elem(car(value), i + 1)));
 			if (e_d < d) {
-				if (*((long *)strvalue(car(code)) + e_d) == e_n) {
-					*((long *)strvalue(cdr(code)) + e_d) = 1;
+				if (*((int *)strvalue(car(code)) + e_d) == e_n) {
+					*((int *)strvalue(cdr(code)) + e_d) = 1;
 					if (p == x) {
 						for (j = 0; j < e_d; j++) {
-							if (*((long *)strvalue(cdr(code)) + j) == 0) break;
+							if (*((int *)strvalue(cdr(code)) + j) == 0) break;
 						}
 						if (j < e_d) continue;
 						if (*e < e_d) {
@@ -2219,7 +3077,7 @@ pointer expandpattern(pointer p, long d, long n, long *e)
 				}
 			} else if (p == x && e_d == d && e_n == n) {
 				for (j = 0; j < d; j++) {
-					if (*((long *)strvalue(cdr(code)) + j) == 0) break;
+					if (*((int *)strvalue(cdr(code)) + j) == 0) break;
 				}
 				if (j < d) continue;
 				if (*e < d) {
@@ -2274,7 +3132,7 @@ pointer expandpattern(pointer p, long d, long n, long *e)
 		}
 		return cons(x, y);
 	} else if (is_vector(p)) {
-		long len = ivalue(p);
+		int len = (int)ivalue(p);
 		mark_x = cons(p, mark_x);
 		y = NIL;
 		for (i = 0; i < len; i++) {
@@ -2345,7 +3203,7 @@ pointer mappend(pointer f, pointer l, pointer r)
 	pointer x;
 
 	if (car(f) == NIL ||
-		is_pair(r) && car(l) == QUOTE && cadr(r) == NIL) {
+		(is_pair(r) && car(l) == QUOTE && cadr(r) == NIL)) {
 		return l;
 	} else {
 		args = l;
@@ -2354,27 +3212,6 @@ pointer mappend(pointer f, pointer l, pointer r)
 		x = mk_symbol("append");
 		return cons(x, args);
 	}
-}
-
-/* greatest common divisor */
-int gcd(int a, int b)
-{
-	int c;
-	while (a != 0) {
-		c = a;
-		a = b % a;
-		b = c;
-	}
-	return abs(b);
-}
-
-/* least common multiple */
-int lcm(int a, int b)
-{
-	if (a == 0 || b == 0) {
-		return 0;
-	}
-	return abs(a) / gcd(a, b) * abs(b);
 }
 
 /* true or false value macro */
@@ -2409,7 +3246,7 @@ int lcm(int a, int b)
 		pointer d = mk_dumpstack(dump);        \
 		dump_prev(dump) = d;                   \
 	}                                          \
-	dump_op(dump) = (pointer)(a);              \
+	dump_op(dump) = (pointer)(intptr_t)(a);    \
 	dump_args(dump) = (b);                     \
 	dump_envir(dump) = envir;                  \
 	dump_code(dump) = (c);                     \
@@ -2419,13 +3256,13 @@ int lcm(int a, int b)
 	value = (a);                               \
 	if (dump == dump_base) return 0;           \
 	dump = dump_next(dump);                    \
-	operator = (int)dump_op(dump);             \
+	operator = (int)(intptr_t)dump_op(dump);   \
 	args = dump_args(dump);                    \
 	envir = dump_envir(dump);                  \
 	code = dump_code(dump);                    \
 	goto LOOP; END
 
-#define s_next_op() ((int)dump_op(dump_next(dump)))
+#define s_next_op() ((int)(intptr_t)dump_op(dump_next(dump)))
 
 pointer s_clone(pointer d) {
 	pointer p;
@@ -2433,7 +3270,7 @@ pointer s_clone(pointer d) {
 	if (d == NIL) return dump_base;
 
 	p = s_clone(cddddr(d));
-	dump_op(p) = (pointer)ivalue(car(d));
+	dump_op(p) = (pointer)(intptr_t)ivalue(car(d));
 	dump_args(p) = cadr(d);
 	dump_envir(p) = caddr(d);
 	dump_code(p) = cadddr(d);
@@ -2447,7 +3284,7 @@ pointer s_clone_save(void) {
 		p = cons(dump_code(mark_x), p);
 		p = cons(dump_envir(mark_x), p);
 		args = cons(dump_args(mark_x), p);
-		p = mk_integer((long)dump_op(mark_x));
+		p = mk_integer((int32_t)(intptr_t)dump_op(mark_x));
 		p = cons(p, args);
 	}
 	return p;
@@ -2465,7 +3302,7 @@ pointer s_clone_save(void) {
 #define s_return(a) BEGIN                      \
 	value = (a);                               \
 	if (dump == NIL) return 0;                 \
-	operator = (int)ivalue(car(dump));         \
+	operator = (intptr_t)ivalue(car(dump));    \
 	args = cadr(dump);                         \
 	envir = caddr(dump);                       \
 	code = cadddr(dump);                       \
@@ -2942,7 +3779,7 @@ int Eval_Cycle(int operator)
 	int print_flag;
 	pointer x, y;
 	struct cell v;
-	long w;
+	int64_t w;
 
 LOOP:
 	c_sink = NIL;
@@ -3217,7 +4054,7 @@ OP_QQUOTE1:
 			s_save(OP_QQUOTE2, NIL, NIL);
 			x = NIL;
 			for (w = ivalue(code) - 1; w >= 0; w--) {
-				x = cons(vector_elem(code, w), x);
+				x = cons(vector_elem(code, (int)w), x);
 			}
 			code = x;
 			s_goto(OP_QQUOTE1);
@@ -3770,10 +4607,10 @@ OP_EXPANDPATTERN:
 				Error_0("Syntax error in syntax-rules");
 			}
 			w = 0;
-			if (matchpattern(caar(x), code, caar(value), &w)) {
-				long i, j, m = 0;
+			if (matchpattern(caar(x), code, caar(value), (int *)&w)) {
+				int i, j, m = 0;
 				car(args) = car(x);
-				x = mk_vector(w * 3);
+				x = mk_vector((int)w * 3);
 				value = cons(x, caar(value));
 				for (i = 0; i < ivalue(car(value)); i += 3) {
 					mark_x = mk_integer(0);
@@ -3781,15 +4618,15 @@ OP_EXPANDPATTERN:
 					set_vector_elem(car(value), i + 1, cons(mark_x, mark_y));
 				}
 				w = 0;
-				bindpattern(caar(args), code, 0, 0, &w);
+				bindpattern(caar(args), code, 0, 0, (int *)&w);
 				for (i = 0; i < ivalue(car(value)); i += 3) {
-					j = ivalue(car(vector_elem(car(value), i + 1)));
+					j = (int)ivalue(car(vector_elem(car(value), i + 1)));
 					if (j > m) m = j;
 				}
-				mark_x = mk_memblock(m * sizeof(long), &NIL);
-				mark_y = mk_memblock(m * sizeof(long), &NIL);
+				mark_x = mk_memblock(m * sizeof(int), &NIL, &NIL);
+				mark_y = mk_memblock(m * sizeof(int), &NIL, &NIL);
 				code = cons(mark_x, mark_y);
-				s_return(car(expandpattern(cdar(args), 0, 0, &w)));
+				s_return(car(expandpattern(cdar(args), 0, 0, (int *)&w)));
 			}
 		}
 		s_return(NIL);
@@ -4166,16 +5003,48 @@ OP_DOWINDS2:
 
 	case OP_ADD:		/* + */
 		if (!validargs("+", 0, 65535, TST_NUMBER)) Error_0(msg);
-		for (x = args, v = _ZERO; x != NIL; x = cdr(x)) {
+		for (v = _ZERO; args != NIL; args = cdr(args)) {
 			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					ivalue(&v) += ivalue(car(x));
+				if (car(args)->_isfixnum) {
+					if (bignum(&v) == NIL) {
+						if (bignum(car(args)) == NIL) {
+							bignum_from_int64(&v, (int64_t)ivalue(&v) + ivalue(car(args)));
+						} else {
+							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+							int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
+							if (signx == signy) {
+								bignum_add_imm(&v, car(args), ivalue(&v), signx);
+							} else {
+								bignum_sub_imm(&v, car(args), ivalue(&v), -signx);
+							}
+						}
+					} else {
+						int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+						int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
+						if (bignum(car(args)) == NIL) {
+							if (signx == signy) {
+								bignum_add_imm(&v, &v, ivalue(car(args)), signx);
+							} else {
+								bignum_sub_imm(&v, &v, ivalue(car(args)), signx);
+							}
+						} else {
+							if (signx == signy) {
+								bignum_add(&v, &v, car(args), signx);
+							} else {
+								if (bignum_gt(car(args), &v)) {
+									bignum_sub(&v, car(args), &v, -signx);
+								} else {
+									bignum_sub(&v, &v, car(args), signx);
+								}
+							}
+						}
+					}
 				} else {
-					rvalue(&v) = ivalue(&v) + rvalue(car(x));
+					rvalue(&v) = get_rvalue(&v) + rvalue(car(args));
 					set_num_real(&v);
 				}
 			} else {
-				rvalue(&v) += nvalue(car(x));
+				rvalue(&v) += get_rvalue(car(args));
 			}
 		}
 		s_return(mk_number(&v));
@@ -4184,37 +5053,85 @@ OP_DOWINDS2:
 		if (!validargs("-", 1, 65535, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
 			v = _ZERO;
-			x = args;
 		} else {
 			v = *car(args);
-			x = cdr(args);
+			args = cdr(args);
 		}
-		for ( ; x != NIL; x = cdr(x)) {
+		for ( ; args != NIL; args = cdr(args)) {
 			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					ivalue(&v) -= ivalue(car(x));
+				if (car(args)->_isfixnum) {
+					if (bignum(&v) == NIL) {
+						if (bignum(car(args)) == NIL) {
+							bignum_from_int64(&v, (int64_t)ivalue(&v) - ivalue(car(args)));
+						} else {
+							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+							int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
+							if (signx == signy) {
+								bignum_sub_imm(&v, car(args), ivalue(&v), -signx);
+							} else {
+								bignum_add_imm(&v, car(args), ivalue(&v), signx);
+							}
+						}
+					} else {
+						int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+						int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
+						if (bignum(car(args)) == NIL) {
+							if (signx == signy) {
+								bignum_sub_imm(&v, &v, ivalue(car(args)), signx);
+							} else {
+								bignum_add_imm(&v, &v, ivalue(car(args)), signx);
+							}
+						} else {
+							if (signx == signy) {
+								if (bignum_gt(car(args), &v)) {
+									bignum_sub(&v, car(args), &v, -signx);
+								} else {
+									bignum_sub(&v, &v, car(args), signx);
+								}
+							} else {
+								bignum_add(&v, &v, car(args), signx);
+							}
+						}
+					}
 				} else {
-					rvalue(&v) = ivalue(&v) - rvalue(car(x));
+					rvalue(&v) = get_rvalue(&v) - rvalue(car(args));
 					set_num_real(&v);
 				}
 			} else {
-				rvalue(&v) -= nvalue(car(x));
+				rvalue(&v) -= get_rvalue(car(args));
 			}
 		}
 		s_return(mk_number(&v));
 
 	case OP_MUL:		/* * */
 		if (!validargs("*", 0, 65535, TST_NUMBER)) Error_0(msg);
-		for (x = args, v = _ONE; x != NIL; x = cdr(x)) {
+		for (v = _ONE; args != NIL; args = cdr(args)) {
 			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					ivalue(&v) *= ivalue(car(x));
+				if (car(args)->_isfixnum) {
+					if (car(args)->_isfixnum) {
+						if (bignum(&v) == NIL) {
+							if (bignum(car(args)) == NIL) {
+								bignum_from_int64(&v, (int64_t)ivalue(&v) * ivalue(car(args)));
+							} else {
+								bignum_mul_imm(&v, car(args), ivalue(&v));
+							}
+						} else {
+							if (bignum(car(args)) == NIL) {
+								bignum_mul_imm(&v, &v, ivalue(car(args)));
+							} else {
+								bignum_mul(&v, &v, car(args));
+							}
+						}
+					} else {
+						rvalue(&v) = get_rvalue(&v) - rvalue(car(args));
+						set_num_real(&v);
+					}
 				} else {
-					rvalue(&v) = ivalue(&v) * rvalue(car(x));
+					rvalue(&v) = get_rvalue(&v) * rvalue(car(args));
 					set_num_real(&v);
 				}
 			} else {
-				rvalue(&v) *= nvalue(car(x));
+				rvalue(&v) *= get_rvalue(car(args));
 			}
 		}
 		s_return(mk_number(&v));
@@ -4223,21 +5140,57 @@ OP_DOWINDS2:
 		if (!validargs("/", 1, 65535, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
 			v = _ONE;
-			x = args;
 		} else {
 			v = *car(args);
-			x = cdr(args);
+			args = cdr(args);
 		}
-		for ( ; x != NIL; x = cdr(x)) {
-			double d = nvalue(car(x));
+		for ( ; args != NIL; args = cdr(args)) {
+			double d = get_rvalue(car(args));
 			if (-DBL_MIN < d && d < DBL_MIN) {
 				Error_0("Divided by zero");
 			}
 			if (v._isfixnum) {
-				if (car(x)->_isfixnum && ivalue(&v) % ivalue(car(x)) == 0) {
-					ivalue(&v) /= ivalue(car(x));
+				if (car(args)->_isfixnum) {
+					if (bignum(&v) == NIL) {
+						if (bignum(car(args)) == NIL) {
+							if ((int64_t)ivalue(&v) % ivalue(car(args)) == 0) {
+								bignum_from_int64(&v, (int64_t)ivalue(&v) / ivalue(car(args)));
+							} else {
+								rvalue(&v) = ivalue(&v) / d;
+								set_num_real(&v);
+							}
+						} else {
+							if (ivalue(&v) == INT32_MIN
+								&& ivalue(car(args)) == 1 && ((uint32_t *)strvalue(bignum(car(args))))[0] == (uint32_t)1 << 31) {
+								ivalue(&v) = -1;
+								bignum(&v) = NIL;
+							} else {
+								rvalue(&v) = ivalue(&v) / d;
+								set_num_real(&v);
+							}
+						}
+					} else {
+						struct cell q, r;
+						if (bignum(car(args)) == NIL) {
+							bignum_div_imm(&q, &r, &v, ivalue(car(args)));
+							if (ivalue(&r) == 0) {
+								v = q;
+							} else {
+								rvalue(&v) = get_rvalue(&v) / d;
+								set_num_real(&v);
+							}
+						} else {
+							bignum_div(&q, &r, &v, car(args));
+							if (ivalue(&r) == 0) {
+								v = q;
+							} else {
+								rvalue(&v) = get_rvalue(&v) / d;
+								set_num_real(&v);
+							}
+						}
+					}
 				} else {
-					rvalue(&v) = ivalue(&v) / d;
+					rvalue(&v) = get_rvalue(&v) / d;
 					set_num_real(&v);
 				}
 			} else {
@@ -4248,30 +5201,54 @@ OP_DOWINDS2:
 
 	case OP_ABS:		/* abs */
 		if (!validargs("abs", 1, 1, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		if (x->_isfixnum) {
-			s_return(mk_integer(abs(ivalue(x))));
+		v = *car(args);
+		if (v._isfixnum) {
+			bignum_abs(&v, &v);
 		} else {
-			s_return(mk_real(fabs(rvalue(x))));
+			rvalue(&v) = fabs(rvalue(&v));
 		}
+		s_return(mk_number(&v));
 
 	case OP_QUO:		/* quotient */
 		if (!validargs("quotient", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
 		x = cadr(args);
-		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
+		w = x->_isfixnum ? ivalue(x) : (int32_t)rvalue(x);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
 		if (v._isfixnum) {
 			if (x->_isfixnum) {
-				ivalue(&v) /= w;
+				if (bignum(&v) == NIL) {
+					if (bignum(x) == NIL) {
+						bignum_from_int64(&v, (int64_t)ivalue(&v) / ivalue(x));
+					} else {
+						if (ivalue(&v) == INT32_MIN
+							&& ivalue(x) == 1 && ((uint32_t *)strvalue(bignum(x)))[0] == (uint32_t)1 << 31) {
+							ivalue(&v) = -1;
+							bignum(&v) = NIL;
+						} else {
+							ivalue(&v) = 0;
+							bignum(&v) = NIL;
+						}
+					}
+				} else {
+					struct cell q, r;
+					if (bignum(x) == NIL) {
+						bignum_div_imm(&q, &r, &v, ivalue(x));
+					} else {
+						bignum_div(&q, &r, &v, x);
+					}
+					v = q;
+				}
 			} else {
-				rvalue(&v) = ivalue(&v) / w;
+				rvalue(&v) = get_rvalue(&v) / rvalue(x);
+				rvalue(&v) = (rvalue(&v) < 0) ? ceil(rvalue(&v)) : floor(rvalue(&v));
 				set_num_real(&v);
 			}
 		} else {
-			rvalue(&v) = (long)rvalue(&v) / w;
+			rvalue(&v) = rvalue(&v) / get_rvalue(x);
+			rvalue(&v) = (rvalue(&v) < 0) ? ceil(rvalue(&v)) : floor(rvalue(&v));
 		}
 		s_return(mk_number(&v));
 
@@ -4279,19 +5256,37 @@ OP_DOWINDS2:
 		if (!validargs("remainder", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
 		x = cadr(args);
-		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
+		w = x->_isfixnum ? ivalue(x) : (int32_t)rvalue(x);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
 		if (v._isfixnum) {
 			if (x->_isfixnum) {
-				ivalue(&v) %= w;
+				if (bignum(&v) == NIL) {
+					if (bignum(x) == NIL) {
+						bignum_from_int64(&v, (int64_t)ivalue(&v) % ivalue(x));
+					} else {
+						if (ivalue(&v) == INT32_MIN
+							&& ivalue(x) == 1 && ((uint32_t *)strvalue(bignum(x)))[0] == (uint32_t)1 << 31) {
+							ivalue(&v) = 0;
+							bignum(&v) = NIL;
+						}
+					}
+				} else {
+					struct cell q, r;
+					if (bignum(x) == NIL) {
+						bignum_div_imm(&q, &r, &v, ivalue(x));
+					} else {
+						bignum_div(&q, &r, &v, x);
+					}
+					v = r;
+				}
 			} else {
-				rvalue(&v) = ivalue(&v) % w;
+				rvalue(&v) = fmod(get_rvalue(&v), rvalue(x));
 				set_num_real(&v);
 			}
 		} else {
-			rvalue(&v) = (long)rvalue(&v) % w;
+			rvalue(&v) = fmod(rvalue(&v), get_rvalue(x));
 		}
 		s_return(mk_number(&v));
 
@@ -4299,25 +5294,57 @@ OP_DOWINDS2:
 		if (!validargs("modulo", 2, 2, TST_INTEGER)) Error_0(msg);
 		v = *car(args);
 		x = cadr(args);
-		w = x->_isfixnum ? ivalue(x) : (long)rvalue(x);
+		w = x->_isfixnum ? ivalue(x) : (int32_t)rvalue(x);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
 		if (v._isfixnum) {
 			if (x->_isfixnum) {
-				ivalue(&v) %= w;
-				if (ivalue(&v) * w < 0) {
-					ivalue(&v) += w;
+				if (bignum(&v) == NIL) {
+					if (bignum(x) == NIL) {
+						int64_t r = (int64_t)ivalue(&v) % ivalue(x);
+						if (r * ivalue(x) < 0) {
+							r += ivalue(x);
+						}
+						bignum_from_int64(&v, r);
+					} else {
+						if (ivalue(&v) == INT32_MIN
+							&& ivalue(x) == 1 && ((uint32_t *)strvalue(bignum(x)))[0] == (uint32_t)1 << 31) {
+							ivalue(&v) = 0;
+							bignum(&v) = NIL;
+						}
+						if (ivalue(&v) * w < 0) {
+							bignum_sub_imm(&v, x, ivalue(&v), ivalue(x) < 0 ? -1 : 1);
+						}
+					}
+				} else {
+					struct cell q, r;
+					if (bignum(x) == NIL) {
+						bignum_div_imm(&q, &r, &v, ivalue(x));
+						if (ivalue(&r) * w < 0) {
+							ivalue(&r) += ivalue(x);
+						}
+					} else {
+						bignum_div(&q, &r, &v, x);
+						if (ivalue(&r) * w < 0) {
+							if (bignum(&r) == NIL) {
+								bignum_sub_imm(&r, x, ivalue(&r), ivalue(x) < 0 ? -1 : 1);
+							} else {
+								bignum_sub(&r, x, &r, ivalue(x) < 0 ? -1 : 1);
+							}
+						}
+					}
+					v = r;
 				}
 			} else {
-				rvalue(&v) = ivalue(&v) % w;
+				rvalue(&v) = fmod(get_rvalue(&v), rvalue(x));
 				set_num_real(&v);
 				if (rvalue(&v) * w < 0) {
 					rvalue(&v) += w;
 				}
 			}
 		} else {
-			rvalue(&v) = (long)rvalue(&v) % w;
+			rvalue(&v) = fmod(rvalue(&v), get_rvalue(x));
 			if (rvalue(&v) * w < 0) {
 				rvalue(&v) += w;
 			}
@@ -4326,65 +5353,119 @@ OP_DOWINDS2:
 
 	case OP_GCD:		/* gcd */
 		if (!validargs("gcd", 0, 65535, TST_NUMBER)) Error_0(msg);
-		if (cdr(args) == NIL) {
+		if (args == NIL) {
 			v = _ZERO;
-			x = args;
+		} else if (cdr(args) == NIL) {
+			v = *car(args);
+			if (v._isfixnum) {
+				bignum_abs(&v, &v);
+			} else {
+				rvalue(&v) = fabs(rvalue(&v));
+			}
 		} else {
 			v = *car(args);
-			x = cdr(args);
-		}
-		for (; x != NIL; x = cdr(x)) {
-			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					ivalue(&v) = gcd(ivalue(&v), ivalue(car(x)));
+			for (x = cdr(args); x != NIL; x = cdr(x)) {
+				if (v._isfixnum) {
+					if (car(x)->_isfixnum) {
+						if (bignum(&v) == NIL) {
+							if (bignum(car(x)) == NIL) {
+								bignum_from_int64(&v, gcd(ivalue(&v), ivalue(car(x))));
+							} else {
+								if (ivalue(&v) != 0) {
+									bignum_gcd_imm(&v, car(x), ivalue(&v));
+								}
+							}
+						} else {
+							if (bignum(car(x)) == NIL) {
+								if (ivalue(car(x)) != 0) {
+									bignum_gcd_imm(&v, &v, ivalue(car(x)));
+								}
+							} else {
+								if (bignum_gt(&v, car(x))) {
+									bignum_gcd(&v, &v, car(x));
+								} else {
+									bignum_gcd(&v, car(x), &v);
+								}
+							}
+						}
+					} else {
+						rvalue(&v) = (double)gcd((int32_t)get_rvalue(&v), (int32_t)rvalue(car(x)));
+						set_num_real(&v);
+					}
 				} else {
-					rvalue(&v) = gcd(ivalue(&v), (long)rvalue(car(x)));
-					set_num_real(&v);
+					rvalue(&v) = (double)gcd((int32_t)rvalue(&v), (int32_t)get_rvalue(car(x)));
 				}
-			} else {
-				rvalue(&v) = gcd((long)rvalue(&v), (long)nvalue(car(x)));
-			}
+			}			
 		}
 		s_return(mk_number(&v));
 
 	case OP_LCM:		/* lcm */
 		if (!validargs("lcm", 0, 65535, TST_NUMBER)) Error_0(msg);
-		if (cdr(args) == NIL) {
+		if (args == NIL) {
 			v = _ONE;
-			x = args;
+		} else if (cdr(args) == NIL) {
+			v = *car(args);
+			if (v._isfixnum) {
+				bignum_abs(&v, &v);
+			} else {
+				rvalue(&v) = fabs(rvalue(&v));
+			}
 		} else {
 			v = *car(args);
-			x = cdr(args);
-		}
-		for (; x != NIL; x = cdr(x)) {
-			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					ivalue(&v) = lcm(ivalue(&v), ivalue(car(x)));
+			for (x = cdr(args); x != NIL; x = cdr(x)) {
+				if (v._isfixnum) {
+					if (car(x)->_isfixnum) {
+						if (bignum(&v) == NIL) {
+							if (bignum(car(x)) == NIL) {
+								bignum_from_int64(&v, lcm(ivalue(&v), ivalue(car(x))));
+							} else {
+								if (ivalue(&v) == 0) {
+									v = _ZERO;
+									break;
+								}
+								bignum_lcm_imm(&v, car(x), ivalue(&v));
+							}
+						} else {
+							if (bignum(car(x)) == NIL) {
+								if (ivalue(car(x)) == 0) {
+									v = _ZERO;
+									break;
+								}
+								bignum_lcm_imm(&v, &v, ivalue(car(x)));
+							} else {
+								if (bignum_gt(&v, car(x))) {
+									bignum_lcm(&v, &v, car(x));
+								} else {
+									bignum_lcm(&v, car(x), &v);
+								}
+							}
+						}
+					} else {
+						rvalue(&v) = (double)lcm((int32_t)get_rvalue(&v), (int32_t)rvalue(car(x)));
+						set_num_real(&v);
+					}
 				} else {
-					rvalue(&v) = lcm(ivalue(&v), (long)rvalue(car(x)));
-					set_num_real(&v);
+					rvalue(&v) = (double)lcm((int32_t)rvalue(&v), (int32_t)get_rvalue(car(x)));
 				}
-			} else {
-				rvalue(&v) = lcm((long)rvalue(&v), (long)nvalue(car(x)));
 			}
 		}
 		s_return(mk_number(&v));
 
 	case OP_FLOOR:		/* floor */
 		if (!validargs("floor", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(floor(nvalue(car(args)))));
+		s_return(mk_real(floor(get_rvalue(car(args)))));
 
 	case OP_CEILING:	/* ceiling */
 		if (!validargs("ceiling", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(ceil(nvalue(car(args)))));
+		s_return(mk_real(ceil(get_rvalue(car(args)))));
 
 	case OP_TRUNCATE:	/* truncate */
 		if (!validargs("truncate", 1, 1, TST_NUMBER)) Error_0(msg);
 		x = car(args);
-		if (nvalue(x) > 0) {
-			s_return(mk_real(floor(nvalue(x))));
+		if (get_rvalue(x) > 0) {
+			s_return(mk_real(floor(get_rvalue(x))));
 		} else {
-			s_return(mk_real(ceil(nvalue(x))));
+			s_return(mk_real(ceil(get_rvalue(x))));
 		}
 
 	case OP_ROUND:		/* round */
@@ -4413,69 +5494,76 @@ OP_DOWINDS2:
 
 	case OP_EXP:		/* exp */
 		if (!validargs("exp", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(exp(nvalue(car(args)))));
+		s_return(mk_real(exp(get_rvalue(car(args)))));
 
 	case OP_LOG:		/* log */
 		if (!validargs("log", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(log(nvalue(car(args)))));
+		s_return(mk_real(log(get_rvalue(car(args)))));
 
 	case OP_SIN:		/* sin */
 		if (!validargs("sin", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(sin(nvalue(car(args)))));
+		s_return(mk_real(sin(get_rvalue(car(args)))));
 
 	case OP_COS:		/* cos */
 		if (!validargs("cos", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(cos(nvalue(car(args)))));
+		s_return(mk_real(cos(get_rvalue(car(args)))));
 
 	case OP_TAN:		/* tan */
 		if (!validargs("tan", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(tan(nvalue(car(args)))));
+		s_return(mk_real(tan(get_rvalue(car(args)))));
 
 	case OP_ASIN:		/* asin */
 		if (!validargs("asin", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(asin(nvalue(car(args)))));
+		s_return(mk_real(asin(get_rvalue(car(args)))));
 
 	case OP_ACOS:		/* acos */
 		if (!validargs("acos", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(acos(nvalue(car(args)))));
+		s_return(mk_real(acos(get_rvalue(car(args)))));
 
 	case OP_ATAN:		/* atan */
 		if (!validargs("atan", 1, 2, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
-			s_return(mk_real(atan(nvalue(car(args)))));
+			s_return(mk_real(atan(get_rvalue(car(args)))));
 		} else {
-			s_return(mk_real(atan2(nvalue(car(args)), nvalue(cadr(args)))));
+			s_return(mk_real(atan2(get_rvalue(car(args)), get_rvalue(cadr(args)))));
 		}
 
 	case OP_SQRT:		/* sqrt */
 		if (!validargs("sqrt", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(sqrt(nvalue(car(args)))));
+		s_return(mk_real(sqrt(get_rvalue(car(args)))));
 
 	case OP_EXPT:		/* expt */
 		if (!validargs("expt", 2, 2, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		y = cadr(args);
-		if (nvalue(x) == 0 && nvalue(y) < 0) {
-			s_return(&_ZERO);
-		}
-		rvalue(&v) = pow(nvalue(x), nvalue(y));
-		if (x->_isfixnum && y->_isfixnum && rvalue(&v) == (long)rvalue(&v)) {
-			s_return(mk_integer((long)rvalue(&v)));
+		v = *car(args);
+		x = cadr(args);
+		if (v._isfixnum && x->_isfixnum && (bignum(&v) == NIL && ivalue(&v) == 1 || ivalue(x) == 0)) {
+			v = _ONE;
+		} else if (v._isfixnum && x->_isfixnum && ivalue(&v) == 0) {
+			v = _ZERO;
+		} else if (v._isfixnum) {
+			if (x->_isfixnum && bignum(x) == NIL && ivalue(x) > 0) {
+				bignum_pow(&v, &v, ivalue(x));
+			} else {
+				rvalue(&v) = pow(get_rvalue(&v), get_rvalue(x));
+				set_num_real(&v);
+			}
 		} else {
-			s_return(mk_real(rvalue(&v)));
+			rvalue(&v) = pow(rvalue(&v), get_rvalue(x));
 		}
+		s_return(mk_number(&v));
 
 	case OP_EX2INEX:	/* exact->inexact */
 		if (!validargs("exact->inexact", 1, 1, TST_NUMBER)) Error_0(msg);
-		s_return(mk_real(nvalue(car(args))));
+		s_return(mk_real(get_rvalue(car(args))));
 
 	case OP_INEX2EX:	/* inexact->exact */
 		if (!validargs("inexact->exact", 1, 1, TST_NUMBER)) Error_0(msg);
 		x = car(args);
 		if (x->_isfixnum) {
 			s_return(x);
-		} else if (rvalue(x) == (long)rvalue(x)) {
-			s_return(mk_integer((long)rvalue(x)));
+		} else if (rvalue(x) == (int64_t)rvalue(x)) {
+			bignum_from_int64(&v, (int64_t)rvalue(x));
+			s_return(mk_number(&v));
 		} else {
 			Error_1("inexact->exact: cannot express :", x);
 		}
@@ -4490,7 +5578,7 @@ OP_DOWINDS2:
 		} else {
 			w = 10;
 		}
-		s_return(mk_string(atom2str(car(args), w)));
+		s_return(mk_string(atom2str(car(args), (int)w)));
 
 	case OP_STR2NUM:	/* string->number */
 		if (!validargs("string->number", 1, 2, TST_STRING TST_NATURAL)) Error_0(msg);
@@ -4508,7 +5596,7 @@ OP_DOWINDS2:
 			s_return(mk_atom(strvalue(car(args))));
 		} else {
 			char *ep;
-			long iv = strtol(strvalue(car(args)), &ep, w);
+			int32_t iv = strtol(strvalue(car(args)), &ep, (int)w);
 			if (*ep) {
 				s_return(F);
 			}
@@ -4809,65 +5897,65 @@ OP_DOWINDS2:
 
 	case OP_INT2CHAR:	/* integer->char */
 		if (!validargs("integer->char", 1, 1, TST_NATURAL)) Error_0(msg);
-		s_return(mk_character(ivalue(car(args))));
+		s_return(mk_character((int)ivalue(car(args))));
 
 	case OP_CHARUPCASE:	/* char-upcase */
 		if (!validargs("char-upcase", 1, 1, TST_CHAR)) Error_0(msg);
-		s_return(mk_character(utf32_toupper(ivalue(car(args)))));
+		s_return(mk_character(utf32_toupper((int)ivalue(car(args)))));
 
 	case OP_CHARDNCASE:	/* char-downcase */
 		if (!validargs("char-downcase", 1, 1, TST_CHAR)) Error_0(msg);
-		s_return(mk_character(utf32_tolower(ivalue(car(args)))));
+		s_return(mk_character(utf32_tolower((int)ivalue(car(args)))));
 
 	case OP_MKSTRING:	/* make-string */
 		if (!validargs("make-string", 1, 2, TST_NATURAL TST_CHAR)) Error_0(msg);
 		if (cdr(args) != NIL) {
-			s_return(mk_empty_string(ivalue(car(args)), ivalue(cadr(args))));
+			s_return(mk_empty_string((size_t)ivalue(car(args)), (int)ivalue(cadr(args))));
 		} else {
-			s_return(mk_empty_string(ivalue(car(args)), ' '));
+			s_return(mk_empty_string((size_t)ivalue(car(args)), ' '));
 		}
 
 	case OP_STRING:		/* string */
 		if (!validargs("string", 0, 65535, TST_CHAR)) Error_0(msg);
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
-			w += utf32_to_utf8(ivalue(car(x)), NULL);
+			w += utf32_to_utf8((int)ivalue(car(x)), NULL);
 		}
-		y = mk_counted_string("", w);
+		y = mk_counted_string("", (size_t)w);
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
-			w += utf32_to_utf8(ivalue(car(x)), strvalue(y) + w);
+			w += utf32_to_utf8((int)ivalue(car(x)), strvalue(y) + w);
 		}
 		strvalue(y)[w] = '\0';
 		s_return(y);
 
 	case OP_STRLEN:		/* string-length */
 		if (!validargs("string-length", 1, 1, TST_STRING)) Error_0(msg);
-		s_return(mk_integer(utf8_strlen(strvalue(car(args)))));
+		s_return(mk_integer((int32_t)utf8_strlen(strvalue(car(args)))));
 
 	case OP_STRREF:		/* string-ref */
 		if (!validargs("string-ref", 2, 2, TST_STRING TST_NATURAL)) Error_0(msg);
-		w = utf8_strref(strvalue(car(args)), ivalue(cadr(args)));
+		w = utf8_strref(strvalue(car(args)), (size_t)ivalue(cadr(args)));
 		if (w == -1) {
 			Error_1("string-ref: out of bounds:", cadr(args));
 		}
-		s_return(mk_character(w));
+		s_return(mk_character((int)w));
 
 	case OP_STRSET:		/* string-set! */
 		if (!validargs("string-set!", 3, 3, TST_STRING TST_NATURAL TST_CHAR)) Error_0(msg);
-		w = utf8_strpos(strvalue(car(args)), ivalue(cadr(args)));
+		w = utf8_strpos(strvalue(car(args)), (size_t)ivalue(cadr(args)));
 		if (w == -1) {
 			Error_1("string-set!: out of bounds:", cadr(args));
 		} else {
 			char utf8[4];
-			int len1 = utf8_get_next(strvalue(car(args)) + w, NULL);
-			int len2 = utf32_to_utf8(ivalue(caddr(args)), utf8);
+			size_t len1 = utf8_get_next(strvalue(car(args)) + w, NULL);
+			size_t len2 = utf32_to_utf8((int)ivalue(caddr(args)), utf8);
 			if (len1 == len2) {
 				memcpy(strvalue(car(args)) + w, utf8, len2);
 			} else {
-				int n = strlength(car(args)) + len2 - len1;
-				x = mk_memblock(n, &NIL);
-				memcpy(strvalue(x), strvalue(car(args)), w);
+				size_t n = strlength(car(args)) + len2 - len1;
+				x = mk_memblock(n, &NIL, &NIL);
+				memcpy(strvalue(x), strvalue(car(args)), (size_t)w);
 				memcpy(strvalue(x) + w, utf8, len2);
-				memcpy(strvalue(x) + w + len2, strvalue(car(args)) + w + len1, n - w - len2);
+				memcpy(strvalue(x) + w + len2, strvalue(car(args)) + w + len1, (size_t)(n - w - len2));
 				strvalue(x)[n] = '\0';
 				strvalue(car(args)) = strvalue(x);
 				strlength(car(args)) = strlength(x);
@@ -4913,14 +6001,14 @@ OP_DOWINDS2:
 		if (ivalue(cadr(args)) > w) {
 			Error_1("substring: start out of bounds:", cadr(args));
 		} else {
-			int start = utf8_strpos(strvalue(car(args)), ivalue(cadr(args))), n;
+			int start = utf8_strpos(strvalue(car(args)), (size_t)ivalue(cadr(args))), n;
 			if (cddr(args) != NIL) {
 				if (ivalue(caddr(args)) > w || ivalue(caddr(args)) < ivalue(cadr(args))) {
 					Error_1("substring: end out of bounds:", caddr(args));
 				}
-				n = utf8_strpos(strvalue(car(args)), ivalue(caddr(args))) - start;
+				n = utf8_strpos(strvalue(car(args)), (size_t)ivalue(caddr(args))) - start;
 			} else {
-				n = strlength(car(args)) - start;
+				n = (int)strlength(car(args)) - start;
 			}
 			x = mk_counted_string("", n);
 			memcpy(strvalue(x), strvalue(car(args)) + start, n);
@@ -4933,7 +6021,7 @@ OP_DOWINDS2:
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
 			w += strlength(car(x));
 		}
-		y = mk_counted_string("", w);
+		y = mk_counted_string("", (size_t)w);
 		for (w = 0, x = args; x != NIL; x = cdr(x)) {
 			memcpy(strvalue(y) + w, strvalue(car(x)), strlength(car(x)));
 			w += strlength(car(x));
@@ -4945,7 +6033,7 @@ OP_DOWINDS2:
 		if (!validargs("string->list", 1, 1, TST_STRING)) Error_0(msg);
 		code = NIL;
 		w = 0;
-		while (w < (long)strlength(car(args))) {
+		while ((size_t)w < strlength(car(args))) {
 			int c;
 			w += utf8_get_next(strvalue(car(args)) + w, &c);
 			x = mk_character(c);
@@ -4962,11 +6050,11 @@ OP_DOWINDS2:
 			if (!is_character(car(x))) {
 				Error_1("list->string: not a charactor:", car(x));
 			}
-			w += utf32_to_utf8(ivalue(car(x)), NULL);
+			w += utf32_to_utf8((int)ivalue(car(x)), NULL);
 		}
-		y = mk_counted_string("", w);
+		y = mk_counted_string("", (size_t)w);
 		for (w = 0, x = car(args); x != NIL; x = cdr(x)) {
-			w += utf32_to_utf8(ivalue(car(x)), strvalue(y) + w);
+			w += utf32_to_utf8((int)ivalue(car(x)), strvalue(y) + w);
 		}
 		strvalue(y)[w] = '\0';
 		s_return(y);
@@ -4981,16 +6069,16 @@ OP_DOWINDS2:
 		w = utf8_strlen(strvalue(x));
 		if (w > 0) {
 			char utf8[4];
-			int len = utf32_to_utf8(ivalue(cadr(args)), utf8), i;
-			if (strlength(x) != (size_t)(w * len)) {
-				y = mk_memblock(w * len, &x);
+			size_t len = utf32_to_utf8((int)ivalue(cadr(args)), utf8);
+			if (strlength(x) != (size_t)w * len) {
+				y = mk_memblock((size_t)w * len, &x, &NIL);
 				strvalue(x) = strvalue(y);
 				strlength(x) = strlength(y);
 			}
-			for (i = 0; i < w; i++) {
-				memcpy(strvalue(x) + i * len, utf8, len);
-			}
 			strvalue(x)[w * len] = '\0';
+			while (w > 0) {
+				memcpy(strvalue(x) + --w * len, utf8, len);
+			}
 		}
 		s_return(x);
 
@@ -5001,16 +6089,16 @@ OP_VECTOR:
 		if (w < 0) {
 			Error_1("vector: not a proper list:", args);
 		}
-		y = mk_vector(w);
+		y = mk_vector((int)w);
 		for (x = args, w = 0; is_pair(x); x = cdr(x)) {
-			set_vector_elem(y, w++, car(x));
+			set_vector_elem(y, (int)w++, car(x));
 		}
 		s_return(y);
 
 	case OP_MKVECTOR:	/* make-vector */
 		if (!validargs("make-vector", 1, 2, TST_NATURAL TST_ANY)) Error_0(msg);
 		w = ivalue(car(args));
-		x = mk_vector(w);
+		x = mk_vector((int)w);
 		if (cdr(args) != NIL) {
 			fill_vector(x, cadr(args));
 		}
@@ -5026,7 +6114,7 @@ OP_VECTOR:
 		if (w >= ivalue(car(args))) {
 		   Error_1("vector-ref: out of bounds:", cadr(args));
 		}
-		s_return(vector_elem(car(args), w));
+		s_return(vector_elem(car(args), (int)w));
 
 	case OP_VECSET:		/* vector-set! */
 		if (!validargs("vector-set!", 3, 3, TST_VECTOR TST_NATURAL TST_ANY)) Error_0(msg);
@@ -5034,14 +6122,14 @@ OP_VECTOR:
 		if (w >= ivalue(car(args))) {
 		   Error_1("vector-set!: out of bounds:", cadr(args));
 		}
-		set_vector_elem(car(args), w, caddr(args));
+		set_vector_elem(car(args), (int)w, caddr(args));
 		s_return(car(args));
 
 	case OP_VEC2LIST:		/* vector->list */
 		if (!validargs("vector->list", 1, 1, TST_VECTOR)) Error_0(msg);
 		y = NIL;
 		for (w = ivalue(car(args)) - 1; w >= 0; w--) {
-			y = cons(vector_elem(car(args), w), y);
+			y = cons(vector_elem(car(args), (int)w), y);
 		}
 		s_return(y);
 
@@ -5052,16 +6140,16 @@ OP_VECTOR:
 		if (w < 0) {
 			Error_1("list->vector: not a proper list:", args);
 		}
-		y = mk_vector(w);
+		y = mk_vector((int)w);
 		for (w = 0; args != NIL; args = cdr(args)) {
-			set_vector_elem(y, w++, car(args));
+			set_vector_elem(y, (int)w++, car(args));
 		}
 		s_return(y);
 
 	case OP_VECFILL:	/* vector-fill! */
 		if (!validargs("vector-fill!", 2, 2, TST_VECTOR TST_ANY)) Error_0(msg);
 		for (x = car(args), w = ivalue(x) - 1; w >= 0; w--) {
-			set_vector_elem(car(args), w, cadr(args));
+			set_vector_elem(car(args), (int)w, cadr(args));
 		}
 		s_return(car(args));
 
@@ -5088,25 +6176,175 @@ OP_VECTOR:
 		s_retbool(nvalue(car(args)) < 0);
 	case OP_ODD:		/* odd? */
 		if (!validargs("odd?", 1, 1, TST_INTEGER)) Error_0(msg);
-		s_retbool((car(args)->_isfixnum ? ivalue(car(args)) : (long)rvalue(car(args))) % 2 == 1);
+		if (car(args)->_isfixnum) {
+			if (bignum(car(args)) == NIL) {
+				s_retbool(ivalue(car(args)) % 2 != 0);
+			} else {
+				s_retbool(((uint32_t *)strvalue(bignum(car(args))))[0] % 2 != 0);
+			}
+		} else {
+			s_retbool((int64_t)rvalue(car(args)) % 2 != 0);
+		}
 	case OP_EVEN:		/* even? */
 		if (!validargs("even?", 1, 1, TST_INTEGER)) Error_0(msg);
-		s_retbool((car(args)->_isfixnum ? ivalue(car(args)) : (long)rvalue(car(args))) % 2 == 0);
+		if (car(args)->_isfixnum) {
+			if (bignum(car(args)) == NIL) {
+				s_retbool(ivalue(car(args)) % 2 == 0);
+			} else {
+				s_retbool(((uint32_t *)strvalue(bignum(car(args))))[0] % 2 == 0);
+			}
+		} else {
+			s_retbool((int64_t)rvalue(car(args)) % 2 == 0);
+		}
 	case OP_NEQ:		/* = */
 		if (!validargs("=", 2, 2, TST_NUMBER)) Error_0(msg);
-		s_retbool(nvalue(car(args)) == nvalue(cadr(args)));
+		x = car(args);
+		y = cadr(args);
+		if (x->_isfixnum && y->_isfixnum) {
+			if (bignum(x) == NIL) {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) == ivalue(y));
+				} else {
+					s_return(F);
+				}
+			} else {
+				if (bignum(y) == NIL) {
+					s_return(F);
+				} else {
+					if ((ivalue(x) < 0) == (ivalue(y) < 0)) {
+						s_retbool(bignum_eq(x, y));
+					} else {
+						s_return(F);
+					}
+				}
+			}
+		} else {
+			s_retbool(get_rvalue(x) == get_rvalue(y));
+		}
 	case OP_LESS:		/* < */
 		if (!validargs("<", 2, 2, TST_NUMBER)) Error_0(msg);
-		s_retbool(nvalue(car(args)) < nvalue(cadr(args)));
+		x = car(args);
+		y = cadr(args);
+		if (x->_isfixnum && y->_isfixnum) {
+			if (bignum(x) == NIL) {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) < ivalue(y));
+				} else {
+					s_retbool(ivalue(y) > 0);
+				}
+			} else {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) < 0);
+				} else {
+					int32_t signx = ivalue(x) < 0 ? -1 : 1;
+					int32_t signy = ivalue(y) < 0 ? -1 : 1;
+					if (signx == signy) {
+						if (signx > 0) {
+							s_retbool(bignum_gt(y, x));
+						} else {
+							s_retbool(bignum_gt(x, y));
+						}
+					} else {
+						s_retbool(signx < signy);
+					}
+				}
+			}
+		} else {
+			s_retbool(get_rvalue(x) < get_rvalue(y));
+		}
 	case OP_GRE:		/* > */
 		if (!validargs(">", 2, 2, TST_NUMBER)) Error_0(msg);
-		s_retbool(nvalue(car(args)) > nvalue(cadr(args)));
+		x = car(args);
+		y = cadr(args);
+		if (x->_isfixnum && y->_isfixnum) {
+			if (bignum(x) == NIL) {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) > ivalue(y));
+				} else {
+					s_retbool(ivalue(y) < 0);
+				}
+			} else {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) > 0);
+				} else {
+					int32_t signx = ivalue(x) < 0 ? -1 : 1;
+					int32_t signy = ivalue(y) < 0 ? -1 : 1;
+					if (signx == signy) {
+						if (signx < 0) {
+							s_retbool(bignum_gt(y, x));
+						} else {
+							s_retbool(bignum_gt(x, y));
+						}
+					} else {
+						s_retbool(signx > signy);
+					}
+				}
+			}
+		} else {
+			s_retbool(get_rvalue(x) > get_rvalue(y));
+		}
 	case OP_LEQ:		/* <= */
 		if (!validargs("<=", 2, 2, TST_NUMBER)) Error_0(msg);
-		s_retbool(nvalue(car(args)) <= nvalue(cadr(args)));
+		x = car(args);
+		y = cadr(args);
+		if (x->_isfixnum && y->_isfixnum) {
+			if (bignum(x) == NIL) {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) <= ivalue(y));
+				} else {
+					s_retbool(ivalue(y) > 0);
+				}
+			} else {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) < 0);
+				} else {
+					int32_t signx = ivalue(x) < 0 ? -1 : 1;
+					int32_t signy = ivalue(y) < 0 ? -1 : 1;
+					if (signx == signy) {
+						if (signx > 0) {
+							s_retbool(bignum_ge(y, x));
+						} else {
+							s_retbool(bignum_ge(x, y));
+						}
+					} else {
+						s_retbool(signx < signy);
+					}
+				}
+			}
+		} else {
+			s_retbool(get_rvalue(x) <= get_rvalue(y));
+		}
 	case OP_GEQ:		/* >= */
 		if (!validargs(">=", 2, 2, TST_NUMBER)) Error_0(msg);
-		s_retbool(nvalue(car(args)) >= nvalue(cadr(args)));
+		x = car(args);
+		y = cadr(args);
+		if (x->_isfixnum && y->_isfixnum) {
+			if (bignum(x) == NIL) {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) >= ivalue(y));
+				} else {
+					s_retbool(ivalue(y) < 0);
+				}
+			} else {
+				if (bignum(y) == NIL) {
+					s_retbool(ivalue(x) > 0);
+				} else {
+					int32_t signx = ivalue(x) < 0 ? -1 : 1;
+					int32_t signy = ivalue(y) < 0 ? -1 : 1;
+					if (signx == signy) {
+						if (signx < 0) {
+							s_retbool(bignum_ge(y, x));
+						} else {
+							s_retbool(bignum_ge(x, y));
+						}
+					} else {
+						s_retbool(signx > signy);
+					}
+				}
+			}
+		} else {
+			s_retbool(get_rvalue(x) >= get_rvalue(y));
+		}
 
 	case OP_MAX:		/* max */
 		if (!validargs("max", 1, 65535, TST_NUMBER)) Error_0(msg);
@@ -5114,20 +6352,58 @@ OP_VECTOR:
 		for (x = cdr(args); x != NIL; x = cdr(x)) {
 			if (v._isfixnum) {
 				if (car(x)->_isfixnum) {
-					if (ivalue(&v) < ivalue(car(x))) {
-						ivalue(&v) = ivalue(car(x));
+					if (bignum(&v) == NIL) {
+						if (bignum(car(x)) == NIL) {
+							if (ivalue(&v) < ivalue(car(x))) {
+								ivalue(&v) = ivalue(car(x));
+							}
+						} else {
+							if (ivalue(car(x)) > 0) {
+								pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
+								bignum_adjust(&v, m, ivalue(car(x)), 1);
+							}
+						}
+					} else {
+						if (bignum(car(x)) == NIL) {
+							if (ivalue(&v) < 0) {
+								bignum_from_int64(&v, ivalue(car(x)));
+							}
+						} else {
+							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+							int32_t signy = ivalue(car(x)) < 0 ? -1 : 1;
+							if (signx == signy) {
+								if (signx > 0) {
+									if (bignum_gt(car(x), &v)) {
+										pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
+										bignum_adjust(&v, m, ivalue(car(x)), 1);
+									}
+								} else {
+									if (bignum_gt(&v, car(x))) {
+										pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
+										bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+									}
+								}
+							} else if (signx < signy) {
+								pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
+								bignum_adjust(&v, m, ivalue(car(x)), 1);
+							}
+						}
 					}
 				} else {
-					if (ivalue(&v) < rvalue(car(x))) {
+					if (get_rvalue(&v) < rvalue(car(x))) {
 						rvalue(&v) = rvalue(car(x));
 					} else {
-						rvalue(&v) = ivalue(&v);
+						rvalue(&v) = get_rvalue(&v);
 					}
 					set_num_real(&v);
 				}
 			} else {
-				if (rvalue(&v) < nvalue(car(x))) {
-					rvalue(&v) = nvalue(car(x));
+				if (rvalue(&v) < get_rvalue(car(x))) {
+					rvalue(&v) = get_rvalue(car(x));
 				}
 			}
 		}
@@ -5139,20 +6415,58 @@ OP_VECTOR:
 		for (x = cdr(args); x != NIL; x = cdr(x)) {
 			if (v._isfixnum) {
 				if (car(x)->_isfixnum) {
-					if (ivalue(&v) > ivalue(car(x))) {
-						ivalue(&v) = ivalue(car(x));
+					if (bignum(&v) == NIL) {
+						if (bignum(car(x)) == NIL) {
+							if (ivalue(&v) > ivalue(car(x))) {
+								ivalue(&v) = ivalue(car(x));
+							}
+						} else {
+							if (ivalue(car(x)) < 0) {
+								pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
+								bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+							}
+						}
+					} else {
+						if (bignum(car(x)) == NIL) {
+							if (ivalue(&v) > 0) {
+								bignum_from_int64(&v, ivalue(car(x)));
+							}
+						} else {
+							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+							int32_t signy = ivalue(car(x)) < 0 ? -1 : 1;
+							if (signx == signy) {
+								if (signx < 0) {
+									if (bignum_gt(car(x), &v)) {
+										pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
+										bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+									}
+								} else {
+									if (bignum_gt(&v, car(x))) {
+										pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
+										bignum_adjust(&v, m, ivalue(car(x)), 1);
+									}
+								}
+							} else if (signx > signy) {
+								pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
+								bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+							}
+						}
 					}
 				} else {
-					if (ivalue(&v) > rvalue(car(x))) {
+					if (get_rvalue(&v) > rvalue(car(x))) {
 						rvalue(&v) = rvalue(car(x));
 					} else {
-						rvalue(&v) = ivalue(&v);
+						rvalue(&v) = get_rvalue(&v);
 					}
 					set_num_real(&v);
 				}
 			} else {
-				if (rvalue(&v) > nvalue(car(x))) {
-					rvalue(&v) = nvalue(car(x));
+				if (rvalue(&v) > get_rvalue(car(x))) {
+					rvalue(&v) = get_rvalue(car(x));
 				}
 			}
 		}
@@ -5205,34 +6519,34 @@ OP_VECTOR:
 		s_retbool(ivalue(car(args)) >= ivalue(cadr(args)));
 	case OP_CHARCIEQU:	/* char-ci=? */
 		if (!validargs("char-ci=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_tolower(ivalue(car(args))) == utf32_tolower(ivalue(cadr(args))));
+		s_retbool(utf32_tolower((int)ivalue(car(args))) == utf32_tolower((int)ivalue(cadr(args))));
 	case OP_CHARCILSS:	/* char-ci<? */
 		if (!validargs("char-ci<?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_tolower(ivalue(car(args))) < utf32_tolower(ivalue(cadr(args))));
+		s_retbool(utf32_tolower((int)ivalue(car(args))) < utf32_tolower((int)ivalue(cadr(args))));
 	case OP_CHARCIGTR:	/* char-ci>? */
 		if (!validargs("char-ci>?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_tolower(ivalue(car(args))) > utf32_tolower(ivalue(cadr(args))));
+		s_retbool(utf32_tolower((int)ivalue(car(args))) > utf32_tolower((int)ivalue(cadr(args))));
 	case OP_CHARCILEQ:	/* char-ci<=? */
 		if (!validargs("char-ci<=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_tolower(ivalue(car(args))) <= utf32_tolower(ivalue(cadr(args))));
+		s_retbool(utf32_tolower((int)ivalue(car(args))) <= utf32_tolower((int)ivalue(cadr(args))));
 	case OP_CHARCIGEQ:	/* char-ci>=? */
 		if (!validargs("char-ci>=?", 2, 2, TST_CHAR TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_tolower(ivalue(car(args))) >= utf32_tolower(ivalue(cadr(args))));
+		s_retbool(utf32_tolower((int)ivalue(car(args))) >= utf32_tolower((int)ivalue(cadr(args))));
 	case OP_CHARAP:		/* char-alphabetic? */
 		if (!validargs("char-alphabetic?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_isalpha(ivalue(car(args))));
+		s_retbool(utf32_isalpha((int)ivalue(car(args))));
 	case OP_CHARNP:		/* char-numeric? */
 		if (!validargs("char-numeric?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_isdigit(ivalue(car(args))));
+		s_retbool(utf32_isdigit((int)ivalue(car(args))));
 	case OP_CHARWP:		/* char-whitespace? */
 		if (!validargs("char-whitespace?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_isspace(ivalue(car(args))));
+		s_retbool(utf32_isspace((int)ivalue(car(args))));
 	case OP_CHARUP:		/* char-upper-case? */
 		if (!validargs("char-upper-case?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_isupper(ivalue(car(args))));
+		s_retbool(utf32_isupper((int)ivalue(car(args))));
 	case OP_CHARLP:		/* char-lower-case? */
 		if (!validargs("char-lower-case?", 1, 1, TST_CHAR)) Error_0(msg);
-		s_retbool(utf32_islower(ivalue(car(args))));
+		s_retbool(utf32_islower((int)ivalue(car(args))));
 	case OP_PROC:		/* procedure? */
 		if (!validargs("procedure?", 1, 1, TST_ANY)) Error_0(msg);
 		/*--
@@ -5402,7 +6716,7 @@ OP_ERR1:
 	case OP_QUIT:		/* quit */
 		if (!validargs("quit", 0, 1, TST_INTEGER)) Error_0(msg);
 		if (is_pair(args)) {
-			return ivalue(car(args));
+			return (int)ivalue(car(args));
 		}
 		return 0;
 
@@ -5612,9 +6926,9 @@ OP_ERR1:
 			s_return(EOF_OBJ);
 		}
 		if (operator == OP_PEEK_CHAR) {
-			backchar(w);
+			backchar((int)w);
 		}
-		s_return(mk_character(w));
+		s_return(mk_character((int)w));
 
 	case OP_CHAR_READY:		/* char-ready? */
 		if (!validargs("char-ready?", 0, 1, TST_INPORT)) Error_0(msg);
@@ -5655,7 +6969,7 @@ OP_RDSEXPR:
 				Error_0("syntax error -- illegal dot expression");
 			} else {
 #ifndef ONLY_R5RS_PARENTHESES
-				code = mk_integer(w);
+				code = mk_integer((int32_t)w);
 #else
 				code = NIL;
 #endif
@@ -5833,9 +7147,9 @@ OP_PVECFROM:
 			putstr(")");
 			s_return(T);
 		} else {
-			ivalue(cdr(args)) = w + 1;
+			ivalue(cdr(args)) = (int32_t)w + 1;
 			s_save(OP_PVECFROM, args, NIL);
-			args = vector_elem(car(args), w);
+			args = vector_elem(car(args), (int)w);
 			if (w > 0) putstr(" ");
 			s_goto(OP_P0LIST);
 		}
@@ -5846,7 +7160,7 @@ OP_PVECFROM:
 		if (w < 0) {
 			Error_1("length: not a list:", car(args));
 		}
-		s_return(mk_integer(w));
+		s_return(mk_integer((int32_t)w));
 
 	case OP_MEMQ:		/* memq */
 		if (!validargs("memq", 2, 2, TST_ANY TST_LIST)) Error_0(msg);
@@ -5993,7 +7307,7 @@ void mk_proc(int op, char *name)
 	x = mk_symbol(name);
 	y = get_cell(&x, &NIL);
 	type(y) = (T_PROC | T_ATOM);
-	ivalue(y) = (long)op;
+	ivalue(y) = op;
 	set_num_integer(y);
 	x = cons(x, y);
 	x = cons(x, car(global_env));
@@ -6032,13 +7346,15 @@ void init_vars_global(void)
 	type(&_ZERO) = T_NUMBER;
 	set_num_integer(&_ZERO);
 	ivalue(&_ZERO) = 0;
+	bignum(&_ZERO) = NIL;
 	type(&_ONE) = T_NUMBER;
 	set_num_integer(&_ONE);
 	ivalue(&_ONE) = 1;
+	bignum(&_ONE) = NIL;
 	load_files = 0;
 	/* init output file */
 	outport = mk_port(stdout, port_output);
-	strbuff = mk_memblock(256, &NIL);
+	strbuff = mk_memblock(256, &NIL, &NIL);
 }
 
 

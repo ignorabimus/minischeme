@@ -2,6 +2,7 @@
 #define MINISCHEME_H
 
 #include <stdio.h>
+#include <inttypes.h>
 #include <setjmp.h>
 
 #ifdef __cplusplus
@@ -37,9 +38,12 @@ struct cell {
 			char   *_svalue;
 			size_t  _length;
 		} _string;
-		struct {
-			long    _ivalue;
-			long    _rvalue;
+		union {
+			struct {
+				int32_t _ivalue;
+				struct cell *_bignum;
+			} _integer;
+			double  _rvalue;
 		} _number;
 		struct {
 			FILE   *_file;
@@ -95,8 +99,9 @@ struct cell {
 #define strlength(p)    ((p)->_object._string._length)
 
 #define is_number(p)    (type(p)&T_NUMBER)
-#define ivalue(p)       ((p)->_object._number._ivalue)
-#define rvalue(p)       (*(double *)&(p)->_object._number._ivalue)
+#define ivalue(p)       ((p)->_object._number._integer._ivalue)
+#define bignum(p)       ((p)->_object._number._integer._bignum)
+#define rvalue(p)       ((p)->_object._number._rvalue)
 #define nvalue(p)       ((p)->_isfixnum ? ivalue(p) : rvalue(p))
 #define is_integer(p)   (is_number(p) && ((p)->_isfixnum || floor(rvalue(p) + 0.5) == rvalue(p)))
 #define set_num_integer(p)   ((p)->_isfixnum = 1)
@@ -115,7 +120,7 @@ struct cell {
 #define is_proc(p)      (type(p)&T_PROC)
 #define syntaxname(p)   strvalue(car(p))
 #define syntaxnum(p)    (*(short *)&car(p)->_extflag)
-#define procnum(p)      ivalue(p)
+#define procnum(p)      (int)ivalue(p)
 
 #define is_closure(p)   (type(p)&T_CLOSURE)
 #define is_macro(p)     (exttype(p)&T_MACRO)
@@ -184,7 +189,7 @@ extern jmp_buf error_jmp;
 
 pointer cons(pointer a, pointer b);
 pointer mk_character(int c);
-pointer mk_integer(long num);
+pointer mk_integer(int32_t num);
 pointer mk_real(double num);
 pointer mk_number(pointer v);
 pointer mk_string(const char *str);
