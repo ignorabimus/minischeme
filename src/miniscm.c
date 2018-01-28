@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w7 (2017)
+ *	current version is 0.85w8 (2018)
  *
  * Below are the original credits.
  */
@@ -40,7 +40,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w7.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w8.\n"
 #define InitFile "init.scm"
 #endif
 
@@ -82,6 +82,8 @@ pointer inport = &_NIL;		/* pointer to current-input-port */
 pointer outport = &_NIL;	/* pointer to current-output-port */
 
 pointer winders = &_NIL;	/* pointer to winders list */
+
+pointer strbuff = &_NIL;	/* pointer to string buffer */
 
 #ifdef USE_COPYING_GC
 pointer gcell_list = &_NIL;	/* pointer to cell table */
@@ -969,6 +971,7 @@ void gc(register pointer *a, register pointer *b)
 	inport = forward(inport);
 	outport = forward(outport);
 	winders = forward(winders);
+	strbuff = forward(strbuff);
 
 	/* forward special symbols */
 	LAMBDA = forward(LAMBDA);
@@ -1173,6 +1176,7 @@ void gc(register pointer *a, register pointer *b)
 	mark(inport);
 	mark(outport);
 	mark(winders);
+	mark(strbuff);
 
 	/* mark current registers */
 	mark(args);
@@ -1321,8 +1325,6 @@ void port_close(pointer p)
 #define TOK_PAREN_CURLY  32
 #endif
 
-char    strbuff[256];
-
 /* get new character from input file */
 int inchar(void)
 {
@@ -1434,34 +1436,46 @@ void putcharacter(const int c)
 /* read chacters to delimiter */
 char *readstr(char *delim)
 {
-	char   *p = strbuff;
-	while (p - strbuff < sizeof(strbuff)) {
-		int c = inchar();
+	char *p = strvalue(strbuff);
+	int c;
+	do {
+		size_t len;
+		c = inchar();
 		if (c == EOF) {
 			*p = '\0';
-			return strbuff;
+			return strvalue(strbuff);
+		} else if ((len = p - strvalue(strbuff)) + 4 > strlength(strbuff)) {
+			pointer x = mk_memblock(strlength(strbuff) + 256, &NIL);
+			memcpy(strvalue(x), strvalue(strbuff), strlength(strbuff));
+			strbuff = x;
+			p = strvalue(strbuff) + len;
 		}
 		p += utf32_to_utf8(c, p);
-		if (isdelim(delim, c) == 0) break;
-	}
-	if (p != strbuff + 2 || p[-2] != '\\') {
+	} while (isdelim(delim, c));
+	if (p != strvalue(strbuff) + 2 || p[-2] != '\\') {
 		backchar(*--p);
 	}
 	*p = '\0';
-	return strbuff;
+	return strvalue(strbuff);
 }
 
 /* read string expression "xxx...xxx" */
 pointer readstrexp(void)
 {
-	char *p = strbuff;
+	char *p = strvalue(strbuff);
 	int c, c1 = 0;
 	enum { st_ok, st_bsl, st_x1, st_x2, st_oct1, st_oct2 } state = st_ok;
 
 	for (;;) {
+		size_t len;
 		c = inchar();
-		if (c == EOF || p - strbuff > sizeof(strbuff) - 1) {
+		if (c == EOF) {
 			return F;
+		} else if ((len = p - strvalue(strbuff)) + 4 > strlength(strbuff)) {
+			pointer x = mk_memblock(strlength(strbuff) + 256, &NIL);
+			memcpy(strvalue(x), strvalue(strbuff), strlength(strbuff));
+			strbuff = x;
+			p = strvalue(strbuff) + len;
 		}
 		if (state == st_ok) {
 			switch (c) {
@@ -1470,7 +1484,7 @@ pointer readstrexp(void)
 				break;
 			case '"':
 				*p = 0;
-				return mk_counted_string(strbuff, p - strbuff);
+				return mk_counted_string(strvalue(strbuff), p - strvalue(strbuff));
 			default:
 				p += utf32_to_utf8(c, p);
 				break;
@@ -1688,7 +1702,7 @@ char *atom2str(pointer l, int f)
 	else if (l == EOF_OBJ)
 		p = "#<EOF>";
 	else if (is_number(l)) {
-		p = strbuff;
+		p = strvalue(strbuff);
 		if (f <= 1 || f == 10) {
 			if (l->_isfixnum) {
 				sprintf(p, "%ld", ivalue(l));
@@ -1713,7 +1727,7 @@ char *atom2str(pointer l, int f)
 				sprintf(p, "-%lo", -ivalue(l));
 		} else if (f == 2) {
 			unsigned long b = (ivalue(l) < 0) ? -ivalue(l) : ivalue(l);
-			p = &p[sizeof(strbuff) - 1];
+			p = &p[strlength(strbuff) - 1];
 			*p = 0;
 			do { *--p = (b & 1) ? '1' : '0'; b >>= 1; } while (b != 0);
 			if (ivalue(l) < 0) *--p = '-';
@@ -1729,7 +1743,7 @@ char *atom2str(pointer l, int f)
 		}
 	} else if (is_character(l)) {
 		int c = ivalue(l);
-		p = strbuff;
+		p = strvalue(strbuff);
 		if (!f) {
 			*(p + utf32_to_utf8(c, p)) = '\0';
 		} else {
@@ -1764,7 +1778,7 @@ char *atom2str(pointer l, int f)
 			p = symname(l);
 		}
 	} else if (is_proc(l)) {
-		p = strbuff;
+		p = strvalue(strbuff);
 		sprintf(p, "#<PROCEDURE %ld>", procnum(l));
 	} else if (is_port(l)) {
 		if (port_file(l) != NULL) {
@@ -1787,7 +1801,7 @@ char *atom2str(pointer l, int f)
 	} else if (is_continuation(l)) {
 		p = "#<CONTINUATION>";
 	} else if (is_foreign(l)) {
-		p = strbuff;
+		p = strvalue(strbuff);
 		sprintf(p, "#<FOREIGN PROCEDURE %ld>", procnum(l));
 	} else {
 		p = "#<ERROR>";
@@ -5953,8 +5967,8 @@ OP_PVECFROM:
 		s_retbool(is_atom(car(args)));
 
 	default:
-		sprintf(strbuff, "%d is illegal operator", operator);
-		Error_0(strbuff);
+		sprintf(msg, "%d is illegal operator", operator);
+		Error_0(msg);
 	}
 
 	return 0;
@@ -6024,6 +6038,7 @@ void init_vars_global(void)
 	load_files = 0;
 	/* init output file */
 	outport = mk_port(stdout, port_output);
+	strbuff = mk_memblock(256, &NIL);
 }
 
 
