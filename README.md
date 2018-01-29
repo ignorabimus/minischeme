@@ -8,6 +8,7 @@ Features
 --------
 
 * based on Mini-Scheme 0.85k4-a
+* bignum (multi-precision integer) operations supported
 * continuations support without using 'SCHEME STACK' (#undef USE_SCHEME_STACK)
 * implemented a Copying GC using the Cheney's algorithm (#define USE_COPYING_GC)
 * implemented Hygienic macro 'syntax-rules' (supports SRFI 46)
