@@ -1780,8 +1780,8 @@ char *atom2str(pointer l, int f)
 						uint64_t t = 0;
 						for (i = col - 1; i >= 0; i--) {
 							t = t << 32 | temp[i];
-							temp[i] = (uint32_t)(t / 10);
-							t = t % 10;
+							temp[i] = (uint32_t)(t / 1000000000);
+							t = t % 1000000000;
 						}
 						while (col > 0) {
 							if (temp[col - 1] > 0) {
@@ -1789,7 +1789,9 @@ char *atom2str(pointer l, int f)
 							}
 							col--;
 						}
-						*--p = (char)t + '0';
+						for (i = 0; i < 9 && (col > 0 || t > 0); i++, t /= 10) {
+							*--p = (char)(t % 10) + '0';
+						}
 					}
 					if (ivalue(l) < 0) *--p = '-';
 				}
