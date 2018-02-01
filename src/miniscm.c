@@ -2087,7 +2087,6 @@ static int bn_add(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint3
 		}
 	}
 	if (t >>= 32) {
-		if (*colz >= 256) return 0;
 		z[(*colz)++] = (uint32_t)t;
 	}
 	return 1;
@@ -2158,9 +2157,6 @@ static int bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int3
 	int32_t i, q = n / 32, r = n & 0x1F;
 
 	if (r == 0) {
-		if (colx + q > 256) {
-			return 0;
-		}
 		for (i = colx - 1; i >= 0; --i) {
 			z[i + q] = x[i];
 		}
@@ -2171,9 +2167,6 @@ static int bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int3
 		if (x[colx - 1] >> (32 - r)) {
 			col++;
 			z[colx + q] = 0;
-		}
-		if (colx + q + col > 256) {
-			return 0;
 		}
 		for (i = colx - 1; i >= 0; --i) {
 			z[i + q + 1] |= x[i] >> (32 - r);
