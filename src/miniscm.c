@@ -2151,6 +2151,43 @@ static int bn_mul(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint3
 	return 1;
 }
 
+/* z = x^2 */
+static int bn_sqr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx)
+{
+	int32_t i, j = 0;
+	uint64_t t;
+	*colz = 2 * colx;
+	memset(z, 0, sizeof(uint32_t) * *colz);
+	for (i = 0; i < colx - 1; i++) {
+		t = 0;
+		for (j = i + 1; j < colx; j++) {
+			t = z[i + j] + (uint64_t)x[i] * x[j] + (t >> 32);
+			z[i + j] = (uint32_t)t;
+		}
+		if (t >>= 32) {
+			z[i + j] = (uint32_t)t;
+		}
+	}
+	for (i = i + j - 1; i >= 0; i--) {
+		z[i + 1] |= z[i] >> 31;
+		z[i] = z[i] << 1;
+	}
+	t = 0;
+	for (i = 0; i < colx * 2; i++) {
+		t = z[i] + (uint64_t)x[i >> 1] * x[i >> 1] + (t >> 32);
+		z[i++] = (uint32_t)t;
+		t = z[i] + (t >> 32);
+		z[i] = (uint32_t)t;
+	}
+	while (*colz > 0) {
+		if (z[*colz - 1] > 0) {
+			break;
+		}
+		(*colz)--;
+	}
+	return 1;
+}
+
 /* z = x << n */
 static int bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
 {
@@ -2655,7 +2692,7 @@ static int bignum_pow(pointer z, pointer x, int32_t val)
 			memcpy(t_z, tmp, colz * sizeof(uint32_t));
 		} else {
 			val >>= 1;
-			if (bn_mul(tmp, &colx, t_x, colx, t_x, colx) == 0) {
+			if (bn_sqr(tmp, &colx, t_x, colx) == 0) {
 				return 0;
 			}
 			memcpy(t_x, tmp, colx * sizeof(uint32_t));
