@@ -400,7 +400,7 @@ int utf8_strpos(const char *s, size_t pos)
 {
 	const char *t = s;
 
-	while (*s) {
+	while (*s || pos == 0) {
 		if (pos-- == 0) return (int)(s - t);
 		s += utf8_get_next(s, NULL);
 	}
@@ -5974,7 +5974,7 @@ OP_DOWINDS2:
 	case OP_STRSET:		/* string-set! */
 		if (!validargs("string-set!", 3, 3, TST_STRING TST_NATURAL TST_CHAR)) Error_0(msg);
 		w = utf8_strpos(strvalue(car(args)), (size_t)ivalue(cadr(args)));
-		if (w == -1) {
+		if (w == -1 || strvalue(car(args))[w] == '\0') {
 			Error_1("string-set!: out of bounds:", cadr(args));
 		} else {
 			char utf8[4];
