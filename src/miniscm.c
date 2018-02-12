@@ -2403,7 +2403,7 @@ static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
 	type(z) = T_NUMBER;
 	set_num_integer(z);
 	if (col <= 1 && INT32_MIN <= d && d <= INT32_MAX) {
-		ivalue(z) = (int32_t)d;
+		ivalue(z) = (col == 0) ? 0 : (int32_t)d;
 		bignum(z) = NIL;
 	} else {
 		ivalue(z) = sign * col;
