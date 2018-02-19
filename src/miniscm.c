@@ -5892,10 +5892,11 @@ OP_DOWINDS2:
 		if (w < 0) {
 			Error_1("list-tail: not a proper list:", x);
 		}
-		if (w < ivalue(cadr(args))) {
-			Error_1("list-tail: list length <", cadr(args));
+		args = cadr(args);
+		if (w < ivalue(args)) {
+			Error_1("list-tail: index too large:", args);
 		}
-		for (w -= ivalue(cadr(args)); w > 0; --w) {
+		for (w = 0; w < ivalue(args); w++) {
 			x = cdr(x);
 		}
 		s_return(x);
@@ -5907,10 +5908,11 @@ OP_DOWINDS2:
 		if (w < 0) {
 			Error_1("list-ref: not a proper list:", x);
 		}
-		if (w < ivalue(cadr(args))) {
-			Error_1("list-ref: list length <", cadr(args));
+		args = cadr(args);
+		if (w <= ivalue(args)) {
+			Error_1("list-ref: index too large:", args);
 		}
-		for (w -= ivalue(cadr(args)); w > 0; --w) {
+		for (w = 0; w < ivalue(args); w++) {
 			x = cdr(x);
 		}
 		s_return(car(x));
