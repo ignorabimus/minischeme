@@ -4897,7 +4897,7 @@ OP_EXPANDPATTERN:
 		}
 		mark_y = NIL;
 		for (mark_x = cdr(args); mark_x != NIL; mark_x = cdr(mark_x)) {
-			if (caar(mark_x) == NIL) {
+			if (car(mark_x) == NIL) {
 				s_return(non_alloc_rev(NIL, car(args)));
 			}
 			mark_y = cons(caar(mark_x), mark_y);
@@ -4915,7 +4915,7 @@ OP_EXPANDPATTERN:
 	case OP_FOREACH1:	/* for-each */
 		mark_y = NIL;
 		for (mark_x = args; mark_x != NIL; mark_x = cdr(mark_x)) {
-			if (caar(mark_x) == NIL) {
+			if (car(mark_x) == NIL) {
 				s_return(T);
 			}
 			mark_y = cons(caar(mark_x), mark_y);
