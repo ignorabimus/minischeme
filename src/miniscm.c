@@ -1980,13 +1980,13 @@ size_t printatom(pointer l, int f)
 /* greatest common divisor */
 static int64_t gcd(int32_t x, int32_t y)
 {
-	int32_t z;
-	while (x != 0) {
-		z = x;
-		x = y % x;
-		y = z;
+	uint32_t ux = (uint32_t)llabs(x), uy = (uint32_t)llabs(y), uz;
+	while (ux != 0) {
+		uz = ux;
+		ux = uy % ux;
+		uy = uz;
 	}
-	return llabs(y);
+	return uy;
 }
 
 /* least common multiple */
