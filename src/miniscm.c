@@ -2459,7 +2459,7 @@ static int bignum_add_imm(pointer z, pointer x, int32_t val, int32_t sign)
 {
 	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
 	int32_t colx = abs(ivalue(x)), col = (colx > 1 ? colx : 1) + 1;
-	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &NIL);
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &z);
 	if (bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
 		return 0;
 	}
@@ -2484,7 +2484,7 @@ static int bignum_sub_imm(pointer z, pointer x, int32_t val, int32_t sign)
 {
 	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
 	int32_t colx = abs(ivalue(x)), col = colx;
-	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &NIL);
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &z);
 	if (bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
 		return 0;
 	}
@@ -2509,7 +2509,7 @@ static int bignum_mul_imm(pointer z, pointer x, int32_t val)
 {
 	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
 	int32_t colx = abs(ivalue(x)), col = colx + 1;
-	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &NIL);
+	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &z);
 	if (bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
 		return 0;
 	}
@@ -5035,145 +5035,143 @@ OP_DOWINDS2:
 
 	case OP_ADD:		/* + */
 		if (!validargs("+", 0, 65535, TST_NUMBER)) Error_0(msg);
-		for (v = _ZERO; args != NIL; args = cdr(args)) {
-			if (v._isfixnum) {
+		for (mark_x = mk_number(&_ZERO); args != NIL; args = cdr(args)) {
+			if (mark_x->_isfixnum) {
 				if (car(args)->_isfixnum) {
-					if (bignum(&v) == NIL) {
+					if (bignum(mark_x) == NIL) {
 						if (bignum(car(args)) == NIL) {
-							bignum_from_int64(&v, (int64_t)ivalue(&v) + ivalue(car(args)));
+							bignum_from_int64(mark_x, (int64_t)ivalue(mark_x) + ivalue(car(args)));
 						} else {
-							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+							int32_t signx = ivalue(mark_x) < 0 ? -1 : 1;
 							int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
 							if (signx == signy) {
-								bignum_add_imm(&v, car(args), ivalue(&v), signx);
+								bignum_add_imm(mark_x, car(args), ivalue(mark_x), signx);
 							} else {
-								bignum_sub_imm(&v, car(args), ivalue(&v), -signx);
+								bignum_sub_imm(mark_x, car(args), ivalue(mark_x), -signx);
 							}
 						}
 					} else {
-						int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+						int32_t signx = ivalue(mark_x) < 0 ? -1 : 1;
 						int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
 						if (bignum(car(args)) == NIL) {
 							if (signx == signy) {
-								bignum_add_imm(&v, &v, ivalue(car(args)), signx);
+								bignum_add_imm(mark_x, mark_x, ivalue(car(args)), signx);
 							} else {
-								bignum_sub_imm(&v, &v, ivalue(car(args)), signx);
+								bignum_sub_imm(mark_x, mark_x, ivalue(car(args)), signx);
 							}
 						} else {
 							if (signx == signy) {
-								bignum_add(&v, &v, car(args), signx);
+								bignum_add(&v, mark_x, car(args), signx);
 							} else {
-								if (bignum_gt(car(args), &v)) {
-									bignum_sub(&v, car(args), &v, -signx);
+								if (bignum_gt(car(args), mark_x)) {
+									bignum_sub(&v, car(args), mark_x, -signx);
 								} else {
-									bignum_sub(&v, &v, car(args), signx);
+									bignum_sub(&v, mark_x, car(args), signx);
 								}
 							}
+							*mark_x = v;
 						}
 					}
 				} else {
-					rvalue(&v) = get_rvalue(&v) + rvalue(car(args));
-					set_num_real(&v);
+					rvalue(mark_x) = get_rvalue(mark_x) + rvalue(car(args));
+					set_num_real(mark_x);
 				}
 			} else {
-				rvalue(&v) += get_rvalue(car(args));
+				rvalue(mark_x) += get_rvalue(car(args));
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_SUB:		/* - */
 		if (!validargs("-", 1, 65535, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
-			v = _ZERO;
+			mark_x = mk_number(&_ZERO);
 		} else {
-			v = *car(args);
+			mark_x = mk_number(car(args));
 			args = cdr(args);
 		}
 		for ( ; args != NIL; args = cdr(args)) {
-			if (v._isfixnum) {
+			if (mark_x->_isfixnum) {
 				if (car(args)->_isfixnum) {
-					if (bignum(&v) == NIL) {
+					if (bignum(mark_x) == NIL) {
 						if (bignum(car(args)) == NIL) {
-							bignum_from_int64(&v, (int64_t)ivalue(&v) - ivalue(car(args)));
+							bignum_from_int64(mark_x, (int64_t)ivalue(mark_x) - ivalue(car(args)));
 						} else {
-							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+							int32_t signx = ivalue(mark_x) < 0 ? -1 : 1;
 							int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
 							if (signx == signy) {
-								bignum_sub_imm(&v, car(args), ivalue(&v), -signx);
+								bignum_sub_imm(mark_x, car(args), ivalue(mark_x), -signx);
 							} else {
-								bignum_add_imm(&v, car(args), ivalue(&v), signx);
+								bignum_add_imm(mark_x, car(args), ivalue(mark_x), signx);
 							}
 						}
 					} else {
-						int32_t signx = ivalue(&v) < 0 ? -1 : 1;
+						int32_t signx = ivalue(mark_x) < 0 ? -1 : 1;
 						int32_t signy = ivalue(car(args)) < 0 ? -1 : 1;
 						if (bignum(car(args)) == NIL) {
 							if (signx == signy) {
-								bignum_sub_imm(&v, &v, ivalue(car(args)), signx);
+								bignum_sub_imm(mark_x, mark_x, ivalue(car(args)), signx);
 							} else {
-								bignum_add_imm(&v, &v, ivalue(car(args)), signx);
+								bignum_add_imm(mark_x, mark_x, ivalue(car(args)), signx);
 							}
 						} else {
 							if (signx == signy) {
-								if (bignum_gt(car(args), &v)) {
-									bignum_sub(&v, car(args), &v, -signx);
+								if (bignum_gt(car(args), mark_x)) {
+									bignum_sub(&v, car(args), mark_x, -signx);
 								} else {
-									bignum_sub(&v, &v, car(args), signx);
+									bignum_sub(&v, mark_x, car(args), signx);
 								}
 							} else {
-								bignum_add(&v, &v, car(args), signx);
+								bignum_add(&v, mark_x, car(args), signx);
 							}
+							*mark_x = v;
 						}
 					}
 				} else {
-					rvalue(&v) = get_rvalue(&v) - rvalue(car(args));
-					set_num_real(&v);
+					rvalue(mark_x) = get_rvalue(mark_x) - rvalue(car(args));
+					set_num_real(mark_x);
 				}
 			} else {
-				rvalue(&v) -= get_rvalue(car(args));
+				rvalue(mark_x) -= get_rvalue(car(args));
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_MUL:		/* * */
 		if (!validargs("*", 0, 65535, TST_NUMBER)) Error_0(msg);
-		for (v = _ONE; args != NIL; args = cdr(args)) {
-			if (v._isfixnum) {
+		for (mark_x = mk_number(&_ONE); args != NIL; args = cdr(args)) {
+			if (mark_x->_isfixnum) {
 				if (car(args)->_isfixnum) {
-					if (car(args)->_isfixnum) {
-						if (bignum(&v) == NIL) {
-							if (bignum(car(args)) == NIL) {
-								bignum_from_int64(&v, (int64_t)ivalue(&v) * ivalue(car(args)));
-							} else {
-								bignum_mul_imm(&v, car(args), ivalue(&v));
-							}
+					if (bignum(mark_x) == NIL) {
+						if (bignum(car(args)) == NIL) {
+							bignum_from_int64(mark_x, (int64_t)ivalue(mark_x) * ivalue(car(args)));
 						} else {
-							if (bignum(car(args)) == NIL) {
-								bignum_mul_imm(&v, &v, ivalue(car(args)));
-							} else {
-								bignum_mul(&v, &v, car(args));
-							}
+							bignum_mul_imm(mark_x, car(args), ivalue(mark_x));
 						}
 					} else {
-						rvalue(&v) = get_rvalue(&v) - rvalue(car(args));
-						set_num_real(&v);
+						if (bignum(car(args)) == NIL) {
+							bignum_mul_imm(mark_x, mark_x, ivalue(car(args)));
+						} else {
+							bignum_mul(&v, mark_x, car(args));
+							*mark_x = v;
+						}
 					}
 				} else {
-					rvalue(&v) = get_rvalue(&v) * rvalue(car(args));
-					set_num_real(&v);
+					rvalue(mark_x) = get_rvalue(mark_x) - rvalue(car(args));
+					set_num_real(mark_x);
 				}
 			} else {
-				rvalue(&v) *= get_rvalue(car(args));
+				rvalue(mark_x) *= get_rvalue(car(args));
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_DIV:		/* / */
 		if (!validargs("/", 1, 65535, TST_NUMBER)) Error_0(msg);
 		if (cdr(args) == NIL) {
-			v = _ONE;
+			mark_x = mk_number(&_ONE);
 		} else {
-			v = *car(args);
+			mark_x = mk_number(car(args));
 			args = cdr(args);
 		}
 		for ( ; args != NIL; args = cdr(args)) {
@@ -5181,307 +5179,321 @@ OP_DOWINDS2:
 			if (-DBL_MIN < d && d < DBL_MIN) {
 				Error_0("Divided by zero");
 			}
-			if (v._isfixnum) {
+			if (mark_x->_isfixnum) {
 				if (car(args)->_isfixnum) {
-					if (bignum(&v) == NIL) {
+					if (bignum(mark_x) == NIL) {
 						if (bignum(car(args)) == NIL) {
-							if ((int64_t)ivalue(&v) % ivalue(car(args)) == 0) {
-								bignum_from_int64(&v, (int64_t)ivalue(&v) / ivalue(car(args)));
+							if ((int64_t)ivalue(mark_x) % ivalue(car(args)) == 0) {
+								bignum_from_int64(mark_x, (int64_t)ivalue(mark_x) / ivalue(car(args)));
 							} else {
-								rvalue(&v) = ivalue(&v) / d;
-								set_num_real(&v);
+								rvalue(mark_x) = ivalue(mark_x) / d;
+								set_num_real(mark_x);
 							}
 						} else {
-							if (ivalue(&v) == INT32_MIN
+							if (ivalue(mark_x) == INT32_MIN
 								&& ivalue(car(args)) == 1 && ((uint32_t *)strvalue(bignum(car(args))))[0] == (uint32_t)1 << 31) {
-								ivalue(&v) = -1;
-								bignum(&v) = NIL;
+								ivalue(mark_x) = -1;
+								bignum(mark_x) = NIL;
 							} else {
-								rvalue(&v) = ivalue(&v) / d;
-								set_num_real(&v);
+								rvalue(mark_x) = ivalue(mark_x) / d;
+								set_num_real(mark_x);
 							}
 						}
 					} else {
 						struct cell q, r;
 						if (bignum(car(args)) == NIL) {
-							bignum_div_imm(&q, &r, &v, ivalue(car(args)));
+							bignum_div_imm(&q, &r, mark_x, ivalue(car(args)));
 							if (ivalue(&r) == 0) {
-								v = q;
+								*mark_x = q;
 							} else {
-								rvalue(&v) = get_rvalue(&v) / d;
-								set_num_real(&v);
+								rvalue(mark_x) = get_rvalue(mark_x) / d;
+								set_num_real(mark_x);
 							}
 						} else {
-							bignum_div(&q, &r, &v, car(args));
+							bignum_div(&q, &r, mark_x, car(args));
 							if (ivalue(&r) == 0) {
-								v = q;
+								*mark_x = q;
 							} else {
-								rvalue(&v) = get_rvalue(&v) / d;
-								set_num_real(&v);
+								rvalue(mark_x) = get_rvalue(mark_x) / d;
+								set_num_real(mark_x);
 							}
 						}
 					}
 				} else {
-					rvalue(&v) = get_rvalue(&v) / d;
-					set_num_real(&v);
+					rvalue(mark_x) = get_rvalue(mark_x) / d;
+					set_num_real(mark_x);
 				}
 			} else {
-				rvalue(&v) /= d;
+				rvalue(mark_x) /= d;
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_ABS:		/* abs */
 		if (!validargs("abs", 1, 1, TST_NUMBER)) Error_0(msg);
-		v = *car(args);
-		if (v._isfixnum) {
-			bignum_abs(&v, &v);
+		mark_x = mk_number(car(args));
+		if (mark_x->_isfixnum) {
+			bignum_abs(mark_x, mark_x);
 		} else {
-			rvalue(&v) = fabs(rvalue(&v));
+			rvalue(mark_x) = fabs(rvalue(mark_x));
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_QUO:		/* quotient */
 		if (!validargs("quotient", 2, 2, TST_INTEGER)) Error_0(msg);
-		v = *car(args);
-		x = cadr(args);
-		w = x->_isfixnum ? ivalue(x) : (int32_t)rvalue(x);
+		mark_x = mk_number(car(args));
+		mark_y = cadr(args);
+		w = mark_y->_isfixnum ? ivalue(mark_y) : (int32_t)rvalue(mark_y);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
-		if (v._isfixnum) {
-			if (x->_isfixnum) {
-				if (bignum(&v) == NIL) {
-					if (bignum(x) == NIL) {
-						bignum_from_int64(&v, (int64_t)ivalue(&v) / ivalue(x));
+		if (mark_x->_isfixnum) {
+			if (mark_y->_isfixnum) {
+				if (bignum(mark_x) == NIL) {
+					if (bignum(mark_y) == NIL) {
+						bignum_from_int64(mark_x, (int64_t)ivalue(mark_x) / ivalue(mark_y));
 					} else {
-						if (ivalue(&v) == INT32_MIN
-							&& ivalue(x) == 1 && ((uint32_t *)strvalue(bignum(x)))[0] == (uint32_t)1 << 31) {
-							ivalue(&v) = -1;
-							bignum(&v) = NIL;
+						if (ivalue(mark_x) == INT32_MIN
+							&& ivalue(mark_y) == 1 && ((uint32_t *)strvalue(bignum(mark_y)))[0] == (uint32_t)1 << 31) {
+							ivalue(mark_x) = -1;
+							bignum(mark_x) = NIL;
 						} else {
-							ivalue(&v) = 0;
-							bignum(&v) = NIL;
+							ivalue(mark_x) = 0;
+							bignum(mark_x) = NIL;
 						}
 					}
 				} else {
 					struct cell q, r;
-					if (bignum(x) == NIL) {
-						bignum_div_imm(&q, &r, &v, ivalue(x));
+					if (bignum(mark_y) == NIL) {
+						bignum_div_imm(&q, &r, mark_x, ivalue(mark_y));
 					} else {
-						bignum_div(&q, &r, &v, x);
+						bignum_div(&q, &r, mark_x, mark_y);
 					}
-					v = q;
+					*mark_x = q;
 				}
 			} else {
-				rvalue(&v) = get_rvalue(&v) / rvalue(x);
-				rvalue(&v) = (rvalue(&v) < 0) ? ceil(rvalue(&v)) : floor(rvalue(&v));
-				set_num_real(&v);
+				rvalue(mark_x) = get_rvalue(mark_x) / rvalue(mark_y);
+				rvalue(mark_x) = (rvalue(mark_x) < 0) ? ceil(rvalue(mark_x)) : floor(rvalue(mark_x));
+				set_num_real(mark_x);
 			}
 		} else {
-			rvalue(&v) = rvalue(&v) / get_rvalue(x);
-			rvalue(&v) = (rvalue(&v) < 0) ? ceil(rvalue(&v)) : floor(rvalue(&v));
+			rvalue(mark_x) = rvalue(mark_x) / get_rvalue(mark_y);
+			rvalue(mark_x) = (rvalue(mark_x) < 0) ? ceil(rvalue(mark_x)) : floor(rvalue(mark_x));
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_REM:		/* remainder */
 		if (!validargs("remainder", 2, 2, TST_INTEGER)) Error_0(msg);
-		v = *car(args);
-		x = cadr(args);
-		w = x->_isfixnum ? ivalue(x) : (int32_t)rvalue(x);
+		mark_x = mk_number(car(args));
+		mark_y = cadr(args);
+		w = mark_y->_isfixnum ? ivalue(mark_y) : (int32_t)rvalue(mark_y);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
-		if (v._isfixnum) {
-			if (x->_isfixnum) {
-				if (bignum(&v) == NIL) {
-					if (bignum(x) == NIL) {
-						bignum_from_int64(&v, (int64_t)ivalue(&v) % ivalue(x));
+		if (mark_x->_isfixnum) {
+			if (mark_y->_isfixnum) {
+				if (bignum(mark_x) == NIL) {
+					if (bignum(mark_y) == NIL) {
+						bignum_from_int64(mark_x, (int64_t)ivalue(mark_x) % ivalue(mark_y));
 					} else {
-						if (ivalue(&v) == INT32_MIN
-							&& ivalue(x) == 1 && ((uint32_t *)strvalue(bignum(x)))[0] == (uint32_t)1 << 31) {
-							ivalue(&v) = 0;
-							bignum(&v) = NIL;
+						if (ivalue(mark_x) == INT32_MIN
+							&& ivalue(mark_y) == 1 && ((uint32_t *)strvalue(bignum(mark_y)))[0] == (uint32_t)1 << 31) {
+							ivalue(mark_x) = 0;
+							bignum(mark_x) = NIL;
 						}
 					}
 				} else {
 					struct cell q, r;
-					if (bignum(x) == NIL) {
-						bignum_div_imm(&q, &r, &v, ivalue(x));
+					if (bignum(mark_y) == NIL) {
+						bignum_div_imm(&q, &r, mark_x, ivalue(mark_y));
 					} else {
-						bignum_div(&q, &r, &v, x);
+						bignum_div(&q, &r, mark_x, mark_y);
 					}
-					v = r;
+					*mark_x = r;
 				}
 			} else {
-				rvalue(&v) = fmod(get_rvalue(&v), rvalue(x));
-				set_num_real(&v);
+				rvalue(mark_x) = fmod(get_rvalue(mark_x), rvalue(mark_y));
+				set_num_real(mark_x);
 			}
 		} else {
-			rvalue(&v) = fmod(rvalue(&v), get_rvalue(x));
+			rvalue(mark_x) = fmod(rvalue(mark_x), get_rvalue(mark_y));
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_MOD:		/* modulo */
 		if (!validargs("modulo", 2, 2, TST_INTEGER)) Error_0(msg);
-		v = *car(args);
-		x = cadr(args);
-		w = x->_isfixnum ? ivalue(x) : (int32_t)rvalue(x);
+		mark_x = mk_number(car(args));
+		mark_y = cadr(args);
+		w = mark_y->_isfixnum ? ivalue(mark_y) : (int32_t)rvalue(mark_y);
 		if (w == 0) {
 			Error_0("Divided by zero");
 		}
-		if (v._isfixnum) {
-			if (x->_isfixnum) {
-				if (bignum(&v) == NIL) {
-					if (bignum(x) == NIL) {
-						int64_t r = (int64_t)ivalue(&v) % ivalue(x);
-						if (r * ivalue(x) < 0) {
-							r += ivalue(x);
+		if (mark_x->_isfixnum) {
+			if (mark_y->_isfixnum) {
+				if (bignum(mark_x) == NIL) {
+					if (bignum(mark_y) == NIL) {
+						int64_t r = (int64_t)ivalue(mark_x) % ivalue(mark_y);
+						if (r * ivalue(mark_y) < 0) {
+							r += ivalue(mark_y);
 						}
-						bignum_from_int64(&v, r);
+						bignum_from_int64(mark_x, r);
 					} else {
-						if (ivalue(&v) == INT32_MIN
-							&& ivalue(x) == 1 && ((uint32_t *)strvalue(bignum(x)))[0] == (uint32_t)1 << 31) {
-							ivalue(&v) = 0;
-							bignum(&v) = NIL;
+						if (ivalue(mark_x) == INT32_MIN
+							&& ivalue(mark_y) == 1 && ((uint32_t *)strvalue(bignum(mark_y)))[0] == (uint32_t)1 << 31) {
+							ivalue(mark_x) = 0;
+							bignum(mark_x) = NIL;
 						}
-						if (ivalue(&v) * w < 0) {
-							bignum_sub_imm(&v, x, ivalue(&v), ivalue(x) < 0 ? -1 : 1);
+						if (ivalue(mark_x) * w < 0) {
+							bignum_sub_imm(mark_x, mark_y, ivalue(mark_x), ivalue(mark_y) < 0 ? -1 : 1);
 						}
 					}
 				} else {
 					struct cell q, r;
-					if (bignum(x) == NIL) {
-						bignum_div_imm(&q, &r, &v, ivalue(x));
+					if (bignum(mark_y) == NIL) {
+						bignum_div_imm(&q, &r, mark_x, ivalue(mark_y));
 						if (ivalue(&r) * w < 0) {
-							ivalue(&r) += ivalue(x);
+							ivalue(&r) += ivalue(mark_y);
 						}
 					} else {
-						bignum_div(&q, &r, &v, x);
+						bignum_div(&q, &r, mark_x, mark_y);
 						if (ivalue(&r) * w < 0) {
 							if (bignum(&r) == NIL) {
-								bignum_sub_imm(&r, x, ivalue(&r), ivalue(x) < 0 ? -1 : 1);
+								bignum_sub_imm(&r, mark_y, ivalue(&r), ivalue(mark_y) < 0 ? -1 : 1);
 							} else {
-								bignum_sub(&r, x, &r, ivalue(x) < 0 ? -1 : 1);
+								bignum_sub(&r, mark_y, &r, ivalue(mark_y) < 0 ? -1 : 1);
 							}
 						}
 					}
-					v = r;
+					*mark_x = r;
 				}
 			} else {
-				rvalue(&v) = fmod(get_rvalue(&v), rvalue(x));
-				set_num_real(&v);
-				if (rvalue(&v) * w < 0) {
-					rvalue(&v) += w;
+				rvalue(mark_x) = fmod(get_rvalue(mark_x), rvalue(mark_y));
+				set_num_real(mark_x);
+				if (rvalue(mark_x) * w < 0) {
+					rvalue(mark_x) += w;
 				}
 			}
 		} else {
-			rvalue(&v) = fmod(rvalue(&v), get_rvalue(x));
-			if (rvalue(&v) * w < 0) {
-				rvalue(&v) += w;
+			rvalue(mark_x) = fmod(rvalue(mark_x), get_rvalue(mark_y));
+			if (rvalue(mark_x) * w < 0) {
+				rvalue(mark_x) += w;
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_GCD:		/* gcd */
 		if (!validargs("gcd", 0, 65535, TST_NUMBER)) Error_0(msg);
 		if (args == NIL) {
-			v = _ZERO;
+			mark_x = mk_number(&_ZERO);
 		} else if (cdr(args) == NIL) {
-			v = *car(args);
-			if (v._isfixnum) {
-				bignum_abs(&v, &v);
+			mark_x = mk_number(car(args));
+			if (mark_x->_isfixnum) {
+				bignum_abs(mark_x, mark_x);
 			} else {
-				rvalue(&v) = fabs(rvalue(&v));
+				rvalue(mark_x) = fabs(rvalue(mark_x));
 			}
 		} else {
-			v = *car(args);
-			for (x = cdr(args); x != NIL; x = cdr(x)) {
-				if (v._isfixnum) {
-					if (car(x)->_isfixnum) {
-						if (bignum(&v) == NIL) {
-							if (bignum(car(x)) == NIL) {
-								bignum_from_int64(&v, gcd(ivalue(&v), ivalue(car(x))));
+			mark_x = mk_number(car(args));
+			for (mark_y = cdr(args); mark_y != NIL; mark_y = cdr(mark_y)) {
+				if (mark_x->_isfixnum) {
+					if (car(mark_y)->_isfixnum) {
+						if (bignum(mark_x) == NIL) {
+							if (bignum(car(mark_y)) == NIL) {
+								bignum_from_int64(mark_x, gcd(ivalue(mark_x), ivalue(car(mark_y))));
 							} else {
-								if (ivalue(&v) != 0) {
-									bignum_gcd_imm(&v, car(x), ivalue(&v));
+								if (ivalue(mark_x) != 0) {
+									struct cell r;
+									bignum_gcd_imm(&r, car(mark_y), ivalue(mark_x));
+									*mark_x = r;
 								}
 							}
 						} else {
-							if (bignum(car(x)) == NIL) {
-								if (ivalue(car(x)) != 0) {
-									bignum_gcd_imm(&v, &v, ivalue(car(x)));
+							if (bignum(car(mark_y)) == NIL) {
+								if (ivalue(car(mark_y)) != 0) {
+									struct cell r;
+									bignum_gcd_imm(&r, mark_x, ivalue(car(mark_y)));
+									*mark_x = r;
 								}
 							} else {
-								if (bignum_gt(&v, car(x))) {
-									bignum_gcd(&v, &v, car(x));
+								struct cell r;
+								if (bignum_gt(mark_x, car(mark_y))) {
+									bignum_gcd(&r, mark_x, car(mark_y));
 								} else {
-									bignum_gcd(&v, car(x), &v);
+									bignum_gcd(&r, car(mark_y), mark_x);
 								}
+								*mark_x = r;
 							}
 						}
 					} else {
-						rvalue(&v) = (double)gcd((int32_t)get_rvalue(&v), (int32_t)rvalue(car(x)));
-						set_num_real(&v);
+						rvalue(mark_x) = (double)gcd((int32_t)get_rvalue(mark_x), (int32_t)rvalue(car(mark_y)));
+						set_num_real(mark_x);
 					}
 				} else {
-					rvalue(&v) = (double)gcd((int32_t)rvalue(&v), (int32_t)get_rvalue(car(x)));
+					rvalue(mark_x) = (double)gcd((int32_t)rvalue(mark_x), (int32_t)get_rvalue(car(mark_y)));
 				}
 			}			
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_LCM:		/* lcm */
 		if (!validargs("lcm", 0, 65535, TST_NUMBER)) Error_0(msg);
 		if (args == NIL) {
-			v = _ONE;
+			mark_x = mk_number(&_ONE);
 		} else if (cdr(args) == NIL) {
-			v = *car(args);
-			if (v._isfixnum) {
-				bignum_abs(&v, &v);
+			mark_x = mk_number(car(args));
+			if (mark_x->_isfixnum) {
+				bignum_abs(mark_x, mark_x);
 			} else {
-				rvalue(&v) = fabs(rvalue(&v));
+				rvalue(mark_x) = fabs(rvalue(mark_x));
 			}
 		} else {
-			v = *car(args);
-			for (x = cdr(args); x != NIL; x = cdr(x)) {
-				if (v._isfixnum) {
-					if (car(x)->_isfixnum) {
-						if (bignum(&v) == NIL) {
-							if (bignum(car(x)) == NIL) {
-								bignum_from_int64(&v, lcm(ivalue(&v), ivalue(car(x))));
+			mark_x = mk_number(car(args));
+			for (mark_y = cdr(args); mark_y != NIL; mark_y = cdr(mark_y)) {
+				if (mark_x->_isfixnum) {
+					if (car(mark_y)->_isfixnum) {
+						if (bignum(mark_x) == NIL) {
+							if (bignum(car(mark_y)) == NIL) {
+								bignum_from_int64(mark_x, lcm(ivalue(mark_x), ivalue(car(mark_y))));
 							} else {
-								if (ivalue(&v) == 0) {
-									v = _ZERO;
+								if (ivalue(mark_x) == 0) {
+									mark_x = mk_number(&_ZERO);
 									break;
+								} else {
+									struct cell r;
+									bignum_lcm_imm(&r, car(mark_y), ivalue(mark_x));
+									*mark_x = r;
 								}
-								bignum_lcm_imm(&v, car(x), ivalue(&v));
 							}
 						} else {
-							if (bignum(car(x)) == NIL) {
-								if (ivalue(car(x)) == 0) {
-									v = _ZERO;
+							if (bignum(car(mark_y)) == NIL) {
+								if (ivalue(car(mark_y)) == 0) {
+									mark_x = mk_number(&_ZERO);
 									break;
-								}
-								bignum_lcm_imm(&v, &v, ivalue(car(x)));
-							} else {
-								if (bignum_gt(&v, car(x))) {
-									bignum_lcm(&v, &v, car(x));
 								} else {
-									bignum_lcm(&v, car(x), &v);
+									struct cell r;
+									bignum_lcm_imm(&r, mark_x, ivalue(car(mark_y)));
+									*mark_x = r;
 								}
+							} else {
+								struct cell r;
+								if (bignum_gt(mark_x, car(mark_y))) {
+									bignum_lcm(&r, mark_x, car(mark_y));
+								} else {
+									bignum_lcm(&r, car(mark_y), mark_x);
+								}
+								*mark_x = r;
 							}
 						}
 					} else {
-						rvalue(&v) = (double)lcm((int32_t)get_rvalue(&v), (int32_t)rvalue(car(x)));
-						set_num_real(&v);
+						rvalue(mark_x) = (double)lcm((int32_t)get_rvalue(mark_x), (int32_t)rvalue(car(mark_y)));
+						set_num_real(mark_x);
 					}
 				} else {
-					rvalue(&v) = (double)lcm((int32_t)rvalue(&v), (int32_t)get_rvalue(car(x)));
+					rvalue(mark_x) = (double)lcm((int32_t)rvalue(mark_x), (int32_t)get_rvalue(car(mark_y)));
 				}
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_FLOOR:		/* floor */
 		if (!validargs("floor", 1, 1, TST_NUMBER)) Error_0(msg);
@@ -5566,23 +5578,23 @@ OP_DOWINDS2:
 
 	case OP_EXPT:		/* expt */
 		if (!validargs("expt", 2, 2, TST_NUMBER)) Error_0(msg);
-		v = *car(args);
-		x = cadr(args);
-		if (v._isfixnum && x->_isfixnum && (bignum(&v) == NIL && ivalue(&v) == 1 || ivalue(x) == 0)) {
-			v = _ONE;
-		} else if (v._isfixnum && x->_isfixnum && ivalue(&v) == 0) {
-			v = _ZERO;
-		} else if (v._isfixnum) {
-			if (x->_isfixnum && bignum(x) == NIL && ivalue(x) > 0) {
-				bignum_pow(&v, &v, ivalue(x));
+		mark_x = mk_number(car(args));
+		y = cadr(args);
+		if (mark_x->_isfixnum && y->_isfixnum && (bignum(mark_x) == NIL && ivalue(mark_x) == 1 || ivalue(y) == 0)) {
+			*mark_x = _ONE;
+		} else if (mark_x->_isfixnum && y->_isfixnum && ivalue(mark_x) == 0) {
+			*mark_x = _ZERO;
+		} else if (mark_x->_isfixnum) {
+			if (y->_isfixnum && bignum(y) == NIL && ivalue(y) > 0) {
+				bignum_pow(mark_x, mark_x, ivalue(y));
 			} else {
-				rvalue(&v) = pow(get_rvalue(&v), get_rvalue(x));
-				set_num_real(&v);
+				rvalue(mark_x) = pow(get_rvalue(mark_x), get_rvalue(y));
+				set_num_real(mark_x);
 			}
 		} else {
-			rvalue(&v) = pow(rvalue(&v), get_rvalue(x));
+			rvalue(mark_x) = pow(rvalue(mark_x), get_rvalue(y));
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_EX2INEX:	/* exact->inexact */
 		if (!validargs("exact->inexact", 1, 1, TST_NUMBER)) Error_0(msg);
@@ -6382,129 +6394,129 @@ OP_VECTOR:
 
 	case OP_MAX:		/* max */
 		if (!validargs("max", 1, 65535, TST_NUMBER)) Error_0(msg);
-		v = *car(args);
-		for (x = cdr(args); x != NIL; x = cdr(x)) {
-			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					if (bignum(&v) == NIL) {
-						if (bignum(car(x)) == NIL) {
-							if (ivalue(&v) < ivalue(car(x))) {
-								ivalue(&v) = ivalue(car(x));
+		mark_x = mk_number(car(args));
+		for (mark_y = cdr(args); mark_y != NIL; mark_y = cdr(mark_y)) {
+			if (mark_x->_isfixnum) {
+				if (car(mark_y)->_isfixnum) {
+					if (bignum(mark_x) == NIL) {
+						if (bignum(car(mark_y)) == NIL) {
+							if (ivalue(mark_x) < ivalue(car(mark_y))) {
+								ivalue(mark_x) = ivalue(car(mark_y));
 							}
 						} else {
-							if (ivalue(car(x)) > 0) {
-								pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
-								memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
-								bignum_adjust(&v, m, ivalue(car(x)), 1);
+							if (ivalue(car(mark_y)) > 0) {
+								pointer m = mk_memblock(ivalue(car(mark_y)) * sizeof(uint32_t), &NIL, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(mark_y))), ivalue(car(mark_y)) * sizeof(uint32_t));
+								bignum_adjust(mark_x, m, ivalue(car(mark_y)), 1);
 							}
 						}
 					} else {
-						if (bignum(car(x)) == NIL) {
-							if (ivalue(&v) < 0) {
-								bignum_from_int64(&v, ivalue(car(x)));
+						if (bignum(car(mark_y)) == NIL) {
+							if (ivalue(mark_x) < 0) {
+								bignum_from_int64(mark_x, ivalue(car(mark_y)));
 							}
 						} else {
-							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
-							int32_t signy = ivalue(car(x)) < 0 ? -1 : 1;
+							int32_t signx = ivalue(mark_x) < 0 ? -1 : 1;
+							int32_t signy = ivalue(car(mark_y)) < 0 ? -1 : 1;
 							if (signx == signy) {
 								if (signx > 0) {
-									if (bignum_gt(car(x), &v)) {
-										pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
-										memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
-										bignum_adjust(&v, m, ivalue(car(x)), 1);
+									if (bignum_gt(car(x), mark_x)) {
+										pointer m = mk_memblock(ivalue(car(mark_y)) * sizeof(uint32_t), &NIL, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(mark_y))), ivalue(car(mark_y)) * sizeof(uint32_t));
+										bignum_adjust(mark_x, m, ivalue(car(mark_y)), 1);
 									}
 								} else {
-									if (bignum_gt(&v, car(x))) {
-										pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
-										memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
-										bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+									if (bignum_gt(mark_x, car(mark_y))) {
+										pointer m = mk_memblock(abs(ivalue(car(mark_y))) * sizeof(uint32_t), &NIL, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(mark_y))), abs(ivalue(car(mark_y))) * sizeof(uint32_t));
+										bignum_adjust(mark_x, m, abs(ivalue(car(mark_y))), -1);
 									}
 								}
 							} else if (signx < signy) {
-								pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
-								memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
-								bignum_adjust(&v, m, ivalue(car(x)), 1);
+								pointer m = mk_memblock(ivalue(car(mark_y)) * sizeof(uint32_t), &NIL, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(mark_y))), ivalue(car(mark_y)) * sizeof(uint32_t));
+								bignum_adjust(mark_x, m, ivalue(car(mark_y)), 1);
 							}
 						}
 					}
 				} else {
-					if (get_rvalue(&v) < rvalue(car(x))) {
-						rvalue(&v) = rvalue(car(x));
+					if (get_rvalue(mark_x) < rvalue(car(mark_y))) {
+						rvalue(mark_x) = rvalue(car(mark_y));
 					} else {
-						rvalue(&v) = get_rvalue(&v);
+						rvalue(mark_x) = get_rvalue(mark_x);
 					}
-					set_num_real(&v);
+					set_num_real(mark_x);
 				}
 			} else {
-				if (rvalue(&v) < get_rvalue(car(x))) {
-					rvalue(&v) = get_rvalue(car(x));
+				if (rvalue(mark_x) < get_rvalue(car(mark_y))) {
+					rvalue(mark_x) = get_rvalue(car(mark_y));
 				}
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_MIN:		/* min */
 		if (!validargs("min", 1, 65535, TST_NUMBER)) Error_0(msg);
-		v = *car(args);
-		for (x = cdr(args); x != NIL; x = cdr(x)) {
-			if (v._isfixnum) {
-				if (car(x)->_isfixnum) {
-					if (bignum(&v) == NIL) {
-						if (bignum(car(x)) == NIL) {
-							if (ivalue(&v) > ivalue(car(x))) {
-								ivalue(&v) = ivalue(car(x));
+		mark_x = mk_number(car(args));
+		for (mark_y = cdr(args); mark_y != NIL; mark_y = cdr(mark_y)) {
+			if (mark_x->_isfixnum) {
+				if (car(mark_y)->_isfixnum) {
+					if (bignum(mark_x) == NIL) {
+						if (bignum(car(mark_y)) == NIL) {
+							if (ivalue(mark_x) > ivalue(car(mark_y))) {
+								ivalue(mark_x) = ivalue(car(mark_y));
 							}
 						} else {
-							if (ivalue(car(x)) < 0) {
-								pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
-								memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
-								bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+							if (ivalue(car(mark_y)) < 0) {
+								pointer m = mk_memblock(abs(ivalue(car(mark_y))) * sizeof(uint32_t), &NIL, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(mark_y))), abs(ivalue(car(mark_y))) * sizeof(uint32_t));
+								bignum_adjust(mark_x, m, abs(ivalue(car(mark_y))), -1);
 							}
 						}
 					} else {
-						if (bignum(car(x)) == NIL) {
-							if (ivalue(&v) > 0) {
-								bignum_from_int64(&v, ivalue(car(x)));
+						if (bignum(car(mark_y)) == NIL) {
+							if (ivalue(mark_x) > 0) {
+								bignum_from_int64(mark_x, ivalue(car(mark_y)));
 							}
 						} else {
-							int32_t signx = ivalue(&v) < 0 ? -1 : 1;
-							int32_t signy = ivalue(car(x)) < 0 ? -1 : 1;
+							int32_t signx = ivalue(mark_x) < 0 ? -1 : 1;
+							int32_t signy = ivalue(car(mark_y)) < 0 ? -1 : 1;
 							if (signx == signy) {
 								if (signx < 0) {
-									if (bignum_gt(car(x), &v)) {
-										pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
-										memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
-										bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+									if (bignum_gt(car(mark_y), mark_x)) {
+										pointer m = mk_memblock(abs(ivalue(car(mark_y))) * sizeof(uint32_t), &NIL, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(mark_y))), abs(ivalue(car(mark_y))) * sizeof(uint32_t));
+										bignum_adjust(mark_x, m, abs(ivalue(car(mark_y))), -1);
 									}
 								} else {
-									if (bignum_gt(&v, car(x))) {
-										pointer m = mk_memblock(ivalue(car(x)) * sizeof(uint32_t), &x, &NIL);
-										memcpy(strvalue(m), strvalue(bignum(car(x))), ivalue(car(x)) * sizeof(uint32_t));
-										bignum_adjust(&v, m, ivalue(car(x)), 1);
+									if (bignum_gt(mark_x, car(mark_y))) {
+										pointer m = mk_memblock(ivalue(car(mark_y)) * sizeof(uint32_t), &NIL, &NIL);
+										memcpy(strvalue(m), strvalue(bignum(car(mark_y))), ivalue(car(mark_y)) * sizeof(uint32_t));
+										bignum_adjust(mark_x, m, ivalue(car(mark_y)), 1);
 									}
 								}
 							} else if (signx > signy) {
-								pointer m = mk_memblock(abs(ivalue(car(x))) * sizeof(uint32_t), &x, &NIL);
-								memcpy(strvalue(m), strvalue(bignum(car(x))), abs(ivalue(car(x))) * sizeof(uint32_t));
-								bignum_adjust(&v, m, abs(ivalue(car(x))), -1);
+								pointer m = mk_memblock(abs(ivalue(car(mark_y))) * sizeof(uint32_t), &NIL, &NIL);
+								memcpy(strvalue(m), strvalue(bignum(car(mark_y))), abs(ivalue(car(mark_y))) * sizeof(uint32_t));
+								bignum_adjust(mark_x, m, abs(ivalue(car(mark_y))), -1);
 							}
 						}
 					}
 				} else {
-					if (get_rvalue(&v) > rvalue(car(x))) {
-						rvalue(&v) = rvalue(car(x));
+					if (get_rvalue(mark_x) > rvalue(car(mark_y))) {
+						rvalue(mark_x) = rvalue(car(mark_y));
 					} else {
-						rvalue(&v) = get_rvalue(&v);
+						rvalue(mark_x) = get_rvalue(mark_x);
 					}
-					set_num_real(&v);
+					set_num_real(mark_x);
 				}
 			} else {
-				if (rvalue(&v) > get_rvalue(car(x))) {
-					rvalue(&v) = get_rvalue(car(x));
+				if (rvalue(mark_x) > get_rvalue(car(mark_y))) {
+					rvalue(mark_x) = get_rvalue(car(mark_y));
 				}
 			}
 		}
-		s_return(mk_number(&v));
+		s_return(mark_x);
 
 	case OP_SYMBOL:		/* symbol? */
 		if (!validargs("symbol?", 1, 1, TST_ANY)) Error_0(msg);
