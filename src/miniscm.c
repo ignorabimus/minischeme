@@ -934,8 +934,8 @@ pointer mk_dumpstack(pointer next)
 	pointer x = get_consecutive_cells(3, &next, &NIL);
 
 	type(x) = T_PAIR;
-	type(x + 1) = T_NUMBER;
-	type(x + 2) = T_NUMBER;
+	type(x + 1) = T_NUMBER | T_ATOM;
+	type(x + 2) = T_NUMBER | T_ATOM;
 	car(x) = NIL;
 	cdr(x) = next;
 	return x;
@@ -1147,9 +1147,11 @@ void mark(pointer p)
 	pointer t = 0, q;
 
 E2:	setmark(p);
-	if (is_string(p)) {
+	if (is_number(p) && p->_isfixnum) {
+		setmark(bignum(p));
+	} else if (is_string(p)) {
 		size_t n = 1 + strlength(p) / sizeof(struct cell);
-		mark((pointer)strvalue(p) + n);
+		setmark((pointer)strvalue(p) + n);
 	} else if (is_port(p)) {
 		if (is_fileport(p)) {
 			setmark(p + 1);
@@ -2378,7 +2380,7 @@ static double get_rvalue(pointer x)
 
 static void bignum_from_int64(pointer x, int64_t d)
 {
-	type(x) = T_NUMBER;
+	type(x) = T_NUMBER | T_ATOM;
 	set_num_integer(x);
 	if (INT32_MIN <= d && d <= INT32_MAX) {
 		ivalue(x) = (int32_t)d;
@@ -2400,7 +2402,7 @@ static void bignum_from_int64(pointer x, int64_t d)
 static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
 {
 	int64_t d = (int64_t)sign * ((uint32_t *)strvalue(m))[0];
-	type(z) = T_NUMBER;
+	type(z) = T_NUMBER | T_ATOM;
 	set_num_integer(z);
 	if (col <= 1 && INT32_MIN <= d && d <= INT32_MAX) {
 		ivalue(z) = (col == 0) ? 0 : (int32_t)d;
@@ -2546,7 +2548,7 @@ static int bignum_div_imm(pointer q, pointer r, pointer x, int32_t val)
 	}
 	bignum_adjust(q, m, colq, sign);
 
-	type(r) = T_NUMBER;
+	type(r) = T_NUMBER | T_ATOM;
 	set_num_integer(r);
 	ivalue(r) = (int32_t)tr * (ivalue(x) < 0 ? -1 : 1);
 	bignum(r) = NIL;
@@ -7388,11 +7390,11 @@ void init_vars_global(void)
 	x = cons(mk_symbol("else"), T);
 	x = cons(x, car(global_env));
 	car(global_env) = x;
-	type(&_ZERO) = T_NUMBER;
+	type(&_ZERO) = T_NUMBER | T_ATOM;
 	set_num_integer(&_ZERO);
 	ivalue(&_ZERO) = 0;
 	bignum(&_ZERO) = NIL;
-	type(&_ONE) = T_NUMBER;
+	type(&_ONE) = T_NUMBER | T_ATOM;
 	set_num_integer(&_ONE);
 	ivalue(&_ONE) = 1;
 	bignum(&_ONE) = NIL;
