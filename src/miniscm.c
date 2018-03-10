@@ -2520,18 +2520,18 @@ static int bignum_mul_imm(pointer z, pointer x, int32_t val)
 /* q = x / y + r*/
 static int32_t bignum_div(pointer q, pointer r, pointer x, pointer y)
 {
-	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), colq = colx, colr = coly, sign = (ivalue(x) < 0 ? -1 : 1) * (ivalue(y) < 0 ? -1 : 1);
-	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &y);
-	pointer a = cons(x, y), b = mk_memblock(2 * (colq + colr + 1) * sizeof(uint32_t), &m, &a);
+	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), colq = colx, colr = coly, signx = ivalue(x) < 0 ? -1 : 1, signy = ivalue(y) < 0 ? -1 : 1;
+	pointer a = cons(x, y), m = mk_memblock(colq * sizeof(uint32_t), &a, &NIL);
+	pointer b = mk_memblock(2 * (colq + colr + 1) * sizeof(uint32_t), &m, &a);
 	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(b);
 	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(car(a))), colx, (uint32_t *)strvalue(bignum(cdr(a))), coly) == 0) {
 		return 0;
 	}
-	bignum_adjust(q, m, colq, sign);
+	bignum_adjust(q, m, colq, signx * signy);
 
 	m = mk_memblock(colr * sizeof(uint32_t), &q, &b);
 	memcpy((uint32_t *)strvalue(m), t_r, colr * sizeof(uint32_t));
-	bignum_adjust(r, m, colr, ivalue(x) < 0 ? -1 : 1);
+	bignum_adjust(r, m, colr, signx);
 	return 1;
 }
 
