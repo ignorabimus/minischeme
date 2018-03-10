@@ -4886,14 +4886,13 @@ OP_EXPANDPATTERN:
 	case OP_MAP0:	/* map */
 		if (!validargs("map", 2, 65535, TST_ANY TST_LIST)) Error_0(msg);
 		code = car(args);
-		value = 0;
+		/* fall through */
 
 	case OP_MAP1:	/* map */
-		if (value == 0) {
+		if (operator == OP_MAP0) {
 			car(args) = NIL;
 		} else {
-			x = cons(value, car(args));
-			car(args) = x;
+			car(args) = cons(value, car(args));
 		}
 		mark_y = NIL;
 		for (mark_x = cdr(args); mark_x != NIL; mark_x = cdr(mark_x)) {
