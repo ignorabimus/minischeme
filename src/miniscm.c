@@ -6421,7 +6421,7 @@ OP_VECTOR:
 							int32_t signy = ivalue(car(mark_y)) < 0 ? -1 : 1;
 							if (signx == signy) {
 								if (signx > 0) {
-									if (bignum_gt(car(x), mark_x)) {
+									if (bignum_gt(car(mark_y), mark_x)) {
 										pointer m = mk_memblock(ivalue(car(mark_y)) * sizeof(uint32_t), &NIL, &NIL);
 										memcpy(strvalue(m), strvalue(bignum(car(mark_y))), ivalue(car(mark_y)) * sizeof(uint32_t));
 										bignum_adjust(mark_x, m, ivalue(car(mark_y)), 1);
