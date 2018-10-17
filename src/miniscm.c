@@ -2647,14 +2647,16 @@ static int bignum_lcm_imm(pointer r, pointer x, int32_t val)
 {
 	int32_t colx = abs(ivalue(x)), colq = colx, colr;
 	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL), n = mk_memblock(sizeof(uint32_t), &x, &m);
-	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(n), y = val < 0 ? (uint32_t)~val + 1 : val;
+	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(n), y = val < 0 ? (uint32_t)~val + 1 : val, z;
 	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
 		return 0;
 	}
 	if (t_r[0] > 0) {
-		y = (uint32_t)gcd(t_r[0], y);
+		z = (uint32_t)gcd(t_r[0], y);
+	} else {
+		z = y;
 	}
-	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
+	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&z, 1) == 0) {
 		return 0;
 	}
 	n = mk_memblock((colq + 1) * sizeof(uint32_t), &x, &m);
