@@ -6651,6 +6651,9 @@ OP_VECTOR:
 		}
 
 	case OP_FORCED:		/* force */
+		if (is_resultready(code)) {
+			s_return(caar(code));
+		}
 		setresultready(code);
 		x = cons(value, NIL);
 		car(code) = x;
