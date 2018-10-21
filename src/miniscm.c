@@ -2434,7 +2434,7 @@ static int bignum_ge(pointer x, pointer y)
 /* z = |x| */
 static int bignum_abs(pointer z, pointer x)
 {
-	if (bignum(z) == NIL) {
+	if (bignum(x) == NIL) {
 		bignum_from_int64(z, ivalue(x) < 0 ? (uint32_t)~ivalue(x) + 1 : ivalue(x));
 	} else {
 		pointer m = mk_memblock(abs(ivalue(x)) * sizeof(uint32_t), &z, &x);
