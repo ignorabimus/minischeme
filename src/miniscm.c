@@ -559,6 +559,7 @@ pointer mk_character(int c)
 	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_CHARACTER | T_ATOM);
+	exttype(x) = 0;
 	ivalue(x) = c;
 	set_num_integer(x);
 	return x;
@@ -569,6 +570,7 @@ pointer mk_integer(int32_t num)
 	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
+	exttype(x) = 0;
 	ivalue(x) = num;
 	bignum(x) = NIL;
 	set_num_integer(x);
@@ -580,6 +582,7 @@ pointer mk_bignum(int32_t col, pointer bn)
 	pointer x = get_cell(&bn, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
+	exttype(x) = 0;
 	ivalue(x) = col;
 	bignum(x) = bn;
 	set_num_integer(x);
@@ -591,6 +594,7 @@ pointer mk_real(double num)
 	pointer x = get_cell(&NIL, &NIL);
 
 	type(x) = (T_NUMBER | T_ATOM);
+	exttype(x) = 0;
 	rvalue(x) = num;
 	set_num_real(x);
 	return x;
@@ -648,6 +652,7 @@ pointer mk_integer_from_str(const char *s, size_t len)
 	}
 	x = get_cell(&m, &NIL);
 	type(x) = (T_NUMBER | T_ATOM);
+	exttype(x) = 0;
 	if (col == 1 && (sign == 1 && temp[0] <= INT32_MAX || sign == -1 && temp[0] <= INT32_MAX + 1UL)) {
 		ivalue(x) = sign * temp[0];
 		bignum(x) = NIL;
@@ -666,6 +671,7 @@ pointer get_string_cell(size_t len, pointer *a)
 	pointer y = get_cell(&x, a);
 
 	type(y) = (T_STRING | T_ATOM);
+	exttype(y) = 0;
 	strvalue(y) = (char *)car(x);
 	strlength(y) = len;
 	return y;
@@ -717,6 +723,7 @@ pointer mk_symbol(const char *name)
 
 	x = cons(mk_string(name), NIL);
 	type(x) = T_SYMBOL;
+	exttype(x) = 0;
 	oblist = cons(x, oblist);
 	return car(oblist);
 }
@@ -728,6 +735,7 @@ pointer mk_uninterned_symbol(const char *name)
 
 	x = cons(mk_string(name), NIL);
 	type(x) = T_SYMBOL;
+	exttype(x) = 0;
 	return x;
 }
 
@@ -853,6 +861,7 @@ pointer mk_port(FILE *fp, int prop)
 	pointer x = get_consecutive_cells(2, &NIL, &NIL);
 
 	type(x + 1) = type(x) = (T_PORT | T_ATOM);
+	exttype(x) = 0;
 	(x + 1)->_isfixnum = x->_isfixnum = (unsigned char)(prop | port_file);
 	port_file(x) = fp;
 #ifdef USE_COPYING_GC
@@ -867,6 +876,7 @@ pointer mk_port_string(pointer p, int prop)
 	pointer x = get_cell(&p, &NIL);
 
 	type(x) = (T_PORT | T_ATOM);
+	exttype(x) = 0;
 	x->_isfixnum = (unsigned char)(prop | port_string);
 	port_file(x) = (FILE *)p;
 	port_curr(x) = strvalue(p);
@@ -890,6 +900,7 @@ pointer mk_vector(int len)
 	pointer x = get_consecutive_cells(n, &NIL, &NIL);
 
 	type(x) = (T_VECTOR | T_ATOM);
+	exttype(x) = 0;
 	ivalue(x) = len;
 	set_num_integer(x);
 	fill_vector(x, NIL);
@@ -923,6 +934,7 @@ pointer mk_foreign_func(foreign_func ff, pointer *pp)
 	pointer x = get_cell(pp, &NIL);
 
 	type(x) = (T_FOREIGN | T_ATOM);
+	exttype(x) = 0;
 	foreignfnc(x) = ff;
 	return x;
 }
@@ -2726,6 +2738,7 @@ pointer mk_continuation(pointer d)
 	pointer x = get_cell(&NIL, &d);
 
 	type(x) = T_CONTINUATION;
+	exttype(x) = 0;
 	car(x) = NIL;
 	cont_dump(x) = d;
 	return x;
@@ -3405,6 +3418,7 @@ enum {
 	OP_COND0,
 	OP_COND1,
 	OP_DELAY,
+	OP_LAZY,
 	OP_AND0,
 	OP_AND1,
 	OP_OR0,
@@ -3602,6 +3616,7 @@ enum {
 	OP_EQ,
 	OP_EQV,
 	OP_EQUAL,
+	OP_EAGER,
 	OP_FORCE,
 	OP_FORCED,
 	OP_WRITE_CHAR,
@@ -4538,6 +4553,13 @@ OP_DO2:
 		}
 
 	case OP_DELAY:		/* delay */
+		x = cons(NIL, code);
+		code = mk_closure(x, envir);
+		setpromise(code);
+		setresultready(code);
+		/* fall through */
+
+	case OP_LAZY:		/* lazy */
 		x = cons(NIL, code);
 		x = mk_closure(x, envir);
 		setpromise(x);
@@ -6636,29 +6658,47 @@ OP_VECTOR:
 		if (!validargs("equal?", 2, 2, TST_ANY)) Error_0(msg);
 		s_retbool(equal(car(args), cadr(args)));
 
+	case OP_EAGER:		/* eagar */
+		if (!validargs("eagar", 1, 1, TST_ANY)) Error_0(msg);
+		x = cons(NIL, car(args));
+		x = mk_closure(x, envir);
+		setpromise(x);
+		setresultready(x);
+		s_return(x);
+
 	case OP_FORCE:		/* force */
 		if (!validargs("force", 1, 1, TST_ANY)) Error_0(msg);
+	OP_FORCE:
 		code = car(args);
 		if (is_promise(code)) {
 			if (is_resultready(code)) {
-				s_return(caar(code));
+				s_return(cdar(code));
 			}
-			s_save(OP_FORCED, NIL, code);
+			s_save(OP_FORCED, cdar(code), code);
 			args = NIL;
+			if (is_promise(cdar(code))) {
+				code = cdar(code);
+			}
 			s_goto(OP_APPLY);
-		} else {
-			s_return(code);
 		}
+		s_return(code);
 
 	case OP_FORCED:		/* force */
 		if (is_resultready(code)) {
-			s_return(caar(code));
+			s_return(cdar(code));
 		}
-		setresultready(code);
-		x = cons(value, NIL);
-		car(code) = x;
-		cdr(code) = NIL;
-		s_return(caar(code));
+		if (is_promise(args)) {
+			cdar(args) = value;
+			*code = *args;
+		} else if (is_promise(value)) {
+			*code = *value;
+		} else {
+			cdar(code) = value;
+			setresultready(code);
+			s_return(value);
+		}
+		car(args) = code;
+		s_goto(OP_FORCE);
 
 	case OP_WRITE_CHAR:	/* write-char */
 	case OP_WRITE:		/* write */
@@ -7426,6 +7466,7 @@ void init_syntax(void)
 	mk_syntax(OP_DO0, "do");
 	mk_syntax(OP_COND0, "cond");
 	mk_syntax(OP_DELAY, "delay");
+	mk_syntax(OP_LAZY, "lazy");
 	mk_syntax(OP_AND0, "and");
 	mk_syntax(OP_OR0, "or");
 	mk_syntax(OP_C0STREAM, "cons-stream");
@@ -7453,6 +7494,7 @@ void init_procs(void)
 	mk_proc(OP_VALUES, "values");
 	mk_proc(OP_WITHVALUES0, "call-with-values");
 	mk_proc(OP_DYNAMICWIND0, "dynamic-wind");
+	mk_proc(OP_EAGER, "eager");
 	mk_proc(OP_FORCE, "force");
 	mk_proc(OP_CAR, "car");
 	mk_proc(OP_CDR, "cdr");
