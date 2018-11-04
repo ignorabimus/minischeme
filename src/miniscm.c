@@ -2926,8 +2926,8 @@ int matchpattern(pointer p, pointer f, pointer keyword, int *s)
 	if (is_symbol(p)) {
 		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = keyword; x != NIL; x = cdr(x)) {
-			if (car(p) == car(x)) {
-				return car(p) == car(f);
+			if (p == car(x)) {
+				return p == f;
 			}
 		}
 		(*s)++;
@@ -2989,7 +2989,7 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 	if (is_symbol(p)) {
 		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
-			if (car(p) == car(x)) {
+			if (p == car(x)) {
 				return;
 			}
 		}
