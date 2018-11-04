@@ -6268,154 +6268,168 @@ OP_VECTOR:
 			s_retbool((int64_t)rvalue(car(args)) % 2 == 0);
 		}
 	case OP_NEQ:		/* = */
-		if (!validargs("=", 2, 2, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		y = cadr(args);
-		if (x->_isfixnum && y->_isfixnum) {
-			if (bignum(x) == NIL) {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) == ivalue(y));
-				} else {
-					s_return(F);
-				}
-			} else {
-				if (bignum(y) == NIL) {
-					s_return(F);
-				} else {
-					if ((ivalue(x) < 0) == (ivalue(y) < 0)) {
-						s_retbool(bignum_eq(x, y));
+		if (!validargs("=", 2, 65535, TST_NUMBER)) Error_0(msg);
+		for (x = car(args), args = cdr(args); args != NIL; args = cdr(args)) {
+			y = car(args);
+			if (x->_isfixnum && y->_isfixnum) {
+				if (bignum(x) == NIL) {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) != ivalue(y)) { s_return(F); }
 					} else {
 						s_return(F);
 					}
+				} else {
+					if (bignum(y) == NIL) {
+						s_return(F);
+					} else {
+						if ((ivalue(x) < 0) == (ivalue(y) < 0)) {
+							if (!bignum_eq(x, y)) { s_return(F); }
+						} else {
+							s_return(F);
+						}
+					}
 				}
+			} else {
+				if (get_rvalue(x) != get_rvalue(y)) { s_return(F); }
 			}
-		} else {
-			s_retbool(get_rvalue(x) == get_rvalue(y));
 		}
+		s_return(T);
+
 	case OP_LESS:		/* < */
-		if (!validargs("<", 2, 2, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		y = cadr(args);
-		if (x->_isfixnum && y->_isfixnum) {
-			if (bignum(x) == NIL) {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) < ivalue(y));
-				} else {
-					s_retbool(ivalue(y) > 0);
-				}
-			} else {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) < 0);
-				} else {
-					int32_t signx = ivalue(x) < 0 ? -1 : 1;
-					int32_t signy = ivalue(y) < 0 ? -1 : 1;
-					if (signx == signy) {
-						if (signx > 0) {
-							s_retbool(bignum_gt(y, x));
-						} else {
-							s_retbool(bignum_gt(x, y));
-						}
+		if (!validargs("<", 2, 65535, TST_NUMBER)) Error_0(msg);
+		for (x = car(args), args = cdr(args); args != NIL; x = y, args = cdr(args)) {
+			y = car(args);
+			if (x->_isfixnum && y->_isfixnum) {
+				if (bignum(x) == NIL) {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) >= ivalue(y)) { s_return(F); }
 					} else {
-						s_retbool(signx < signy);
+						if (ivalue(y) <= 0) { s_return(F); }
+					}
+				} else {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) >= 0) { s_return(F); }
+					} else {
+						int32_t signx = ivalue(x) < 0 ? -1 : 1;
+						int32_t signy = ivalue(y) < 0 ? -1 : 1;
+						if (signx == signy) {
+							if (signx > 0) {
+								if (bignum_ge(x, y)) { s_return(F); }
+							} else {
+								if (bignum_ge(y, x)) { s_return(F); }
+							}
+						} else {
+							if (signx >= signy) { s_return(F); }
+						}
 					}
 				}
+			} else {
+				if (get_rvalue(x) >= get_rvalue(y)) { s_return(F); }
 			}
-		} else {
-			s_retbool(get_rvalue(x) < get_rvalue(y));
 		}
+		s_return(T);
+
 	case OP_GRE:		/* > */
-		if (!validargs(">", 2, 2, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		y = cadr(args);
-		if (x->_isfixnum && y->_isfixnum) {
-			if (bignum(x) == NIL) {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) > ivalue(y));
-				} else {
-					s_retbool(ivalue(y) < 0);
-				}
-			} else {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) > 0);
-				} else {
-					int32_t signx = ivalue(x) < 0 ? -1 : 1;
-					int32_t signy = ivalue(y) < 0 ? -1 : 1;
-					if (signx == signy) {
-						if (signx < 0) {
-							s_retbool(bignum_gt(y, x));
-						} else {
-							s_retbool(bignum_gt(x, y));
-						}
+		if (!validargs(">", 2, 65535, TST_NUMBER)) Error_0(msg);
+		for (x = car(args), args = cdr(args); args != NIL; x = y, args = cdr(args)) {
+			y = car(args);
+			if (x->_isfixnum && y->_isfixnum) {
+				if (bignum(x) == NIL) {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) <= ivalue(y)) { s_return(F); }
 					} else {
-						s_retbool(signx > signy);
+						if (ivalue(y) >= 0) { s_return(F); }
+					}
+				} else {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) <= 0) { s_return(F); }
+					} else {
+						int32_t signx = ivalue(x) < 0 ? -1 : 1;
+						int32_t signy = ivalue(y) < 0 ? -1 : 1;
+						if (signx == signy) {
+							if (signx < 0) {
+								if (bignum_ge(x, y)) { s_return(F); }
+							} else {
+								if (bignum_ge(y, x)) { s_return(F); }
+							}
+						} else {
+							if (signx <= signy) { s_return(F); }
+						}
 					}
 				}
+			} else {
+				if (get_rvalue(x) <= get_rvalue(y)) { s_return(F); }
 			}
-		} else {
-			s_retbool(get_rvalue(x) > get_rvalue(y));
 		}
+		s_return(T);
+
 	case OP_LEQ:		/* <= */
-		if (!validargs("<=", 2, 2, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		y = cadr(args);
-		if (x->_isfixnum && y->_isfixnum) {
-			if (bignum(x) == NIL) {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) <= ivalue(y));
-				} else {
-					s_retbool(ivalue(y) > 0);
-				}
-			} else {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) < 0);
-				} else {
-					int32_t signx = ivalue(x) < 0 ? -1 : 1;
-					int32_t signy = ivalue(y) < 0 ? -1 : 1;
-					if (signx == signy) {
-						if (signx > 0) {
-							s_retbool(bignum_ge(y, x));
-						} else {
-							s_retbool(bignum_ge(x, y));
-						}
+		if (!validargs("<=", 2, 65535, TST_NUMBER)) Error_0(msg);
+		for (x = car(args), args = cdr(args); args != NIL; x = y, args = cdr(args)) {
+			y = car(args);
+			if (x->_isfixnum && y->_isfixnum) {
+				if (bignum(x) == NIL) {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) > ivalue(y)) { s_return(F); }
 					} else {
-						s_retbool(signx < signy);
+						if (ivalue(y) <= 0) { s_return(F); }
+					}
+				} else {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) >= 0) { s_return(F); }
+					} else {
+						int32_t signx = ivalue(x) < 0 ? -1 : 1;
+						int32_t signy = ivalue(y) < 0 ? -1 : 1;
+						if (signx == signy) {
+							if (signx > 0) {
+								if (bignum_gt(x, y)) { s_return(F); }
+							} else {
+								if (bignum_gt(y, x)) { s_return(F); }
+							}
+						} else {
+							if (signx >= signy) { s_return(F); }
+						}
 					}
 				}
+			} else {
+				if (get_rvalue(x) > get_rvalue(y)) { s_return(F); }
 			}
-		} else {
-			s_retbool(get_rvalue(x) <= get_rvalue(y));
 		}
+		s_return(T);
+
 	case OP_GEQ:		/* >= */
-		if (!validargs(">=", 2, 2, TST_NUMBER)) Error_0(msg);
-		x = car(args);
-		y = cadr(args);
-		if (x->_isfixnum && y->_isfixnum) {
-			if (bignum(x) == NIL) {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) >= ivalue(y));
-				} else {
-					s_retbool(ivalue(y) < 0);
-				}
-			} else {
-				if (bignum(y) == NIL) {
-					s_retbool(ivalue(x) > 0);
-				} else {
-					int32_t signx = ivalue(x) < 0 ? -1 : 1;
-					int32_t signy = ivalue(y) < 0 ? -1 : 1;
-					if (signx == signy) {
-						if (signx < 0) {
-							s_retbool(bignum_ge(y, x));
-						} else {
-							s_retbool(bignum_ge(x, y));
-						}
+		if (!validargs(">=", 2, 65535, TST_NUMBER)) Error_0(msg);
+		for (x = car(args), args = cdr(args); args != NIL; x = y, args = cdr(args)) {
+			y = car(args);
+			if (x->_isfixnum && y->_isfixnum) {
+				if (bignum(x) == NIL) {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) < ivalue(y)) { s_return(F); }
 					} else {
-						s_retbool(signx > signy);
+						if (ivalue(y) >= 0) { s_return(F); }
+					}
+				} else {
+					if (bignum(y) == NIL) {
+						if (ivalue(x) <= 0) { s_return(F); }
+					} else {
+						int32_t signx = ivalue(x) < 0 ? -1 : 1;
+						int32_t signy = ivalue(y) < 0 ? -1 : 1;
+						if (signx == signy) {
+							if (signx < 0) {
+								if (bignum_gt(x, y)) { s_return(F); }
+							} else {
+								if (bignum_gt(y, x)) { s_return(F); }
+							}
+						} else {
+							if (signx <= signy) { s_return(F); }
+						}
 					}
 				}
+			} else {
+				if (get_rvalue(x) < get_rvalue(y)) { s_return(F); }
 			}
-		} else {
-			s_retbool(get_rvalue(x) >= get_rvalue(y));
 		}
+		s_return(T);
 
 	case OP_MAX:		/* max */
 		if (!validargs("max", 1, 65535, TST_NUMBER)) Error_0(msg);
