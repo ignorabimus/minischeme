@@ -3045,10 +3045,13 @@ pointer expandsymbol(pointer p)
 {
 	pointer x, y;
 	if (type(p) == T_SYMBOL) {
-		if (exttype(p) & T_DEFSYNTAX) return p;
-		p = cons(cdr(args), p);
-		type(p) = type(cdr(p));
-		exttype(p) |= T_DEFSYNTAX;
+		if (exttype(p) & T_DEFSYNTAX) {
+			car(p) = cons(cadr(args), car(p));
+		} else {
+			p = cons(cdr(args), p);
+			type(p) = type(cdr(p));
+			exttype(p) |= T_DEFSYNTAX;
+		}
 		return p;
 	} else if (is_pair(p)) {
 		mark_x = cons(p, mark_x);
@@ -3898,8 +3901,7 @@ OP_EVAL:
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
 			if (exttype(value) & T_DEFSYNTAX) {
 				args = cons(NIL, envir);
-				envir = cons(NIL, closure_env(value));
-				setenvironment(envir);
+				envir = closure_env(value);
 				if (is_symbol(caar(value))) {
 					x = cons(caar(value), ELLIPSIS);
 					x = cons(x, car(envir));
