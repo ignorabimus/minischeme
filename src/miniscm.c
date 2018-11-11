@@ -3420,6 +3420,8 @@ enum {
 	OP_DO5,
 	OP_COND0,
 	OP_COND1,
+	OP_COND2,
+	OP_FEEDTO,
 	OP_DELAY,
 	OP_LAZY,
 	OP_AND0,
@@ -4542,6 +4544,11 @@ OP_DO2:
 			if ((code = cdar(code)) == NIL) {
 				s_return(value);
 			}
+			if (cdr(code) != NIL) {
+				s_save(OP_COND2, value, cdr(code));
+				code = car(code);
+				s_goto(OP_EVAL);
+			}
 			s_goto(OP_BEGIN);
 		} else {
 			if ((code = cdr(code)) == NIL) {
@@ -4552,6 +4559,21 @@ OP_DO2:
 				s_goto(OP_EVAL);
 			}
 		}
+
+	case OP_COND2:		/* cond */
+		if (is_syntax(value) && syntaxnum(value) == OP_FEEDTO) {
+			x = cons(args, NIL);
+			x = cons(QUOTE, x);
+			x = cons(x, NIL);
+			code = cons(car(code), x);
+			args = NIL;
+			s_goto(OP_EVAL);
+		}
+		args = NIL;
+		s_goto(OP_BEGIN);
+
+	case OP_FEEDTO:		/* => */
+		Error_0("Syntax error in =>");
 
 	case OP_DELAY:		/* delay */
 		x = cons(NIL, code);
@@ -7483,6 +7505,7 @@ void init_syntax(void)
 	mk_syntax(OP_LET0REC, "letrec");
 	mk_syntax(OP_DO0, "do");
 	mk_syntax(OP_COND0, "cond");
+	mk_syntax(OP_FEEDTO, "=>");
 	mk_syntax(OP_DELAY, "delay");
 	mk_syntax(OP_LAZY, "lazy");
 	mk_syntax(OP_AND0, "and");
