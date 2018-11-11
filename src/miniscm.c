@@ -3881,23 +3881,22 @@ OP_EVAL:
 			}
 			Error_1("Unbounded variable", code);
 		} else if (is_pair(code)) {
-			if (is_syntax(x = car(code))) {	/* SYNTAX */
-				code = cdr(code);
-				if (exttype(x) & T_DEFSYNTAX) {
-					x = cdr(x);
-				}
-				operator = syntaxnum(x);
-				goto LOOP;
-			} else {/* first, eval top element and eval arguments */
-				s_save(OP_E0ARGS, NIL, code);
-				code = car(code);
-				s_goto(OP_EVAL);
-			}
+			s_save(OP_E0ARGS, NIL, code);
+			code = car(code);
+			s_goto(OP_EVAL);
 		} else {
 			s_return(code);
 		}
 
 	case OP_E0ARGS:	/* eval arguments */
+		if (is_syntax(value)) {
+			if (exttype(value) & T_DEFSYNTAX) {
+				value = cdr(value);
+			}
+			code = cdr(code);
+			operator = syntaxnum(value);
+			goto LOOP;
+		}
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
 			if (exttype(value) & T_DEFSYNTAX) {
 				args = cons(NIL, envir);
@@ -7406,6 +7405,9 @@ void mk_syntax(int op, char *name)
 	type(x) = (T_SYNTAX | T_SYMBOL);
 	syntaxnum(x) = (short)op;
 	oblist = cons(x, oblist);
+	x = cons(x, x);
+	x = cons(x, car(global_env));
+	car(global_env) = x;
 }
 
 void mk_proc(int op, char *name)
