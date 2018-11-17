@@ -3044,7 +3044,7 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 pointer expandsymbol(pointer p)
 {
 	pointer x, y;
-	if (type(p) == T_SYMBOL) {
+	if (is_symbol(p)) {
 		if (exttype(p) & T_DEFSYNTAX) {
 			car(p) = cons(cadr(args), car(p));
 		} else {
