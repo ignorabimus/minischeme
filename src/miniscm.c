@@ -3047,6 +3047,7 @@ pointer expandsymbol(pointer p)
 	if (is_symbol(p)) {
 		if (exttype(p) & T_DEFSYNTAX) {
 			car(p) = cons(cadr(args), car(p));
+			exttype(car(p)) |= T_DEFSYNTAX;
 		} else {
 			p = cons(cdr(args), p);
 			type(p) = type(cdr(p));
@@ -3056,6 +3057,11 @@ pointer expandsymbol(pointer p)
 	} else if (is_pair(p)) {
 		mark_x = cons(p, mark_x);
 		x = expandsymbol(caar(mark_x));
+		if (is_symbol(x) && is_syntax(cdr(x)) && !strcmp(syntaxname(cdr(x)), "quote")) {
+			y = cdar(mark_x);
+			mark_x = cdr(mark_x);
+			return cons(x, y);
+		}
 		mark_y = cons(x, mark_y);
 		y = expandsymbol(cdar(mark_x));
 		mark_x = cdr(mark_x);
@@ -3097,7 +3103,7 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 		int find = 0;
 		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
-			if (car(p) == car(x)) {
+			if (p == car(x)) {
 				return p;
 			}
 		}
@@ -3853,9 +3859,17 @@ OP_EVAL:
 					}
 				}
 				for (x = args; x != NIL; x = cdr(x)) {
-					for (y = car(x); y != NIL; y = cdr(y)) {
-						if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
-							s_return(cdar(y));
+					if (exttype(x) & T_DEFSYNTAX) {
+						for (y = car(x); y != NIL; y = cdr(y)) {
+							if ((exttype(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
+								s_return(cdar(y));
+							}
+						}
+					} else {
+						for (y = car(x); y != NIL; y = cdr(y)) {
+							if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
+								s_return(cdar(y));
+							}
 						}
 					}
 				}
@@ -4217,9 +4231,17 @@ OP_QQUOTE1:
 			}
 			if (x == NIL) {
 				envir = args;
-				for (x = car(envir); x != NIL; x = cdr(x)) {
-					if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
-						break;
+				if (exttype(envir) & T_DEFSYNTAX) {
+					for (x = car(envir); x != NIL; x = cdr(x)) {
+						if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+							break;
+						}
+					}
+				} else {
+					for (x = car(envir); x != NIL; x = cdr(x)) {
+						if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
+							break;
+						}
 					}
 				}
 			}
@@ -4257,9 +4279,17 @@ OP_QQUOTE1:
 			}
 			if (args == envir || args == caar(code)) {
 				for (x = car(code); x != NIL; x = cdr(x)) {
-					for (y = car(x); y != NIL; y = cdr(y)) {
-						if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == cdr(code)) {
-							s_return(T);
+					if (exttype(x) & T_DEFSYNTAX) {
+						for (y = car(x); y != NIL; y = cdr(y)) {
+							if ((exttype(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
+								s_return(T);
+							}
+						}
+					} else {
+						for (y = car(x); y != NIL; y = cdr(y)) {
+							if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == cdr(code)) {
+								s_return(T);
+							}
 						}
 					}
 				}
@@ -4301,9 +4331,17 @@ OP_QQUOTE1:
 				}
 			}
 			for (x = args; x != NIL; x = cdr(x)) {
-				for (y = car(x); y != NIL; y = cdr(y)) {
-					if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
-						s_return(cdar(y) = value);
+				if (exttype(x) & T_DEFSYNTAX) {
+					for (y = car(x); y != NIL; y = cdr(y)) {
+						if ((exttype(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
+							s_return(cdar(y) = value);
+						}
+					}
+				} else {
+					for (y = car(x); y != NIL; y = cdr(y)) {
+						if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
+							s_return(cdar(y) = value);
+						}
 					}
 				}
 			}
