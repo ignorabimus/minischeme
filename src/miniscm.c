@@ -653,7 +653,7 @@ pointer mk_integer_from_str(const char *s, size_t len)
 	x = get_cell(&m, &NIL);
 	type(x) = (T_NUMBER | T_ATOM);
 	exttype(x) = 0;
-	if (col == 1 && (sign == 1 && temp[0] <= INT32_MAX || sign == -1 && temp[0] <= INT32_MAX + 1UL)) {
+	if (col == 1 && ((sign == 1 && temp[0] <= INT32_MAX) || (sign == -1 && temp[0] <= INT32_MAX + 1UL))) {
 		ivalue(x) = sign * temp[0];
 		bignum(x) = NIL;
 	} else {
@@ -5667,7 +5667,7 @@ OP_DOWINDS2:
 		if (!validargs("expt", 2, 2, TST_NUMBER)) Error_0(msg);
 		mark_x = mk_number(car(args));
 		y = cadr(args);
-		if (mark_x->_isfixnum && y->_isfixnum && (bignum(mark_x) == NIL && ivalue(mark_x) == 1 || ivalue(y) == 0)) {
+		if (mark_x->_isfixnum && y->_isfixnum && ((bignum(mark_x) == NIL && ivalue(mark_x) == 1) || ivalue(y) == 0)) {
 			*mark_x = _ONE;
 		} else if (mark_x->_isfixnum && y->_isfixnum && ivalue(mark_x) == 0) {
 			*mark_x = _ZERO;
