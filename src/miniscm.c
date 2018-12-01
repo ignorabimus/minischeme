@@ -2912,8 +2912,8 @@ int is_ellipsis(pointer p)
 	pointer x, y;
 	for (x = envir; x != NIL; x = cdr(x)) {
 		for (y = car(x); y != NIL; y = cdr(y)) {
-			if (caar(y) == p) {
-				return cdar(y) == ELLIPSIS;
+			if (cdar(y) == ELLIPSIS) {
+				return caar(y) == p;
 			}
 		}
 	}
@@ -3917,13 +3917,14 @@ OP_EVAL:
 			if (exttype(value) & T_DEFSYNTAX) {
 				args = cons(NIL, envir);
 				envir = closure_env(value);
+				s_save(OP_DOMACRO, NIL, NIL);
 				if (is_symbol(caar(value))) {
 					x = cons(caar(value), ELLIPSIS);
-					x = cons(x, car(envir));
-					car(envir) = x;
+					x = cons(x, NIL);
+					envir = cons(x, envir);
+					setenvironment(envir);
 					car(value) = cdar(value);
 				}
-				s_save(OP_DOMACRO, NIL, NIL);
 				s_goto(OP_EXPANDPATTERN);
 			} else if (exttype(value) & T_DEFMACRO) {
 				args = cdr(code);
