@@ -58,8 +58,8 @@ and you'll get
 [R5RS standard](http://www.schemers.org/Documents/Standards/R5RS/ "schemers.org: Documents: Standards: R5RS") compatibility
 ------------------
 
-* [x] *
 * [x] +
+* [x] *
 * [x] -
 * [x] /
 * [x] =
@@ -69,6 +69,7 @@ and you'll get
 * [x] >=
 * [x] abs
 * [x] acos
+* [x] and
 * [ ] angle
 * [x] append
 * [x] apply
@@ -218,7 +219,6 @@ and you'll get
 * [x] peek-char?
 * [x] port?
 * [x] positive?
-* [x] promise
 * [x] procedure?
 * [x] quasiquote
 * [x] quote
@@ -226,7 +226,7 @@ and you'll get
 * [ ] rational?
 * [ ] rationalize
 * [x] read
-* [x] read-char?
+* [x] read-char
 * [ ] real-part
 * [x] real?
 * [x] remainder
