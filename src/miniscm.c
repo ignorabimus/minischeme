@@ -5244,7 +5244,7 @@ OP_DOWINDS2:
 						}
 					}
 				} else {
-					rvalue(mark_x) = get_rvalue(mark_x) - rvalue(car(args));
+					rvalue(mark_x) = get_rvalue(mark_x) * rvalue(car(args));
 					set_num_real(mark_x);
 				}
 			} else {
