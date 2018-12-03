@@ -1678,7 +1678,7 @@ p                                       ;===>  #<PROMISE (FORCED)>
 #### procedure:  (write-char char)
 #### procedure:  (write-char char port)
 ~~~
-(write-char #\a)                        ;===>  \t
+(write-char #\a)                        ;===>  #t
 ~~~
 
 ## System interface
