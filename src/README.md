@@ -348,9 +348,9 @@ pi                                      ;===>  3.14
 ### integer?
 #### procedure:  (integer? obj)
 ~~~
-(integer? 0)                            ;===>  #\t
-(integer? 0.0)                          ;===>  #\t
-(integer? 0.5)                          ;===>  #\f
+(integer? 0)                            ;===>  #t
+(integer? 0.0)                          ;===>  #t
+(integer? 0.5)                          ;===>  #f
 ~~~
 
 ### exact?
@@ -789,10 +789,10 @@ p                                       ;===>  (1 . 3)
 ### caddar
 ### cdddar
 ### caaadr
-### caaddr
+### cdaadr
 ### cadadr
 ### cddadr
-### cdaadr
+### caaddr
 ### cdaddr
 ### cadddr
 ### cddddr
@@ -817,10 +817,10 @@ p                                       ;===>  (1 . 3)
 #### procedure:  (caddar pair)
 #### procedure:  (cdddar pair)
 #### procedure:  (caaadr pair)
-#### procedure:  (caaddr pair)
+#### procedure:  (cdaadr pair)
 #### procedure:  (cadadr pair)
 #### procedure:  (cddadr pair)
-#### procedure:  (cdaadr pair)
+#### procedure:  (caaddr pair)
 #### procedure:  (cdaddr pair)
 #### procedure:  (cadddr pair)
 #### procedure:  (cddddr pair)
@@ -846,10 +846,10 @@ p                                       ;===>  (1 . 3)
 (caddar '((1 . (2 . (3 . 4))) . 5))     ;===>  3
 (cdddar '((1 . (2 . (3 . 4))) . 5))     ;===>  4
 (caaadr '(1 . (((2 . 3) . 4) . 5)))     ;===>  2
-(caaddr '(1 . (2 . ((3 . 4) . 5))))     ;===>  3
+(cdaadr '(1 . (((2 . 3) . 4) . 5)))     ;===>  3
 (cadadr '(1 . ((2 . (3 . 4)) . 5)))     ;===>  3
 (cddadr '(1 . ((2 . (3 . 4)) . 5)))     ;===>  4
-(cdaadr '(1 . (((2 . 3) . 4) . 5)))     ;===>  3
+(caaddr '(1 . (2 . ((3 . 4) . 5))))     ;===>  3
 (cdaddr '(1 . (2 . ((3 . 4) . 5))))     ;===>  4
 (cadddr '(1 . (2 . (3 . (4 . 5)))))     ;===>  4
 (cddddr '(1 . (2 . (3 . (4 . 5)))))     ;===>  5
