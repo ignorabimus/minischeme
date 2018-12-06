@@ -6744,8 +6744,8 @@ OP_VECTOR:
 
 	case OP_FORCE:		/* force */
 		if (!validargs("force", 1, 1, TST_ANY)) Error_0(msg);
-	OP_FORCE:
 		code = car(args);
+	OP_FORCE:
 		if (is_promise(code)) {
 			if (is_resultready(code)) {
 				s_return(cdar(code));
@@ -6767,13 +6767,12 @@ OP_VECTOR:
 			cdar(args) = value;
 			*code = *args;
 		} else if (is_promise(value)) {
-			*code = *value;
+			code = value;
 		} else {
 			cdar(code) = value;
 			setresultready(code);
 			s_return(value);
 		}
-		car(args) = code;
 		s_goto(OP_FORCE);
 
 	case OP_WRITE_CHAR:	/* write-char */
