@@ -6750,7 +6750,7 @@ OP_VECTOR:
 			if (is_resultready(code)) {
 				s_return(cdar(code));
 			}
-			s_save(OP_FORCED, cdar(code), code);
+			s_save(OP_FORCED, NIL, code);
 			args = NIL;
 			if (is_promise(cdar(code))) {
 				code = cdar(code);
@@ -6763,15 +6763,18 @@ OP_VECTOR:
 		if (is_resultready(code)) {
 			s_return(cdar(code));
 		}
-		if (is_promise(args)) {
-			cdar(args) = value;
-			*code = *args;
-		} else if (is_promise(value)) {
-			code = value;
-		} else {
+		if (is_promise(cdar(code)) || !is_promise(value)) {
 			cdar(code) = value;
 			setresultready(code);
-			s_return(value);
+		} else {
+			cdar(code) = cdar(value);
+			cdr(code) = cdr(value);
+			car(value) = car(code);
+			if (is_resultready(value)) {
+				setresultready(code);
+			} else {
+				setresultready(value);
+			}
 		}
 		s_goto(OP_FORCE);
 
