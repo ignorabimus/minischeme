@@ -3180,6 +3180,11 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 			return non_alloc_rev(x, y);
 		}
 		x = expandpattern(caar(mark_x), d, n, e);
+		if (x != NULL && is_syntax(x) && !strcmp(syntaxname(x), "quote")) {
+			y = cdar(mark_x);
+			mark_x = cdr(mark_x);
+			return cons(x, y);
+		}
 		mark_y = cons(x, mark_y);
 		y = expandpattern(cdar(mark_x), d, n, e);
 		mark_x = cdr(mark_x);
