@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w9 (2018)
+ *	current version is 0.85w10 (2018)
  *
  * Below are the original credits.
  */
@@ -40,7 +40,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w9.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w10.\n"
 #define InitFile "init.scm"
 #endif
 
