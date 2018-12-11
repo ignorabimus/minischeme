@@ -73,6 +73,8 @@ struct cell _F;
 pointer F = &_F;		/* special cell representing #f */
 struct cell _EOF_OBJ;
 pointer EOF_OBJ = &_EOF_OBJ;	/* special cell representing end-of-file */
+struct cell _UNDEF;
+pointer UNDEF = &_UNDEF;	/* special cell representing undefined */
 pointer oblist = &_NIL;	/* pointer to symbol table */
 pointer global_env;		/* pointer to global environment */
 struct cell _ZERO;		/* special cell representing integer 0 */
@@ -3889,7 +3891,7 @@ OP_EVAL:
 				for (x = envir; x != NIL; x = cdr(x)) {
 					pointer z = NIL;
 					for (y = car(x); y != NIL; z = y, y = cdr(y)) {
-						if (caar(y) == code) {
+						if (caar(y) == code && cdar(y) != UNDEF) {
 							if (z != NIL) {
 								cdr(z) = cdr(y);
 								cdr(y) = car(x);
@@ -4476,6 +4478,10 @@ OP_BEGIN:
 	case OP_LET0REC:	/* letrec */
 		envir = cons(NIL, envir);
 		setenvironment(envir);
+		for (mark_x = car(code); is_pair(mark_x); mark_x = cdr(mark_x)) {
+			y = cons(caar(mark_x), UNDEF);
+			car(envir) = cons(y, car(envir));
+		}
 		args = NIL;
 		value = code;
 		code = car(code);
@@ -4497,10 +4503,12 @@ OP_BEGIN:
 		code = car(args);
 		args = cdr(args);
 
-		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
-			y = cons(caar(mark_x), car(args));
-			y = cons(y, car(envir));
-			car(envir) = y;
+		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
+			for (y = car(envir); y != NIL; y = cdr(y)) {
+				if (caar(y) == caar(x)) {
+					cdar(y) = car(args);
+				}
+			}
 		}
 		code = cdr(code);
 		args = NIL;
@@ -7514,6 +7522,9 @@ void init_vars_global(void)
 	/* init EOF_OBJ */
 	type(EOF_OBJ) = (T_ATOM | MARK);
 	car(EOF_OBJ) = cdr(EOF_OBJ) = EOF_OBJ;
+	/* init UNDEF */
+	type(UNDEF) = (T_ATOM | MARK);
+	car(UNDEF) = cdr(UNDEF) = UNDEF;
 	/* init global_env */
 	global_env = cons(NIL, NIL);
 	setenvironment(global_env);
