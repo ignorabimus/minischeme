@@ -3182,11 +3182,6 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 			return non_alloc_rev(x, y);
 		}
 		x = expandpattern(caar(mark_x), d, n, e);
-		if (x != NULL && is_syntax(x) && !strcmp(syntaxname(x), "quote")) {
-			y = cdar(mark_x);
-			mark_x = cdr(mark_x);
-			return cons(x, y);
-		}
 		mark_y = cons(x, mark_y);
 		y = expandpattern(cdar(mark_x), d, n, e);
 		mark_x = cdr(mark_x);
@@ -4740,7 +4735,7 @@ OP_EXPANDPATTERN:
 				Error_0("Syntax error in syntax-rules");
 			}
 			w = 0;
-			if (matchpattern(caar(x), code, caar(value), (int *)&w)) {
+			if (matchpattern(cdr(caar(x)), cdr(code), caar(value), (int *)&w)) {
 				int i, j, m = 0;
 				car(args) = car(x);
 				x = mk_vector((int)w * 3);
@@ -4751,7 +4746,7 @@ OP_EXPANDPATTERN:
 					set_vector_elem(car(value), i + 1, cons(mark_x, mark_y));
 				}
 				w = 0;
-				bindpattern(caar(args), code, 0, 0, (int *)&w);
+				bindpattern(cdr(caar(args)), cdr(code), 0, 0, (int *)&w);
 				for (i = 0; i < ivalue(car(value)); i += 3) {
 					j = (int)ivalue(car(vector_elem(car(value), i + 1)));
 					if (j > m) m = j;
