@@ -3420,6 +3420,8 @@ enum {
 	OP_LET2AST,
 	OP_LET0REC,
 	OP_LET1REC,
+	OP_LETRECAST0,
+	OP_LETRECAST1,
 	OP_DO0,
 	OP_DO1,
 	OP_DO2,
@@ -4506,6 +4508,42 @@ OP_BEGIN:
 			}
 		}
 		code = cdr(code);
+		args = NIL;
+		s_goto(OP_BEGIN);
+
+	case OP_LETRECAST0:	/* letrec* */
+		envir = cons(NIL, envir);
+		setenvironment(envir);
+		if (car(code) == NIL) {
+			code = cdr(code);
+			s_goto(OP_BEGIN);
+		}
+		for (mark_x = car(code); is_pair(mark_x); mark_x = cdr(mark_x)) {
+			y = cons(caar(mark_x), UNDEF);
+			car(envir) = cons(y, car(envir));
+		}
+		s_save(OP_LETRECAST1, cdr(code), car(code));
+		code = cadaar(code);
+		s_goto(OP_EVAL);
+
+	case OP_LETRECAST1:	/* letrec* (caluculate parameters) */
+		for (y = car(envir); y != NIL; y = cdr(y)) {
+			if (caar(y) == caar(code)) {
+				cdar(y) = value;
+			}
+		}
+		code = cdr(code);
+		if (is_pair(code)) {	/* continue */
+			s_save(OP_LETRECAST1, args, code);
+			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
+				Error_1("Bad syntax of binding spec in letrec* :", car(code));
+			}
+			code = cadar(code);
+			args = NIL;
+			s_goto(OP_EVAL);
+		}
+		/* end */
+		code = args;
 		args = NIL;
 		s_goto(OP_BEGIN);
 
@@ -7555,6 +7593,7 @@ void init_syntax(void)
 	mk_syntax(OP_LET0, "let");
 	mk_syntax(OP_LET0AST, "let*");
 	mk_syntax(OP_LET0REC, "letrec");
+	mk_syntax(OP_LETRECAST0, "letrec*");
 	mk_syntax(OP_DO0, "do");
 	mk_syntax(OP_COND0, "cond");
 	mk_syntax(OP_FEEDTO, "=>");
