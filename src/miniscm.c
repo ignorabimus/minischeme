@@ -3425,6 +3425,7 @@ enum {
 	OP_COND0,
 	OP_COND1,
 	OP_COND2,
+	OP_ELSE,
 	OP_FEEDTO,
 	OP_DELAY,
 	OP_LAZY,
@@ -4623,20 +4624,19 @@ OP_DO2:
 			if ((code = cdar(code)) == NIL) {
 				s_return(value);
 			}
-			if (cdr(code) != NIL) {
-				s_save(OP_COND2, value, cdr(code));
-				code = car(code);
-				s_goto(OP_EVAL);
+			if (cdr(code) == NIL || (is_syntax(value) && syntaxnum(value) == OP_ELSE)) {
+				s_goto(OP_BEGIN);
 			}
-			s_goto(OP_BEGIN);
+			s_save(OP_COND2, value, cdr(code));
+			code = car(code);
+			s_goto(OP_EVAL);
+		}
+		if ((code = cdr(code)) == NIL) {
+			s_return(NIL);
 		} else {
-			if ((code = cdr(code)) == NIL) {
-				s_return(NIL);
-			} else {
-				s_save(OP_COND1, NIL, code);
-				code = caar(code);
-				s_goto(OP_EVAL);
-			}
+			s_save(OP_COND1, NIL, code);
+			code = caar(code);
+			s_goto(OP_EVAL);
 		}
 
 	case OP_COND2:		/* cond */
@@ -4650,6 +4650,9 @@ OP_DO2:
 		}
 		args = NIL;
 		s_goto(OP_BEGIN);
+
+	case OP_ELSE:		/* else */
+		Error_0("Syntax error in else");
 
 	case OP_FEEDTO:		/* => */
 		Error_0("Syntax error in =>");
@@ -4921,7 +4924,7 @@ OP_EXPANDPATTERN:
 		}
 
 	case OP_CASE2:		/* case */
-		if (istrue(value)) {
+		if (is_syntax(value) && syntaxnum(value) == OP_ELSE) {
 			s_goto(OP_BEGIN);
 		} else {
 			s_return(NIL);
@@ -7510,8 +7513,6 @@ void mk_proc(int op, char *name)
 
 void init_vars_global(void)
 {
-	pointer x;
-
 	oblist = NIL;
 	winders = NIL;
 #ifdef USE_COPYING_GC
@@ -7535,10 +7536,6 @@ void init_vars_global(void)
 	/* init global_env */
 	global_env = cons(NIL, NIL);
 	setenvironment(global_env);
-	/* init else */
-	x = cons(mk_symbol("else"), T);
-	x = cons(x, car(global_env));
-	car(global_env) = x;
 	type(&_ZERO) = T_NUMBER | T_ATOM;
 	set_num_integer(&_ZERO);
 	ivalue(&_ZERO) = 0;
@@ -7570,6 +7567,7 @@ void init_syntax(void)
 	mk_syntax(OP_LETRECAST0, "letrec*");
 	mk_syntax(OP_DO0, "do");
 	mk_syntax(OP_COND0, "cond");
+	mk_syntax(OP_ELSE, "else");
 	mk_syntax(OP_FEEDTO, "=>");
 	mk_syntax(OP_DELAY, "delay");
 	mk_syntax(OP_LAZY, "lazy");
