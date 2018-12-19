@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
 	replxx_set_word_break_characters(replxx, " \\\"'`;@{([])}");
 
 	if (argc > 1) {
-		FILE *fin = fopen(argv[1], "r");
+		FILE *fin = fopen(argv[1], "rb");
 		if (fin == NULL) {
 			fprintf(stderr, "Unable to open %s\n", argv[1]);
 			return 1;
