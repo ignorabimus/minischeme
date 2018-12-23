@@ -88,7 +88,8 @@ struct cell {
 #define T_RESULTREADY    2	/* 00000010 */
 #define T_MACRO          4	/* 00000100 */
 #define T_DEFMACRO       8	/* 00001000 */	/* for define-macro */
-#define T_DEFSYNTAX     16	/* 00010000 */	/* for define-syntax */
+#define T_DEFSYNTAX  32768	/* 1000000000000000 */	/* for define-syntax */
+#define T_SYNTAXNUM  32767	/* 0111111111111111 */	/* for define-syntax */
 
 /* macros for cell operations */
 #define type(p)         ((p)->_flag)
@@ -112,14 +113,11 @@ struct cell {
 #define cdr(p)          ((p)->_object._cons._cdr)
 
 #define is_symbol(p)    (type(p)&T_SYMBOL)
-#define symname(p)      strvalue(car(p))
-#define hasprop(p)      (type(p)&T_SYMBOL)
-#define symprop(p)      cdr(p)
+#define symname(p)      strvalue(p)
 
 #define is_syntax(p)    (type(p)&T_SYNTAX)
 #define is_proc(p)      (type(p)&T_PROC)
-#define syntaxname(p)   strvalue(car(p))
-#define syntaxnum(p)    (*(short *)&car(p)->_extflag)
+#define syntaxnum(p)    (*(short *)&(p)->_extflag)
 #define procnum(p)      (int)ivalue(p)
 
 #define is_closure(p)   (type(p)&T_CLOSURE)

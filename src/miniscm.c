@@ -723,9 +723,8 @@ pointer mk_symbol(const char *name)
 		}
 	}
 
-	x = cons(mk_string(name), NIL);
-	type(x) = T_SYMBOL;
-	exttype(x) = 0;
+	x = mk_string(name);
+	type(x) |= T_SYMBOL;
 	oblist = cons(x, oblist);
 	return car(oblist);
 }
@@ -735,9 +734,8 @@ pointer mk_uninterned_symbol(const char *name)
 {
 	pointer x;
 
-	x = cons(mk_string(name), NIL);
-	type(x) = T_SYMBOL;
-	exttype(x) = 0;
+	x = mk_string(name);
+	type(x) |= T_SYMBOL;
 	return x;
 }
 
@@ -1089,6 +1087,8 @@ void gc(pointer *a, pointer *b)
 		case T_FOREIGN:
 			break;
 		case T_STRING:
+		case T_STRING | T_SYMBOL:
+		case T_STRING | T_SYMBOL | T_SYNTAX:
 			p = forward(car(scan) - 1);
 			strvalue(scan) = strvalue(p);
 			break;
@@ -1103,8 +1103,6 @@ void gc(pointer *a, pointer *b)
 				port_curr(scan) = strvalue(p) + curr_len;
 			}
 			break;
-		case T_SYMBOL:
-		case T_SYNTAX | T_SYMBOL:
 		case T_PAIR:
 		case T_CLOSURE:
 		case T_CONTINUATION:
@@ -1895,6 +1893,12 @@ char *atom2str(pointer l, int f)
 		} else {
 			p = NULL;
 		}
+	} else if (is_symbol(l)) {
+		if (syntaxnum(l) & T_DEFSYNTAX) {
+			p = symname(cdr(l));
+		} else {
+			p = symname(l);
+		}
 	} else if (is_string(l)) {
 		if (!f) {
 			p = strvalue(l);
@@ -1931,12 +1935,6 @@ char *atom2str(pointer l, int f)
 				}
 				break;
 			}
-		}
-	} else if (is_symbol(l)) {
-		if (exttype(l) & T_DEFSYNTAX) {
-			p = symname(cdr(l));
-		} else {
-			p = symname(l);
 		}
 	} else if (is_proc(l)) {
 		p = strvalue(strbuff);
@@ -2920,7 +2918,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, int *s)
 {
 	pointer x;
 	if (is_symbol(p)) {
-		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
+		if (syntaxnum(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = keyword; x != NIL; x = cdr(x)) {
 			if (p == car(x)) {
 				return p == f;
@@ -2983,7 +2981,7 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 {
 	pointer x;
 	if (is_symbol(p)) {
-		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
+		if (syntaxnum(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
 			if (p == car(x)) {
 				return;
@@ -3041,19 +3039,19 @@ pointer expandsymbol(pointer p)
 {
 	pointer x, y;
 	if (is_symbol(p)) {
-		if (exttype(p) & T_DEFSYNTAX) {
+		if (syntaxnum(p) & T_DEFSYNTAX) {
 			car(p) = cons(cadr(args), car(p));
-			exttype(car(p)) |= T_DEFSYNTAX;
+			syntaxnum(car(p)) |= T_DEFSYNTAX;
 		} else {
 			p = cons(cdr(args), p);
 			type(p) = type(cdr(p));
-			exttype(p) |= T_DEFSYNTAX;
+			syntaxnum(p) |= T_DEFSYNTAX;
 		}
 		return p;
 	} else if (is_pair(p)) {
 		mark_x = cons(p, mark_x);
 		x = expandsymbol(caar(mark_x));
-		if (is_symbol(x) && is_syntax(cdr(x)) && !strcmp(syntaxname(cdr(x)), "quote")) {
+		if (is_symbol(x) && is_syntax(cdr(x)) && !strcmp(symname(cdr(x)), "quote")) {
 			y = cdar(mark_x);
 			mark_x = cdr(mark_x);
 			return cons(x, y);
@@ -3097,7 +3095,7 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 	*((int *)strvalue(car(code)) + d) = n;
 	if (is_symbol(p)) {
 		int find = 0;
-		if (exttype(p) & T_DEFSYNTAX) p = cdr(p);
+		if (syntaxnum(p) & T_DEFSYNTAX) p = cdr(p);
 		for (x = cdr(value); x != NIL; x = cdr(x)) {
 			if (p == car(x)) {
 				return p;
@@ -3849,24 +3847,24 @@ LOOP:
 	case OP_EVAL:		/* main part of evalution */
 OP_EVAL:
 		if (is_symbol(code)) {	/* symbol */
-			if (exttype(code) & T_DEFSYNTAX) {
+			if (syntaxnum(code) & T_DEFSYNTAX) {
 				args = car(code);
 				code = cdr(code);
 				for (x = car(envir); x != NIL; x = cdr(x)) {
-					if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+					if ((syntaxnum(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
 						s_return(cdar(x));
 					}
 				}
 				for (x = args; x != NIL; x = cdr(x)) {
-					if (exttype(x) & T_DEFSYNTAX) {
+					if (syntaxnum(x) & T_DEFSYNTAX) {
 						for (y = car(x); y != NIL; y = cdr(y)) {
-							if ((exttype(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
+							if ((syntaxnum(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
 								s_return(cdar(y));
 							}
 						}
 					} else {
 						for (y = car(x); y != NIL; y = cdr(y)) {
-							if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
+							if ((syntaxnum(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
 								s_return(cdar(y));
 							}
 						}
@@ -3905,15 +3903,15 @@ OP_EVAL:
 
 	case OP_E0ARGS:	/* eval arguments */
 		if (is_syntax(value)) {
-			if (exttype(value) & T_DEFSYNTAX) {
+			if (syntaxnum(value) & T_DEFSYNTAX) {
 				value = cdr(value);
 			}
 			code = cdr(code);
-			operator = syntaxnum(value);
+			operator = syntaxnum(value) & T_SYNTAXNUM;
 			goto LOOP;
 		}
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
-			if (exttype(value) & T_DEFSYNTAX) {
+			if (syntaxnum(value) & T_DEFSYNTAX) {
 				args = cons(NIL, envir);
 				envir = closure_env(value);
 				s_save(OP_DOMACRO, NIL, NIL);
@@ -4218,25 +4216,25 @@ OP_QQUOTE1:
 		s_goto(OP_EVAL);
 
 	case OP_DEF1:	/* define */
-		if (exttype(code) & T_DEFSYNTAX) {
+		if (syntaxnum(code) & T_DEFSYNTAX) {
 			args = car(code);
 			code = cdr(code);
 			for (x = car(envir); x != NIL; x = cdr(x)) {
-				if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+				if ((syntaxnum(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
 					break;
 				}
 			}
 			if (x == NIL) {
 				envir = args;
-				if (exttype(envir) & T_DEFSYNTAX) {
+				if (syntaxnum(envir) & T_DEFSYNTAX) {
 					for (x = car(envir); x != NIL; x = cdr(x)) {
-						if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+						if ((syntaxnum(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
 							break;
 						}
 					}
 				} else {
 					for (x = car(envir); x != NIL; x = cdr(x)) {
-						if ((exttype(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
+						if ((syntaxnum(caar(x)) & T_DEFSYNTAX ? cdr(caar(x)) : caar(x)) == code) {
 							break;
 						}
 					}
@@ -4261,7 +4259,7 @@ OP_QQUOTE1:
 	case OP_DEFP:	/* defined? */
 		if (!validargs("defined?", 1, 2, TST_SYMBOL TST_ENVIRONMENT)) Error_0(msg);
 		code = car(args);
-		if (exttype(code) & T_DEFSYNTAX) {
+		if (syntaxnum(code) & T_DEFSYNTAX) {
 			if (cdr(args) != NIL) {
 				args = cadr(args);
 			} else {
@@ -4269,22 +4267,22 @@ OP_QQUOTE1:
 			}
 			if (args == envir) {
 				for (x = car(envir); x != NIL; x = cdr(x)) {
-					if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == cdr(code)) {
+					if ((syntaxnum(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == cdr(code)) {
 						s_return(T);
 					}
 				}
 			}
 			if (args == envir || args == caar(code)) {
 				for (x = car(code); x != NIL; x = cdr(x)) {
-					if (exttype(x) & T_DEFSYNTAX) {
+					if (syntaxnum(x) & T_DEFSYNTAX) {
 						for (y = car(x); y != NIL; y = cdr(y)) {
-							if ((exttype(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
+							if ((syntaxnum(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
 								s_return(T);
 							}
 						}
 					} else {
 						for (y = car(x); y != NIL; y = cdr(y)) {
-							if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == cdr(code)) {
+							if ((syntaxnum(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == cdr(code)) {
 								s_return(T);
 							}
 						}
@@ -4319,24 +4317,24 @@ OP_QQUOTE1:
 		s_goto(OP_EVAL);
 
 	case OP_SET1:		/* set! */
-		if (exttype(code) & T_DEFSYNTAX) {
+		if (syntaxnum(code) & T_DEFSYNTAX) {
 			args = car(code);
 			code = cdr(code);
 			for (x = car(envir); x != NIL; x = cdr(x)) {
-				if ((exttype(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
+				if ((syntaxnum(caar(x)) & T_DEFSYNTAX) && cdr(caar(x)) == code) {
 					s_return(cdar(x) = value);
 				}
 			}
 			for (x = args; x != NIL; x = cdr(x)) {
-				if (exttype(x) & T_DEFSYNTAX) {
+				if (syntaxnum(x) & T_DEFSYNTAX) {
 					for (y = car(x); y != NIL; y = cdr(y)) {
-						if ((exttype(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
+						if ((syntaxnum(caar(y)) & T_DEFSYNTAX) && cdr(caar(y)) == code) {
 							s_return(cdar(y) = value);
 						}
 					}
 				} else {
 					for (y = car(x); y != NIL; y = cdr(y)) {
-						if ((exttype(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
+						if ((syntaxnum(caar(y)) & T_DEFSYNTAX ? cdr(caar(y)) : caar(y)) == code) {
 							s_return(cdar(y) = value);
 						}
 					}
@@ -4621,7 +4619,7 @@ OP_DO2:
 			if ((code = cdar(code)) == NIL) {
 				s_return(value);
 			}
-			if (cdr(code) == NIL || (is_syntax(value) && syntaxnum(value) == OP_ELSE)) {
+			if (cdr(code) == NIL || (is_syntax(value) && (syntaxnum(value) & T_SYNTAXNUM) == OP_ELSE)) {
 				s_goto(OP_BEGIN);
 			}
 			s_save(OP_COND2, value, cdr(code));
@@ -4637,7 +4635,7 @@ OP_DO2:
 		}
 
 	case OP_COND2:		/* cond */
-		if (is_syntax(value) && syntaxnum(value) == OP_FEEDTO) {
+		if (is_syntax(value) && (syntaxnum(value) & T_SYNTAXNUM) == OP_FEEDTO) {
 			x = cons(args, NIL);
 			x = cons(QUOTE, x);
 			x = cons(x, NIL);
@@ -4802,7 +4800,8 @@ OP_EXPANDPATTERN:
 		s_goto(OP_EVAL);
 
 	case OP_DEFSYNTAX1:		/* define-syntax */
-		exttype(value) |= T_MACRO | T_DEFSYNTAX;
+		exttype(value) |= T_MACRO;
+		syntaxnum(value) |= T_DEFSYNTAX;
 		for (x = car(envir); x != NIL; x = cdr(x))
 			if (caar(x) == code)
 				break;
@@ -4844,7 +4843,8 @@ OP_EXPANDPATTERN:
 		envir = cons(NIL, envir);
 		setenvironment(envir);
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
-			exttype(car(args)) |= T_MACRO | T_DEFSYNTAX;
+			exttype(car(args)) |= T_MACRO;
+			syntaxnum(car(args)) |= T_DEFSYNTAX;
 			y = cons(caar(mark_x), car(args));
 			y = cons(y, car(envir));
 			car(envir) = y;
@@ -4882,7 +4882,8 @@ OP_EXPANDPATTERN:
 		args = cdr(args);
 
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
-			exttype(car(args)) |= T_MACRO | T_DEFSYNTAX;
+			exttype(car(args)) |= T_MACRO;
+			syntaxnum(car(args)) |= T_DEFSYNTAX;
 			y = cons(caar(mark_x), car(args));
 			y = cons(y, car(envir));
 			car(envir) = y;
@@ -4921,7 +4922,7 @@ OP_EXPANDPATTERN:
 		}
 
 	case OP_CASE2:		/* case */
-		if (is_syntax(value) && syntaxnum(value) == OP_ELSE) {
+		if (is_syntax(value) && (syntaxnum(value) & T_SYNTAXNUM) == OP_ELSE) {
 			s_goto(OP_BEGIN);
 		} else {
 			s_return(NIL);
@@ -6892,37 +6893,6 @@ OP_ERR1:
 		if (!validargs("append", 0, 65535, TST_NONE)) Error_0(msg);
 		s_return(append(car(args), cadr(args)));
 
-	case OP_PUT:		/* put */
-		if (!validargs("put", 3, 3, TST_NONE)) Error_0(msg);
-		if (!hasprop(car(args)) || !hasprop(cadr(args))) {
-			Error_0("Illegal use of put");
-		}
-		for (x = symprop(car(args)), y = cadr(args); x != NIL; x = cdr(x))
-			if (caar(x) == y)
-				break;
-		if (x != NIL)
-			cdar(x) = caddr(args);
-		else {
-			x = cons(y, caddr(args));
-			x = cons(x, symprop(car(args)));
-			symprop(car(args)) = x;
-		}
-		s_return(T);
-
-	case OP_GET:		/* get */
-		if (!validargs("get", 2, 2, TST_NONE)) Error_0(msg);
-		if (!hasprop(car(args)) || !hasprop(cadr(args))) {
-			Error_0("Illegal use of get");
-		}
-		for (x = symprop(car(args)), y = cadr(args); x != NIL; x = cdr(x))
-			if (caar(x) == y)
-				break;
-		if (x != NIL) {
-			s_return(cdar(x));
-		} else {
-			s_return(NIL);
-		}
-
 	case OP_QUIT:		/* quit */
 		if (!validargs("quit", 0, 1, TST_INTEGER)) Error_0(msg);
 		if (is_pair(args)) {
@@ -7457,7 +7427,7 @@ OP_PVECFROM:
 		s_return(car(args));
 
 	case OP_MACRO_EXPAND2:	/* macro-expand */
-		if (exttype(code) & T_DEFSYNTAX) {
+		if (syntaxnum(code) & T_DEFSYNTAX) {
 			value = code;
 			code = car(args);
 			s_goto(OP_EXPANDPATTERN);
@@ -7485,8 +7455,8 @@ void mk_syntax(int op, char *name)
 {
 	pointer x;
 
-	x = cons(mk_string(name), NIL);
-	type(x) = (T_SYNTAX | T_SYMBOL);
+	x = mk_string(name);
+	type(x) |= T_SYMBOL | T_SYNTAX;
 	syntaxnum(x) = (short)op;
 	oblist = cons(x, oblist);
 	x = cons(x, x);
@@ -7758,8 +7728,6 @@ void init_procs(void)
 	mk_proc(OP_ERR0, "error");
 	mk_proc(OP_REVERSE, "reverse");
 	mk_proc(OP_APPEND, "append");
-	mk_proc(OP_PUT, "put");
-	mk_proc(OP_GET, "get");
 	mk_proc(OP_GC, "gc");
 	mk_proc(OP_GCVERB, "gc-verbose");
 	mk_proc(OP_CALL_INFILE0, "call-with-input-file");
