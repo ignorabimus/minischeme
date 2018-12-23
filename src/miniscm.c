@@ -3836,8 +3836,8 @@ int validargs(char *name, int min_arity, int max_arity, char *arg_tests)
 int Eval_Cycle(int operator)
 {
 	FILE *tmpfp = NULL;
-	int tok;
-	int print_flag;
+	int tok = 0;
+	int print_flag = 0;
 	pointer x, y;
 	struct cell v;
 	int64_t w;
@@ -4068,9 +4068,6 @@ OP_T0LVL:
 	case OP_READ_INTERNAL:		/* read internal */
 OP_READ_INTERNAL:
 		tok = token();
-		if (tok == TOK_EOF) {
-			s_return(EOF_OBJ);
-		}
 		s_goto(OP_RDSEXPR);
 
 	case OP_VALUEPRINT:	/* print evalution result */
@@ -7164,9 +7161,10 @@ OP_ERR1:
 
 	case OP_RDSEXPR:
 OP_RDSEXPR:
-		switch (tok & 0x0f) {
-		case TOK_EOF:
+		if (tok == TOK_EOF) {
 			s_return(EOF_OBJ);
+		}
+		switch (tok & 0x0f) {
 		case TOK_VEC:
 			s_save(OP_RDVEC, NIL, code);
 			/* fall through */
