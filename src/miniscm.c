@@ -2680,16 +2680,14 @@ static int bignum_pow(pointer z, pointer x, int32_t val)
 	uint32_t v_x = bignum(x) == NIL ? (ivalue(x) < 0 ? (uint32_t)~ivalue(x) + 1 : ivalue(x)) : ((uint32_t *)strvalue(bignum(x)))[colx - 1];
 	int32_t colz = ((find1_32(v_x) + 32 * (colx - 1)) * val + 31) / 32;
 	int32_t sign = ivalue(x) < 0 && (val & 0x1) ? -1 : 1;
-	pointer m_x = mk_memblock(colz * sizeof(uint32_t), &x, &NIL);
-	pointer m_z = mk_memblock(colz * sizeof(uint32_t), &x, &m_x);
-	uint32_t *t_x, *t_z, *tmp;
+	pointer m_x = mk_memblock(2 * colz * sizeof(uint32_t), &z, &x), m_z;
+	uint32_t *t_x = (uint32_t *)strvalue(m_x), *tmp = t_x + colz, *t_z;
 	if (bignum(x) == NIL) {
-		((uint32_t *)strvalue(m_x))[0] = v_x;
+		t_x[0] = v_x;
 	} else {
-		memcpy((uint32_t *)strvalue(m_x), strvalue(bignum(x)), colx * sizeof(uint32_t));
+		memcpy(t_x, strvalue(bignum(x)), colx * sizeof(uint32_t));
 	}
-	tmp = (uint32_t *)strvalue(mk_memblock(colz * sizeof(uint32_t), &m_x, &m_z));
-	t_x = (uint32_t *)strvalue(m_x);
+	m_z = mk_memblock(colz * sizeof(uint32_t), &z, &m_x);
 	t_z = (uint32_t *)strvalue(m_z);
 	t_z[0] = 1;
 	colz = 1;
