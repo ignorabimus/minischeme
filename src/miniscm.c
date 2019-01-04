@@ -1399,17 +1399,18 @@ int inchar(void)
 {
 	int c;
 
+	if (port_file(inport) == NULL || is_eofport(inport)) {
+		return EOF;
+	}
 	if (is_fileport(inport)) {
-		if (port_file(inport) == NULL) {
-			return EOF;
-		} else if (feof(port_file(inport))) {
-			fclose(port_file(inport));
-			port_file(inport) = NULL;
+		if (feof(port_file(inport))) {
+			inport->_isfixnum |= port_eof;
 			return EOF;
 		}
 
 		c = utf8_fgetc(port_file(inport));
 		if (c == EOF) {
+			inport->_isfixnum |= port_eof;
 			if (port_file(inport) == stdin) {
 				fprintf(stderr, "Good-bye\n");
 				port_file(inport) = NULL;
@@ -1417,8 +1418,8 @@ int inchar(void)
 		}
 	} else {
 		if (port_curr(inport) == strvalue(car(inport)) + strlength(car(inport))) {
-			port_file(inport) = NULL;
-			c = EOF;
+			inport->_isfixnum |= port_eof;
+			return EOF;
 		} else {
 			port_curr(inport) += utf8_get_next(port_curr(inport), &c);
 		}
@@ -1436,11 +1437,7 @@ void flushinput(void)
 		}
 	}
 
-	if (is_fileport(inport)) {
-		port_file(inport) = stdin;
-	} else {
-		inport = load_stack[0];
-	}
+	inport = mk_port(stdin, port_input);
 }
 
 /* check c is delimiter */
@@ -4035,7 +4032,7 @@ OP_APPLYCONT:
 
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
-		if (port_file(inport) == NULL) {
+		if (port_file(inport) == NULL || is_eofport(inport)) {
 			if (load_files == 0) {
 				break;
 			}

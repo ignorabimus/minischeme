@@ -135,12 +135,14 @@ enum {
 	port_output = 2,
 	port_file = 4,
 	port_string = 8,
+	port_eof = 16,
 };
 #define is_port(p)      (type(p) & T_PORT)
 #define is_inport(p)    (is_port(p) && ((p)->_isfixnum & port_input))
 #define is_outport(p)   (is_port(p) && ((p)->_isfixnum & port_output))
 #define is_fileport(p)  (is_port(p) && ((p)->_isfixnum & port_file))
 #define is_strport(p)   (is_port(p) && ((p)->_isfixnum & port_string))
+#define is_eofport(p)   (is_port(p) && ((p)->_isfixnum & port_eof))
 #define port_file(p)    ((p)->_object._port._file)
 #define port_curr(p)    ((p)->_object._port._curr)
 
