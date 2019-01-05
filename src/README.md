@@ -1694,3 +1694,135 @@ p                                       ;===>  #<PROMISE (FORCED)>
 
 ### transcript-off
 #### not supported
+
+## SRFI 6
+
+### open-input-string
+#### procedure:  (open-input-string string)
+~~~
+(define p
+  (open-input-string "(a . (b . (c . ()))) 34"))
+(input-port? p)                         ;===>  #t
+(read p)                                ;===>  (a b c)
+(read p)                                ;===>  34
+(eof-object? (peek-char p))             ;===>  #t
+~~~
+
+### open-output-string
+#### procedure:  (open-output-string)
+~~~
+(let ((q (open-output-string)) (x '(a b c)))
+  (write (car x) q)
+  (write (cdr x) q)
+  (get-output-string q))                ;===>  "a(b c)"
+~~~
+
+### get-output-string
+#### procedure:  (get-output-string output-port)
+
+## SRFI 8
+
+### receive
+#### syntax:  (receive formals expression body)
+~~~
+(receive (a b c) (values 1 2 3)
+  (list a b c))                         ;===>  (1 2 3)
+(receive a (values 1 2 3) a)            ;===>  (1 2 3)
+(receive (a b . c) (values 1 2 3 4 5)
+  (list a b c))                         ;===>  (1 2 (3 4 5))
+~~~
+
+## SRFI 45
+
+### eager
+#### procedure:  (eager expression)
+
+### lazy
+#### syntax:  (lazy expression)
+~~~
+(define s (delay (begin (display 'hello) 1)))
+(force s)                               ;===> hello1
+(force s)                               ;===> 1
+
+(let ((s (delay (begin (display 'bonjour) 2))))
+  (+ (force s) (force s)))              ;===>  bonjour4
+
+(define r (delay (begin (display 'hi) 1)))
+(define s (lazy r))
+(define t (lazy s))
+(force t)                               ;===> hi1
+(force r)                               ;===> 1
+
+(define (stream-drop s index)
+  (lazy
+    (if (zero? index)
+      s
+      (stream-drop (cdr (force s)) (- index 1)))))
+(define (ones)
+  (delay (begin
+      (display 'ho)
+      (cons 1 (ones)))))
+(define s (ones))
+(car (force (stream-drop s 4)))         ;===> hohohohoho1
+(car (force (stream-drop s 4)))         ;===> 1
+~~~
+
+## SRFI 46
+
+### syntax-rules
+#### transformerspec  (syntax-rules [ellipsis-identifier] literals syntaxrule ...)
+~~~
+(let-syntax
+    ((f (syntax-rules ()
+          ((f ?e)
+           (let-syntax
+               ((g (syntax-rules ::: ()
+                     ((g (??x ?e) (??y :::))
+                      '((??x) ?e (??y) :::)))))
+             (g (1 2) (3 4)))))))
+  (f :::))                              ;===>  ((1) 2 (3) (4))
+~~~
+
+#### pattern  (pattern ... ellipsis pattern ...)
+#### pattern  #(pattern ... ellipsis pattern ...)
+~~~
+(let-syntax
+    ((foo (syntax-rules ()
+            ((foo ?x ?y ... ?z)
+             (list ?x (list ?y ...) ?z)))))
+  (foo 1 2 3 4 5))                      ;===>  (1 (2 3 4) 5)
+~~~
+
+## R6RS
+
+### when
+#### syntax:  (when test expression1 expression2 ...)
+~~~
+(when (> 3 2) 'greater)                 ;===>  greater 
+(when (< 3 2) 'greater)                 ;===>  () ; unspecified
+~~~
+
+### unless
+#### syntax:  (unless test expression1 expression2 ...)
+~~~
+(unless (> 3 2) 'less)                  ;===>  () ; unspecified
+(unless (< 3 2) 'less)                  ;===>  less
+~~~
+
+## R7RS
+
+### letrec*
+#### syntax:  (letrec* bindings body)
+~~~
+(letrec (
+    (f (lambda () (cons a b)))
+    (a (begin (set! b 1) b))
+    (b (begin (set! a 2) a)))
+  (f))                                  ;===>  (1 . 2)
+
+(letrec* (
+    (f (lambda () (cons a b)))
+    (a (begin (set! b 1) b))
+    (b (begin (set! a 2) a)))
+  (f))                                  ;===>  (2 . 2)
+~~~
