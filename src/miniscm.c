@@ -2103,7 +2103,7 @@ static int bn_sub(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint3
 	int32_t i;
 	uint32_t carry = 0;
 	for (i = 0; i < coly; i++) {
-		uint64_t t = y[i] + carry;
+		uint64_t t = (uint64_t)y[i] + carry;
 		if (x[i] >= t) {
 			z[i] = (uint32_t)(x[i] - t);
 			carry = 0;
