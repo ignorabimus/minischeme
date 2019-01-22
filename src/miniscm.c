@@ -2404,12 +2404,20 @@ static void bignum_from_int64(pointer x, int64_t d)
 
 static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
 {
-	int64_t d = (int64_t)sign * ((uint32_t *)strvalue(m))[0];
 	type(z) = T_NUMBER | T_ATOM;
 	set_num_integer(z);
-	if (col <= 1 && INT32_MIN <= d && d <= INT32_MAX) {
-		ivalue(z) = (col == 0) ? 0 : (int32_t)d;
+	if (col == 0) {
+		ivalue(z) = 0;
 		bignum(z) = NIL;
+	} else if (col == 1) {
+		int64_t d = (int64_t)sign * ((uint32_t *)strvalue(m))[0];
+		if (INT32_MIN <= d && d <= INT32_MAX) {
+			ivalue(z) = (int32_t)d;
+			bignum(z) = NIL;
+		} else {
+			ivalue(z) = sign;
+			bignum(z) = m;
+		}
 	} else {
 		ivalue(z) = sign * col;
 		bignum(z) = m;
