@@ -2301,23 +2301,33 @@ static int bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint
 				return 0;
 			}
 		}
-		*colq = cola - colb;
-		i = *colq;
-		if (t_a[cola - 1] >= t_b[colb - 1]) {
-			if (!bn_sftl(t_x, &colx, t_b, colb, *colq * 32)) {
+		i = *colq = cola - colb;
+		if (i > 0) {
+			if (!bn_sftl(t_x, &colx, t_b, colb, i * 32)) {
 				return 0;
 			}
-			q[(*colq)++] = 1;
-			if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
-				return 0;
+			if (bn_ge(t_a, cola, t_x, colx)) {
+				q[(*colq)++] = 1;
+				if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
+					return 0;
+				}
 			}
+		} else if (i == 0) {
+			if (bn_ge(t_a, cola, t_b, colb)) {
+				q[(*colq)++] = 1;
+				if (!bn_sub(t_a, &cola, t_a, cola, t_b, colb)) {
+					return 0;
+				}
+			}
+		} else {
+			*colq = 0;
 		}
 		while (--i >= 0 && cola > 1) {
 			uint64_t aa = (uint64_t)t_a[cola - 1] << 32 | t_a[cola - 2];
-			uint32_t qq = (uint32_t)(aa / t_b[colb - 1]);
+			uint64_t qq = aa / t_b[colb - 1];
 			if (cola > 2 && colb > 1) {
 				uint64_t rr = aa % t_b[colb - 1];
-				while ((rr << 32 | t_a[cola - 3]) < (uint64_t)qq * t_b[colb - 2]) {
+				while ((rr << 32 | t_a[cola - 3]) < qq * t_b[colb - 2]) {
 					qq--;
 					rr += t_b[colb - 2];
 					if (rr > UINT32_MAX) break;
@@ -2332,7 +2342,7 @@ static int bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint
 					return 0;
 				}
 			} while (bn_gt(t_x, colx, t_a, cola));
-			q[i] = qq + 1;
+			q[i] = (uint32_t)(qq + 1);
 			if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
 				return 0;
 			}
