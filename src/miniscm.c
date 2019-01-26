@@ -2301,59 +2301,63 @@ static int bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint
 				return 0;
 			}
 		}
-		i = *colq = cola - colb;
+		i = cola - colb;
 		if (i > 0) {
-			if (!bn_sftl(t_x, &colx, t_b, colb, i * 32)) {
-				return 0;
-			}
-			if (bn_ge(t_a, cola, t_x, colx)) {
-				q[(*colq)++] = 1;
-				if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
-					return 0;
-				}
-			}
+			*colq = i;
 		} else if (i == 0) {
 			if (bn_ge(t_a, cola, t_b, colb)) {
-				q[(*colq)++] = 1;
+				q[0] = 1;
+				*colq = 1;
 				if (!bn_sub(t_a, &cola, t_a, cola, t_b, colb)) {
 					return 0;
 				}
+			} else {
+				*colq = 0;
 			}
 		} else {
 			*colq = 0;
 		}
 		while (--i >= 0 && cola > 1) {
-			uint64_t aa = (uint64_t)t_a[cola - 1] << 32 | t_a[cola - 2];
-			uint64_t qq = aa / t_b[colb - 1];
-			if (cola > 2 && colb > 1) {
-				uint64_t rr = aa % t_b[colb - 1];
-				while ((rr << 32 | t_a[cola - 3]) < qq * t_b[colb - 2]) {
-					qq--;
-					rr += t_b[colb - 2];
-					if (rr > UINT32_MAX) break;
+			if (bn_gt(t_a, cola, t_b, colb)) {
+				uint64_t aa = (uint64_t)t_a[cola - 1] << 32 | t_a[cola - 2];
+				uint64_t qq = aa / t_b[colb - 1];
+				uint32_t q2[2];
+				if (cola > 2 && colb > 1) {
+					uint64_t rr = aa % t_b[colb - 1];
+					while ((rr << 32 | t_a[cola - 3]) < qq * t_b[colb - 2]) {
+						qq--;
+						rr += t_b[colb - 2];
+						if (rr > UINT32_MAX) break;
+					}
 				}
-			}
-			do {
-				if (!bn_mul(t_x, &colx, t_b, colb, (uint32_t *)&qq, 1)) {
+				do {
+					q2[0] = (uint32_t)qq;
+					q2[1] = (uint32_t)(qq >> 32);
+					if (!bn_mul(t_x, &colx, t_b, colb, q2, q2[1] > 0 ? 2 : 1)) {
+						return 0;
+					}
+					--qq;
+					if (!bn_sftl(t_x, &colx, t_x, colx, i * 32)) {
+						return 0;
+					}
+				} while (bn_gt(t_x, colx, t_a, cola));
+				q[i] = (uint32_t)(qq + 1);
+				if (qq >= UINT32_MAX) {
+					q2[0] = 1;
+					bn_add(&q[i + 1], colq, &q[i + 1], *colq - i - 1, q2, 1);
+					*colq += i + 1;
+				}
+				if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
 					return 0;
 				}
-				--qq;
-				if (!bn_sftl(t_x, &colx, t_x, colx, i * 32)) {
-					return 0;
-				}
-			} while (bn_gt(t_x, colx, t_a, cola));
-			q[i] = (uint32_t)(qq + 1);
-			if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
-				return 0;
+			} else if (bn_eq(t_a, cola, t_b, colb)) {
+				q[i] = 1;
+				while (i > 0) q[--i] = 0;
+				while (cola > 0) t_a[--cola] = 0;
+			} else {
+				q[i] = 0;
 			}
 		}
-		while (*colq > 0) {
-			if (q[*colq - 1] > 0) {
-				break;
-			}
-			(*colq)--;
-		}
-
 		if (d > 0) {
 			if (!bn_sftr(r, colr, t_a, cola, d)) {
 				return 0;
