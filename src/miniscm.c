@@ -624,7 +624,7 @@ pointer mk_memblock(size_t len, pointer *a, pointer *b)
 	return x;
 }
 
-pointer mk_integer_from_str(const char *s, size_t len)
+pointer mk_integer_from_str(const char *s, size_t len, int b)
 {
 	int32_t i, j, col, sign;
 	pointer m, x;
@@ -640,14 +640,30 @@ pointer mk_integer_from_str(const char *s, size_t len)
 	} else {
 		sign = 1;
 	}
-	col = ((int32_t)((len - i) * log(10) / log(2) + 1) + 31) / 32;
+	col = ((int32_t)((len - i) * log(b) / log(2) + 1) + 31) / 32;
 	m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
 	temp = (uint32_t *)strvalue(m);
 	memset(temp, 0, col * sizeof(uint32_t));
-	for (col = 1; isdigit(s[i]); i++) {
-		uint64_t t = (uint64_t)(s[i] - '0') << 32;
+	for (col = 1; s[i]; i++) {
+		uint64_t t;
+		if (b <= 10) {
+			if (s[i] < '0' || '0' + b - 1 < s[i]) {
+				return F;
+			}
+			t = (uint64_t)(s[i] - '0') << 32;
+		} else {
+			int c = toupper(s[i]);
+			if ('0' <= c && c <= '9') {
+				c -= '0';
+			} else if ('A' <= c && c <= 'A' + b - 11){
+				c += 10 - 'A';
+			} else {
+				return F;
+			}
+			t = (uint64_t)c << 32;
+		}
 		for (j = 0; j < col; j++) {
-			t = (uint64_t)temp[j] * 10 + (t >> 32);
+			t = (uint64_t)temp[j] * b + (t >> 32);
 			temp[j] = (uint32_t)(t & UINT32_MAX);
 		}
 		if (t >> 32) temp[col++] = (uint32_t)(t >> 32);
@@ -800,38 +816,26 @@ pointer mk_atom(const char *q)
 	if (has_dec_point) {
 		return mk_real(atof(q));
 	}
-	return mk_integer_from_str(q, p - q);
+	return mk_integer_from_str(q, p - q, 10);
 }
 
 /* make constant */
 pointer mk_const(const char *name)
 {
-	long    x;
-	char    tmp[256];
-
-	if (!strcmp(name, "t"))
+	if (!strcmp(name, "t")) {
 		return T;
-	else if (!strcmp(name, "f"))
+	} else if (!strcmp(name, "f")) {
 		return F;
-	else if (*name == 'o') {/* #o (octal) */
-		sprintf(tmp, "0%s", &name[1]);
-		sscanf(tmp, "%lo", &x);
-		return mk_integer(x);
-	} else if (*name == 'd') {	/* #d (decimal) */
-		sscanf(&name[1], "%ld", &x);
-		return mk_integer(x);
-	} else if (*name == 'x') {	/* #x (hex) */
-		sprintf(tmp, "0x%s", &name[1]);
-		sscanf(tmp, "%lx", &x);
-		return mk_integer(x);
 	} else if (*name == 'b') {	/* #b (binary) */
-		x = 0;
-		for (name++; *name == '0' || *name == '1'; name++) {
-			x <<= 1;
-			x += *name - '0';
-		}
-		return mk_integer(x);
+		return mk_integer_from_str(&name[1], strlen(&name[1]), 2);
+	} else if (*name == 'o') {	/* #o (octal) */
+		return mk_integer_from_str(&name[1], strlen(&name[1]), 8);
+	} else if (*name == 'd') {	/* #d (decimal) */
+		return mk_integer_from_str(&name[1], strlen(&name[1]), 10);
+	} else if (*name == 'x') {	/* #x (hex) */
+		return mk_integer_from_str(&name[1], strlen(&name[1]), 16);
 	} else if (*name == '\\') { /* #\w (character) */
+		int c = 0;
 		if (utf8_stricmp(name + 1, "space") == 0) {
 			return mk_character(' ');
 		} else if (utf8_stricmp(name + 1, "newline") == 0) {
@@ -841,19 +845,19 @@ pointer mk_const(const char *name)
 		} else if (utf8_stricmp(name + 1, "tab") == 0) {
 			return mk_character('\t');
 		} else if (name[1] == 'x' && name[2] != 0) {
-			int c = 0;
 			if (sscanf(name + 2, "%x", (unsigned int *)&c) == 1 && c < 0x110000) {
 				return mk_character(c);
 			} else {
 				return NIL;
 			}
-		} else if (name[utf8_get_next(name + 1, (int *)&x) + 1] == '\0') {
-			return mk_character(x);
+		} else if (name[utf8_get_next(name + 1, &c) + 1] == '\0') {
+			return mk_character(c);
 		} else {
 			return NIL;
 		}
-	} else
+	} else {
 		return NIL;
+	}
 }
 
 pointer mk_port(FILE *fp, int prop)
@@ -5794,12 +5798,7 @@ OP_DOWINDS2:
 		} else if (w == 10) {
 			s_return(mk_atom(strvalue(car(args))));
 		} else {
-			char *ep;
-			int32_t iv = strtol(strvalue(car(args)), &ep, (int)w);
-			if (*ep) {
-				s_return(F);
-			}
-			s_return(mk_integer(iv));
+			s_return(mk_integer_from_str(strvalue(car(args)), strlen(strvalue(car(args))), (int)w));
 		}
 
 	case OP_CAR:		/* car */
