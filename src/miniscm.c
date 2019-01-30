@@ -1843,7 +1843,7 @@ char *atom2str(pointer l, int f)
 				else
 					sprintf(p, "-%o", -ivalue(l));
 			} else {
-				int32_t i, j, col = abs(ivalue(l));
+				int32_t i, j, k, col = abs(ivalue(l));
 				size_t len = col * 11 + 1;
 				if (len >= strlength(strbuff)) {
 					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
@@ -1852,8 +1852,18 @@ char *atom2str(pointer l, int f)
 				p = &p[strlength(strbuff) - 1];
 				*p = 0;
 				for (i = 0; i < col; i++) {
-					for (j = 0; j < 11; j++) {
-						uint32_t n = ((uint32_t *)strvalue(bignum(l)))[i] >> (3 * j);
+					uint32_t m = ((uint32_t *)strvalue(bignum(l)))[i];
+					if (i % 3 == 0) {
+						k = 11;
+					} else if (i % 3 == 1) {
+						*p += (m & 0x1) << 2;
+						k = 11;
+					} else {
+						*p += (m & 0x3) << 1;
+						k = 10;
+					}
+					for (j = 0; j < k; j++) {
+						uint32_t n = m >> (3 * j + i % 3);
 						if (i < col - 1 || n != 0) {
 							*--p = (n & 0x7) + '0';
 						}
