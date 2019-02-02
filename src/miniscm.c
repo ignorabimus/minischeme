@@ -2331,8 +2331,8 @@ static int bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint
 		} else {
 			*colq = 0;
 		}
-		while (--i >= 0 && cola > 1) {
-			if (bn_gt(t_a, cola, t_b, colb)) {
+		while (--i >= 0) {
+			if (cola > 1 && bn_gt(t_a, cola, t_b, colb)) {
 				uint64_t aa = (uint64_t)t_a[cola - 1] << 32 | t_a[cola - 2];
 				uint64_t qq = aa / t_b[colb - 1];
 				uint32_t q2[2];
