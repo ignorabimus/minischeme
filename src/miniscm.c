@@ -4468,6 +4468,9 @@ OP_BEGIN:
 			code = cdr(code);
 			s_goto(OP_BEGIN);
 		}
+		if (!is_pair(car(code)) || !is_pair(caar(code))) {
+			Error_1("Bad syntax of binding spec in let* :", car(code));
+		}
 		s_save(OP_LET1AST, cdr(code), car(code));
 		code = cadaar(code);
 		s_goto(OP_EVAL);
@@ -4499,7 +4502,13 @@ OP_BEGIN:
 	case OP_LET0REC:	/* letrec */
 		envir = cons(NIL, envir);
 		setenvironment(envir);
+		if (!is_pair(car(code))) {
+			Error_1("Bad syntax of binding spec in letrec :", car(code));
+		}
 		for (mark_x = car(code); is_pair(mark_x); mark_x = cdr(mark_x)) {
+			if (!is_pair(car(mark_x))) {
+				Error_1("Bad syntax of binding spec in letrec :", car(mark_x));
+			}
 			y = cons(caar(mark_x), UNDEF);
 			car(envir) = cons(y, car(envir));
 		}
@@ -4542,9 +4551,18 @@ OP_BEGIN:
 			code = cdr(code);
 			s_goto(OP_BEGIN);
 		}
+		if (!is_pair(car(code))) {
+			Error_1("Bad syntax of binding spec in letrec* :", car(code));
+		}
 		for (mark_x = car(code); is_pair(mark_x); mark_x = cdr(mark_x)) {
+			if (!is_pair(car(mark_x))) {
+				Error_1("Bad syntax of binding spec in letrec* :", car(mark_x));
+			}
 			y = cons(caar(mark_x), UNDEF);
 			car(envir) = cons(y, car(envir));
+		}
+		if (!is_pair(caar(code)) || !is_pair(cdr(caar(code)))) {
+			Error_1("Bad syntax of binding spec in letrec* :", caar(code));
 		}
 		s_save(OP_LETRECAST1, cdr(code), car(code));
 		code = cadaar(code);
