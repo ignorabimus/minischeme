@@ -4595,6 +4595,9 @@ OP_BEGIN:
 		args = NIL;
 		value = code;
 		code = car(code);
+		if (!is_pair(code)) {
+			Error_1("Bad syntax of binding spec in do :", code);
+		}
 		/* fall through */
 
 	case OP_DO1:		/* do -- init */
@@ -4621,6 +4624,9 @@ OP_DO2:
 			car(envir) = y;
 		}
 		s_save(OP_DO3, NIL, code);
+		if (!is_pair(cadr(code))) {
+			Error_1("Bad syntax of binding spec in do :", cadr(code));
+		}
 		code = car(cadr(code));
 		s_goto(OP_EVAL);
 
