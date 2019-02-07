@@ -4638,8 +4638,8 @@ OP_DO2:
 		s_goto(OP_DO2);
 
 	case OP_COND0:		/* cond */
-		if (!is_pair(code)) {
-			Error_0("Syntax error in cond");
+		if (!is_pair(car(code))) {
+			Error_1("Syntax error in cond :", car(code));
 		}
 		s_save(OP_COND1, NIL, code);
 		code = caar(code);
@@ -4660,6 +4660,9 @@ OP_DO2:
 		if ((code = cdr(code)) == NIL) {
 			s_return(NIL);
 		} else {
+			if (!is_pair(car(code))) {
+				Error_1("Syntax error in cond :", car(code));
+			}
 			s_save(OP_COND1, NIL, code);
 			code = caar(code);
 			s_goto(OP_EVAL);
