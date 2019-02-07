@@ -4417,6 +4417,9 @@ OP_BEGIN:
 		args = NIL;
 		value = code;
 		code = is_symbol(car(code)) ? cadr(code) : car(code);
+		if (code != NIL && !is_pair(code)) {
+			Error_1("Bad syntax of binding spec in let :", code);
+		}
 		/* fall through */
 
 	case OP_LET1:		/* let (caluculate parameters) */
