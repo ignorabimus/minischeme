@@ -1434,14 +1434,14 @@ int inchar(void)
 /* back to standard input */
 void flushinput(void)
 {
-	while (load_files > 0) {
+	while (load_files > 1) {
 		inport = load_stack[--load_files];
 		if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
 			fclose(port_file(inport));
 		}
 	}
 
-	inport = mk_port(stdin, port_input);
+	inport = load_stack[0];
 }
 
 /* check c is delimiter */
@@ -4069,7 +4069,7 @@ OP_APPLYCONT:
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
 		if (port_file(inport) == NULL || is_eofport(inport)) {
-			if (load_files == 0) {
+			if (load_files == 1) {
 				break;
 			}
 			inport = load_stack[--load_files];
@@ -7568,7 +7568,8 @@ void init_vars_global(void)
 	set_num_integer(&_ONE);
 	ivalue(&_ONE) = 1;
 	bignum(&_ONE) = NIL;
-	load_files = 0;
+	load_stack[0] = mk_port(stdin, port_input);
+	load_files = 1;
 	/* init output file */
 	outport = mk_port(stdout, port_output);
 	strbuff = mk_memblock(256, &NIL, &NIL);
