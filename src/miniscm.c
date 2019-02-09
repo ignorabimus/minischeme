@@ -4960,6 +4960,9 @@ OP_EXPANDPATTERN:
 
 	case OP_CASE1:		/* case */
 		for (x = code; x != NIL; x = cdr(x)) {
+			if (!is_pair(car(x))) {
+				Error_1("Syntax error in case :", car(x));
+			}
 			if (!is_pair(y = caar(x)))
 				break;
 			for ( ; y != NIL; y = cdr(y))
