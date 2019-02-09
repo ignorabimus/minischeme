@@ -1434,11 +1434,14 @@ int inchar(void)
 /* back to standard input */
 void flushinput(void)
 {
-	while (load_files > 1) {
-		inport = load_stack[--load_files];
-		if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
+	while (1) {
+		if (is_fileport(inport) || port_file(inport) != stdin || port_file(inport) != NULL) {
 			fclose(port_file(inport));
 		}
+		if (load_files == 1) {
+			break;
+		}
+		inport = load_stack[--load_files];
 	}
 
 	inport = load_stack[0];
@@ -4069,6 +4072,9 @@ OP_APPLYCONT:
 	case OP_T0LVL:	/* top level */
 OP_T0LVL:
 		if (port_file(inport) == NULL || is_eofport(inport)) {
+			if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
+				fclose(port_file(inport));
+			}
 			if (load_files == 1) {
 				break;
 			}
