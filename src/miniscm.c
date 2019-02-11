@@ -689,7 +689,7 @@ pointer get_string_cell(size_t len, pointer *a)
 	pointer y = get_cell(&x, a);
 
 	type(y) = (T_STRING | T_ATOM);
-	exttype(y) = 0;
+	syntaxnum(y) = 0;
 	strvalue(y) = (char *)car(x);
 	strlength(y) = len;
 	return y;
@@ -2754,7 +2754,7 @@ pointer mk_closure(pointer c, pointer e)
 	pointer x = get_cell(&c, &e);
 
 	type(x) = T_CLOSURE;
-	exttype(x) = 0;
+	syntaxnum(x) = 0;
 	car(x) = c;
 	cdr(x) = e;
 	return x;
