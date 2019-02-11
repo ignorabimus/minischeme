@@ -1435,7 +1435,7 @@ int inchar(void)
 void flushinput(void)
 {
 	while (1) {
-		if (is_fileport(inport) || port_file(inport) != stdin || port_file(inport) != NULL) {
+		if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
 			fclose(port_file(inport));
 		}
 		if (load_files == 1) {
