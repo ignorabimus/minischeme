@@ -624,9 +624,31 @@ pointer mk_memblock(size_t len, pointer *a, pointer *b)
 	return x;
 }
 
+static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
+{
+	type(z) = T_NUMBER | T_ATOM;
+	set_num_integer(z);
+	if (col == 0) {
+		ivalue(z) = 0;
+		bignum(z) = NIL;
+	} else if (col == 1) {
+		int64_t d = (int64_t)sign * ((uint32_t *)strvalue(m))[0];
+		if (INT32_MIN <= d && d <= INT32_MAX) {
+			ivalue(z) = (int32_t)d;
+			bignum(z) = NIL;
+		} else {
+			ivalue(z) = sign;
+			bignum(z) = m;
+		}
+	} else {
+		ivalue(z) = sign * col;
+		bignum(z) = m;
+	}
+}
+
 pointer mk_integer_from_str(const char *s, size_t len, int b)
 {
-	int32_t i, j, col, sign;
+	int32_t i, j, k, col, sign;
 	pointer m, x;
 	uint32_t *temp;
 
@@ -640,45 +662,78 @@ pointer mk_integer_from_str(const char *s, size_t len, int b)
 	} else {
 		sign = 1;
 	}
+	while (s[i] == '0') i++;
+	if (len <= (size_t)i) {
+		return mk_integer(0);
+	}
 	col = ((int32_t)((len - i) * log(b) / log(2) + 1) + 31) / 32;
 	m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
 	temp = (uint32_t *)strvalue(m);
 	memset(temp, 0, col * sizeof(uint32_t));
-	for (col = 1; s[i]; i++) {
-		uint64_t t;
-		if (b <= 10) {
-			if (s[i] < '0' || '0' + b - 1 < s[i]) {
+	if (b == 10) {
+		uint64_t t = 0;
+		k = (int32_t)(len - i - 1) % 9 + 1;
+		for (col = 1; s[i]; i++) {
+			if (s[i] < '0' || '9' < s[i]) {
 				return F;
 			}
-			t = (uint64_t)(s[i] - '0') << 32;
-		} else {
+			t = t * 10 + (uint64_t)(s[i] - '0');
+			if (--k > 0) continue;
+			t <<= 32;
+			for (j = 0; j < col; j++) {
+				t = (uint64_t)temp[j] * 1000000000 + (t >> 32);
+				temp[j] = (uint32_t)t;
+			}
+			if (t >> 32) temp[col++] = (uint32_t)(t >> 32);
+			t = 0;
+			k = 9;
+		}
+	} else if (b == 16) {
+		for (col = (int32_t)(len - i - 1) / 8 + 1; s[i]; i++) {
 			int c = toupper(s[i]);
 			if ('0' <= c && c <= '9') {
 				c -= '0';
-			} else if ('A' <= c && c <= 'A' + b - 11){
+			} else if ('A' <= c && c <= 'F') {
 				c += 10 - 'A';
 			} else {
 				return F;
 			}
-			t = (uint64_t)c << 32;
+			j = (int32_t)(len - i - 1);
+			temp[j / 8] |= c << j % 8 * 4;
 		}
-		for (j = 0; j < col; j++) {
-			t = (uint64_t)temp[j] * b + (t >> 32);
-			temp[j] = (uint32_t)(t & UINT32_MAX);
+	} else if (b == 8) {
+		for (col = (int32_t)(len - i - 1) / 32 * 3 + ((len - i - 1) % 32 + 1) / 11 + 1; s[i]; i++) {
+			if (s[i] < '0' || '7' < s[i]) {
+				return F;
+			}
+			k = (int32_t)(len - i - 1) / 32;
+			j = (int32_t)(len - i - 1) % 32;
+			if (j == 10) {
+				temp[k * 3 + 1] |= (uint32_t)(s[i] - '0') >> 2;
+			} else if (j == 21) {
+				temp[k * 3 + 2] |= (uint32_t)(s[i] - '0') >> 1;
+			}
+			temp[k * 3 + j / 11] |= (uint32_t)(s[i] - '0') << j % 11 * 3 << j / 11 % 3;
 		}
-		if (t >> 32) temp[col++] = (uint32_t)(t >> 32);
+	} else if (b == 2) {
+		for (col = (int32_t)(len - i - 1) / 32 + 1; s[i]; i++) {
+			if (s[i] < '0' || '1' < s[i]) {
+				return F;
+			}
+			j = (int32_t)(len - i - 1);
+			temp[j / 32] |= (s[i] - '0') << j % 32;
+		}
+	} else {
+		return F;
+	}
+	while (col > 0) {
+		if (temp[col - 1] > 0) {
+			break;
+		}
+		col--;
 	}
 	x = get_cell(&m, &NIL);
-	type(x) = (T_NUMBER | T_ATOM);
-	exttype(x) = 0;
-	if (col == 1 && ((sign == 1 && temp[0] <= INT32_MAX) || (sign == -1 && temp[0] <= INT32_MAX + 1UL))) {
-		ivalue(x) = sign * temp[0];
-		bignum(x) = NIL;
-	} else {
-		ivalue(x) = sign * col;
-		bignum(x) = m;
-	}
-	set_num_integer(x);
+	bignum_adjust(x, m, col, sign);
 	return x;
 }
 
@@ -2430,28 +2485,6 @@ static void bignum_from_int64(pointer x, int64_t d)
 		if (d < 0) d = (uint64_t)~d + 1;
 		((uint32_t *)strvalue(bignum(x)))[1] = (uint32_t)(d >> 32);
 		((uint32_t *)strvalue(bignum(x)))[0] = (uint32_t)d;
-	}
-}
-
-static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
-{
-	type(z) = T_NUMBER | T_ATOM;
-	set_num_integer(z);
-	if (col == 0) {
-		ivalue(z) = 0;
-		bignum(z) = NIL;
-	} else if (col == 1) {
-		int64_t d = (int64_t)sign * ((uint32_t *)strvalue(m))[0];
-		if (INT32_MIN <= d && d <= INT32_MAX) {
-			ivalue(z) = (int32_t)d;
-			bignum(z) = NIL;
-		} else {
-			ivalue(z) = sign;
-			bignum(z) = m;
-		}
-	} else {
-		ivalue(z) = sign * col;
-		bignum(z) = m;
 	}
 }
 
