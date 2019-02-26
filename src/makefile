@@ -10,10 +10,14 @@ CFLAGS = -O
 
 all :	miniscm
 
-miniscm : miniscm.c
-	$(CC) $(CFLAGS) -o miniscm miniscm.c -lm
+miniscm : miniscm.o bignum.o
+	$(CC) $(CFLAGS) -o miniscm miniscm.o bignum.o -lm
 
-miniscm : miniscm.h
+miniscm.o : miniscm.c miniscm.h
+	$(CC) $(CFLAGS) -c miniscm.c
+
+bignum.o : bignum.c bignum.h
+	$(CC) $(CFLAGS) -c bignum.c
 
 clean :
 	rm -f core *.o miniscm *~

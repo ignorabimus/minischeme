@@ -8,7 +8,8 @@
   mkdir bin
 )
 %MSCOMPILE% /MT /DSTANDALONE=1 miniscm.c
-%MSLINK% /out:bin\miniscm.exe miniscm.obj
+%MSCOMPILE% /MT bignum.c
+%MSLINK% /out:bin\miniscm.exe miniscm.obj bignum.obj
 
 @goto END
 
@@ -17,7 +18,8 @@
   mkdir lib
 )
 %MSCOMPILE% /MT /DSTANDALONE=0 miniscm.c
-%MSLIB% /out:lib\miniscm.lib miniscm.obj
+%MSCOMPILE% /MT bignum.c
+%MSLIB% /out:lib\miniscm.lib miniscm.obj bignum.obj
 
 :END
-del miniscm.obj
+del miniscm.obj bignum.obj

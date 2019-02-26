@@ -31,6 +31,7 @@
  */
 
 #include "miniscm.h"
+#include "bignum.h"
 
 /*--
  *  If your machine can't support "forward single quotation character"
@@ -648,9 +649,8 @@ static void bignum_adjust(pointer z, pointer m, int32_t col, int32_t sign)
 
 pointer mk_integer_from_str(const char *s, size_t len, int b)
 {
-	int32_t i, j, k, col, sign;
+	int32_t i, col, sign;
 	pointer m, x;
-	uint32_t *temp;
 
 	for (i = 0; isspace(s[i]); i++);
 	if (s[i] == '-') {
@@ -666,72 +666,26 @@ pointer mk_integer_from_str(const char *s, size_t len, int b)
 	if (len <= (size_t)i) {
 		return mk_integer(0);
 	}
-	col = ((int32_t)((len - i) * log(b) / log(2) + 1) + 31) / 32;
-	m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
-	temp = (uint32_t *)strvalue(m);
-	memset(temp, 0, col * sizeof(uint32_t));
 	if (b == 10) {
-		uint64_t t = 0;
-		k = (int32_t)(len - i - 1) % 9 + 1;
-		for (col = 1; s[i]; i++) {
-			if (s[i] < '0' || '9' < s[i]) {
-				return F;
-			}
-			t = t * 10 + (uint64_t)(s[i] - '0');
-			if (--k > 0) continue;
-			t <<= 32;
-			for (j = 0; j < col; j++) {
-				t = (uint64_t)temp[j] * 1000000000 + (t >> 32);
-				temp[j] = (uint32_t)t;
-			}
-			if (t >> 32) temp[col++] = (uint32_t)(t >> 32);
-			t = 0;
-			k = 9;
-		}
+		col = ((int32_t)((len - i) * log(10) / log(2) + 1) + 31) / 32;
+		m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
+		col = bn_str2num_base10(s + i, (int32_t)len - i, (uint32_t *)strvalue(m), col);
 	} else if (b == 16) {
-		for (col = (int32_t)(len - i - 1) / 8 + 1; s[i]; i++) {
-			int c = toupper(s[i]);
-			if ('0' <= c && c <= '9') {
-				c -= '0';
-			} else if ('A' <= c && c <= 'F') {
-				c += 10 - 'A';
-			} else {
-				return F;
-			}
-			j = (int32_t)(len - i - 1);
-			temp[j / 8] |= c << j % 8 * 4;
-		}
+		col = (int32_t)(len - i - 1) / 8 + 1;
+		m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
+		col = bn_str2num_base16(s + i, (int32_t)len - i, (uint32_t *)strvalue(m), col);
 	} else if (b == 8) {
-		for (col = (int32_t)(len - i - 1) / 32 * 3 + ((len - i - 1) % 32 + 1) / 11 + 1; s[i]; i++) {
-			if (s[i] < '0' || '7' < s[i]) {
-				return F;
-			}
-			k = (int32_t)(len - i - 1) / 32;
-			j = (int32_t)(len - i - 1) % 32;
-			if (j == 10) {
-				temp[k * 3 + 1] |= (uint32_t)(s[i] - '0') >> 2;
-			} else if (j == 21) {
-				temp[k * 3 + 2] |= (uint32_t)(s[i] - '0') >> 1;
-			}
-			temp[k * 3 + j / 11] |= (uint32_t)(s[i] - '0') << j % 11 * 3 << j / 11 % 3;
-		}
+		col = (int32_t)(len - i - 1) / 32 * 3 + ((len - i - 1) % 32 + 1) / 11 + 1;
+		m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
+		col = bn_str2num_base8(s + i, (int32_t)len - i, (uint32_t *)strvalue(m), col);
 	} else if (b == 2) {
-		for (col = (int32_t)(len - i - 1) / 32 + 1; s[i]; i++) {
-			if (s[i] < '0' || '1' < s[i]) {
-				return F;
-			}
-			j = (int32_t)(len - i - 1);
-			temp[j / 32] |= (s[i] - '0') << j % 32;
-		}
+		col = (int32_t)(len - i - 1) / 32 + 1;
+		m = mk_memblock(col * sizeof(uint32_t), &NIL, &NIL);
+		col = bn_str2num_base2(s + i, (int32_t)len - i, (uint32_t *)strvalue(m), col);
 	} else {
 		return F;
 	}
-	while (col > 0) {
-		if (temp[col - 1] > 0) {
-			break;
-		}
-		col--;
-	}
+	if (col < 0) return F;
 	x = get_cell(&m, &NIL);
 	bignum_adjust(x, m, col, sign);
 	return x;
@@ -1832,35 +1786,15 @@ char *atom2str(pointer l, int f)
 				if (bignum(l) == NIL) {
 					sprintf(p, "%d", ivalue(l));
 				} else {
-					int32_t i, col = abs(ivalue(l));
+					int32_t col = abs(ivalue(l)), sign = ivalue(l) < 0 ? -1 : 1;
 					size_t len = (size_t)((col * 32 * log(2) + 3) / log(10)) + 1;
 					pointer q = mk_memblock(col * sizeof(uint32_t), &l, &NIL);
-					uint32_t *temp = (uint32_t *)strvalue(q);
-					memcpy(temp, strvalue(bignum(l)), col * sizeof(uint32_t));
+					memcpy(strvalue(q), strvalue(bignum(l)), col * sizeof(uint32_t));
 					if (len >= strlength(strbuff)) {
-						strbuff = mk_memblock((len + 255) / 256 * 256, &l, &q);
-						p = strvalue(strbuff);
+						strbuff = mk_memblock((len + 255) / 256 * 256, &q, &NIL);
 					}
-					p = &p[strlength(strbuff) - 1];
-					*p = 0;
-					while (col > 0) {
-						uint64_t t = 0;
-						for (i = col - 1; i >= 0; i--) {
-							t = t << 32 | temp[i];
-							temp[i] = (uint32_t)(t / 1000000000);
-							t = t % 1000000000;
-						}
-						while (col > 0) {
-							if (temp[col - 1] > 0) {
-								break;
-							}
-							col--;
-						}
-						for (i = 0; i < 9 && (col > 0 || t > 0); i++, t /= 10) {
-							*--p = (char)(t % 10) + '0';
-						}
-					}
-					if (ivalue(l) < 0) *--p = '-';
+					p = bn_num2str_base10(strvalue(strbuff) + strlength(strbuff) - 1, (uint32_t *)strvalue(q), col);
+					if (sign < 0) *--p = '-';
 				}
 			} else {
 				sprintf(p, "%.10g", rvalue(l));
@@ -1879,23 +1813,12 @@ char *atom2str(pointer l, int f)
 					sprintf(p, "-%x", -ivalue(l));
 				}
 			} else {
-				int32_t i, j, col = abs(ivalue(l));
+				int32_t col = abs(ivalue(l));
 				size_t len = col * 8 + 1;
 				if (len >= strlength(strbuff)) {
 					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
-					p = strvalue(strbuff);
 				}
-				p = &p[strlength(strbuff) - 1];
-				*p = 0;
-				for (i = 0; i < col; i++) {
-					for (j = 0; j < 8; j++) {
-						uint32_t n = ((uint32_t *)strvalue(bignum(l)))[i] >> (4 * j);
-						if (i < col - 1 || n != 0) {
-							char c = n & 0xf;
-							*--p = (c < 10) ? c + '0' : c - 10 + 'a';
-						}
-					}
-				}
+				p = bn_num2str_base16(strvalue(strbuff) + strlength(strbuff) - 1, (uint32_t *)strvalue(bignum(l)), col);
 				if (ivalue(l) < 0) *--p = '-';
 			}
 		} else if (f == 8) {
@@ -1905,32 +1828,12 @@ char *atom2str(pointer l, int f)
 				else
 					sprintf(p, "-%o", -ivalue(l));
 			} else {
-				int32_t i, j, k, col = abs(ivalue(l));
+				int32_t col = abs(ivalue(l));
 				size_t len = col * 11 + 1;
 				if (len >= strlength(strbuff)) {
 					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
-					p = strvalue(strbuff);
 				}
-				p = &p[strlength(strbuff) - 1];
-				*p = 0;
-				for (i = 0; i < col; i++) {
-					uint32_t m = ((uint32_t *)strvalue(bignum(l)))[i];
-					if (i % 3 == 0) {
-						k = 11;
-					} else if (i % 3 == 1) {
-						*p += (m & 0x1) << 2;
-						k = 11;
-					} else {
-						*p += (m & 0x3) << 1;
-						k = 10;
-					}
-					for (j = 0; j < k; j++) {
-						uint32_t n = m >> (3 * j + i % 3);
-						if (i < col - 1 || n != 0) {
-							*--p = (n & 0x7) + '0';
-						}
-					}
-				}
+				p = bn_num2str_base8(strvalue(strbuff) + strlength(strbuff) - 1, (uint32_t *)strvalue(bignum(l)), col);
 				if (ivalue(l) < 0) *--p = '-';
 			}
 		} else if (f == 2) {
@@ -1941,22 +1844,12 @@ char *atom2str(pointer l, int f)
 				do { *--p = (b & 1) ? '1' : '0'; b >>= 1; } while (b != 0);
 				if (ivalue(l) < 0) *--p = '-';
 			} else {
-				int32_t i, j, col = abs(ivalue(l));
+				int32_t col = abs(ivalue(l));
 				size_t len = col * 32 + 1;
 				if (len >= strlength(strbuff)) {
 					strbuff = mk_memblock((len + 255) / 256 * 256, &l, &NIL);
-					p = strvalue(strbuff);
 				}
-				p = &p[strlength(strbuff) - 1];
-				*p = 0;
-				for (i = 0; i < col; i++) {
-					for (j = 0; j < 32; j++) {
-						uint32_t n = ((uint32_t *)strvalue(bignum(l)))[i] >> j;
-						if (i < col - 1 || n != 0) {
-							*--p = (n & 0x1) + '0';
-						}
-					}
-				}
+				p = bn_num2str_base2(strvalue(strbuff) + strlength(strbuff) - 1, (uint32_t *)strvalue(bignum(l)), col);
 				if (ivalue(l) < 0) *--p = '-';
 			}
 		} else {
@@ -2053,400 +1946,6 @@ size_t printatom(pointer l, int f)
 }
 
 /* ========== Routines for Numerical operations ========== */
-
-/* greatest common divisor */
-static int64_t gcd(int32_t x, int32_t y)
-{
-	uint32_t ux = (uint32_t)llabs(x), uy = (uint32_t)llabs(y), uz;
-	while (ux != 0) {
-		uz = ux;
-		ux = uy % ux;
-		uy = uz;
-	}
-	return uy;
-}
-
-/* least common multiple */
-static int64_t lcm(int32_t x, int32_t y)
-{
-	if (x == 0 || y == 0) {
-		return 0;
-	}
-	return llabs(x / gcd(x, y) * y);
-}
-
-/* the first bit1 position */
-static int32_t find1_32(uint32_t val)
-{
-	static const int32_t clz_table_4bit[16] = { 4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0 };
-	int32_t n = 32;
-
-	if ((val & 0xFFFF0000) == 0) { n -= 16; val <<= 16; }
-	if ((val & 0xFF000000) == 0) { n -= 8; val <<= 8; }
-	if ((val & 0xF0000000) == 0) { n -= 4; val <<= 4; }
-
-	return n - clz_table_4bit[val >> (32 - 4)];
-}
-
-/* if x == y */
-static int bn_eq(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i;
-	if (colx != coly) {
-		return  0;
-	}
-	for (i = colx - 1; i >= 0; i--) {
-		if (x[i] != y[i]) {
-			return 0;
-		}
-	}
-	return 1;
-}
-
-/* if x > y */
-static int bn_gt(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i;
-	if (colx > coly) {
-		return  1;
-	} else if (colx < coly) {
-		return 0;
-	}
-	for (i = colx - 1; i >= 0; i--) {
-		if (x[i] > y[i]) {
-			return 1;
-		} else if (x[i] < y[i]) {
-			return 0;
-		}
-	}
-	return 0;
-}
-
-/* if x >= y */
-static int bn_ge(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i;
-	if (colx > coly) {
-		return  1;
-	} else if (colx < coly) {
-		return 0;
-	}
-	for (i = colx - 1; i >= 0; i--) {
-		if (x[i] > y[i]) {
-			return 1;
-		} else if (x[i] < y[i]) {
-			return 0;
-		}
-	}
-	return 1;
-}
-
-/* z = x + y */
-static int bn_add(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i, col = (colx < coly) ? colx : coly;
-	uint64_t t = 0;
-	for (i = 0; i < col; i++) {
-		t = (uint64_t)x[i] + y[i] + (t >> 32);
-		z[i] = (uint32_t)t;
-	}
-	if (colx > coly) {
-		*colz = colx;
-		for (; i < colx; i++) {
-			t = x[i] + (t >> 32);
-			z[i] = (uint32_t)t;
-		}
-	} else {
-		*colz = coly;
-		for (; i < coly; i++) {
-			t = y[i] + (t >> 32);
-			z[i] = (uint32_t)t;
-		}
-	}
-	if (t >>= 32) {
-		z[(*colz)++] = (uint32_t)t;
-	}
-	return 1;
-}
-
-/* z = x - y */
-static int bn_sub(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i;
-	uint32_t carry = 0;
-	for (i = 0; i < coly; i++) {
-		uint64_t t = (uint64_t)y[i] + carry;
-		if (x[i] >= t) {
-			z[i] = (uint32_t)(x[i] - t);
-			carry = 0;
-		} else {
-			z[i] = (uint32_t)(((uint64_t)1 << 32) + x[i] - t);
-			carry = 1;
-		}
-	}
-	*colz = colx;
-	for (; i < colx; i++) {
-		if (x[i] >= carry) {
-			z[i] = (uint32_t)(x[i] - carry);
-			carry = 0;
-		} else {
-			z[i] = (uint32_t)(((uint64_t)1 << 32) + x[i] - carry);
-			carry = 1;
-		}
-	}
-	while (*colz > 0) {
-		if (z[*colz - 1] > 0) {
-			break;
-		}
-		(*colz)--;
-	}
-	return 1;
-}
-
-/* z = x * y */
-static int bn_mul(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i, j;
-	memset(z, 0, sizeof(uint32_t) * (colx + coly));
-	for (i = 0; i < colx; i++) {
-		uint64_t t = 0;
-		for (j = 0; j < coly; j++) {
-			t = z[i + j] + (uint64_t)x[i] * y[j] + (t >> 32);
-			z[i + j] = (uint32_t)t;
-		}
-		if (t >>= 32) {
-			z[i + j] = (uint32_t)t;
-		}
-	}
-	*colz = colx + coly;
-	while (*colz > 0) {
-		if (z[*colz - 1] > 0) {
-			break;
-		}
-		(*colz)--;
-	}
-	return 1;
-}
-
-/* z = x^2 */
-static int bn_sqr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx)
-{
-	int32_t i, j = 0;
-	uint64_t t;
-	*colz = 2 * colx;
-	memset(z, 0, sizeof(uint32_t) * *colz);
-	for (i = 0; i < colx - 1; i++) {
-		t = 0;
-		for (j = i + 1; j < colx; j++) {
-			t = z[i + j] + (uint64_t)x[i] * x[j] + (t >> 32);
-			z[i + j] = (uint32_t)t;
-		}
-		if (t >>= 32) {
-			z[i + j] = (uint32_t)t;
-		}
-	}
-	for (i = i + j - 1; i >= 0; i--) {
-		z[i + 1] |= z[i] >> 31;
-		z[i] = z[i] << 1;
-	}
-	t = 0;
-	for (i = 0; i < colx * 2; i++) {
-		t = z[i] + (uint64_t)x[i >> 1] * x[i >> 1] + (t >> 32);
-		z[i++] = (uint32_t)t;
-		t = z[i] + (t >> 32);
-		z[i] = (uint32_t)t;
-	}
-	while (*colz > 0) {
-		if (z[*colz - 1] > 0) {
-			break;
-		}
-		(*colz)--;
-	}
-	return 1;
-}
-
-/* z = x << n */
-static int bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
-{
-	int32_t i, q = n / 32, r = n & 0x1F;
-
-	if (r == 0) {
-		for (i = colx - 1; i >= 0; --i) {
-			z[i + q] = x[i];
-		}
-		memset(z, 0, sizeof(int32_t) * q);
-		*colz = colx + q;
-	} else {
-		int32_t col = 0;
-		if (x[colx - 1] >> (32 - r)) {
-			col++;
-			z[colx + q] = 0;
-		}
-		for (i = colx - 1; i >= 0; --i) {
-			z[i + q + 1] |= x[i] >> (32 - r);
-			z[i + q] = x[i] << r;
-		}
-		memset(z, 0, sizeof(int32_t) * q);
-		*colz = colx + q + col;
-	}
-	while (*colz > 0) {
-		if (z[*colz - 1] > 0) {
-			break;
-		}
-		(*colz)--;
-	}
-	return 1;
-}
-
-/* z = x >> n */
-static int bn_sftr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
-{
-	int32_t i, q = n / 32, r = n & 0x1F;
-
-	if (r == 0) {
-		if (colx - q <= 0) {
-			*colz = 0;
-		} else {
-			for (i = q; i < colx; i++) {
-				z[i - q] = x[i];
-			}
-			*colz = colx - q;
-		}
-	} else {
-		if (colx - q <= 0) {
-			*colz = 0;
-		} else {
-			int32_t col = 0;
-			if ((x[colx - 1] >> r) == 0) {
-				col--;
-			}
-			z[0] = x[q] >> r;
-			for (i = q + 1; i < colx; i++) {
-				z[i - q - 1] |= x[i] << (32 - r);
-				z[i - q] = x[i] >> r;
-			}
-			*colz = colx - q + col;
-		}
-	}
-	while (*colz > 0) {
-		if (z[*colz - 1] > 0) {
-			break;
-		}
-		(*colz)--;
-	}
-	return 1;
-}
-
-/* q = x / y + r */
-static int bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
-{
-	int32_t i;
-	if (coly == 1) {
-		uint64_t t = 0;
-		for (i = colx - 1; i >= 0; i--) {
-			t = t << 32 | x[i];
-			q[i] = (uint32_t)(t / y[0]);
-			t = t % y[0];
-		}
-		*colq = colx;
-		while (*colq > 0) {
-			if (q[*colq - 1] > 0) {
-				break;
-			}
-			(*colq)--;
-		}
-		r[0] = (int32_t)t;
-		*colr = 1;
-	} else {
-		uint32_t *t_a = r + *colr, *t_b = t_a + 1 + colx, *t_x = t_b + 1 + coly;
-		int32_t cola, colb, d = 32 - find1_32(y[coly - 1]);
-		if (d == 0) {
-			memcpy(t_a, x, sizeof(uint32_t) * colx);
-			memcpy(t_b, y, sizeof(uint32_t) * coly);
-			cola = colx;
-			colb = coly;
-		} else {
-			if (!bn_sftl(t_a, &cola, x, colx, d)) {
-				return 0;
-			}
-			if (!bn_sftl(t_b, &colb, y, coly, d)) {
-				return 0;
-			}
-		}
-		i = cola - colb;
-		if (i > 0) {
-			*colq = i;
-		} else if (i == 0) {
-			if (bn_ge(t_a, cola, t_b, colb)) {
-				q[0] = 1;
-				*colq = 1;
-				if (!bn_sub(t_a, &cola, t_a, cola, t_b, colb)) {
-					return 0;
-				}
-			} else {
-				*colq = 0;
-			}
-		} else {
-			*colq = 0;
-		}
-		while (--i >= 0) {
-			if (cola > 1 && bn_gt(t_a, cola, t_b, colb)) {
-				uint64_t aa = (uint64_t)t_a[cola - 1] << 32 | t_a[cola - 2];
-				uint64_t qq = aa / t_b[colb - 1];
-				uint32_t q2[2];
-				if (cola > 2 && colb > 1) {
-					uint64_t rr = aa % t_b[colb - 1];
-					while ((rr << 32 | t_a[cola - 3]) < qq * t_b[colb - 2]) {
-						qq--;
-						rr += t_b[colb - 2];
-						if (rr > UINT32_MAX) break;
-					}
-				}
-				do {
-					q2[0] = (uint32_t)qq;
-					q2[1] = (uint32_t)(qq >> 32);
-					if (!bn_mul(t_x, &colx, t_b, colb, q2, q2[1] > 0 ? 2 : 1)) {
-						return 0;
-					}
-					--qq;
-					if (!bn_sftl(t_x, &colx, t_x, colx, i * 32)) {
-						return 0;
-					}
-				} while (bn_gt(t_x, colx, t_a, cola));
-				q[i] = (uint32_t)(qq + 1);
-				if (qq >= UINT32_MAX) {
-					q2[0] = 1;
-					bn_add(&q[i + 1], colq, &q[i + 1], *colq - i - 1, q2, 1);
-					*colq += i + 1;
-				}
-				if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
-					return 0;
-				}
-			} else if (bn_eq(t_a, cola, t_b, colb)) {
-				q[i] = 1;
-				while (i > 0) q[--i] = 0;
-				while (cola > 0) t_a[--cola] = 0;
-			} else {
-				q[i] = 0;
-			}
-		}
-		if (d > 0) {
-			if (!bn_sftr(r, colr, t_a, cola, d)) {
-				return 0;
-			}
-		} else {
-			memcpy(r, t_a, cola * 32);
-			*colr = cola;
-			while (*colr > 0) {
-				if (r[*colr - 1] > 0) {
-					break;
-				}
-				(*colr)--;
-			}
-		}
-	}
-	return 1;
-}
 
 static double get_rvalue(pointer x)
 {
