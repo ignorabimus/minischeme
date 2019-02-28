@@ -2019,118 +2019,94 @@ static int bignum_abs(pointer z, pointer x)
 }
 
 /* z = sign * (|x|+|y|) */
-static int bignum_add(pointer z, pointer x, pointer y, int32_t sign)
+static void bignum_add(pointer z, pointer x, pointer y, int32_t sign)
 {
 	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), col = (colx > coly ? colx : coly) + 1;
 	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &y);
-	if (bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)strvalue(bignum(y)), coly) == 0) {
-		return 0;
-	}
+	bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)strvalue(bignum(y)), coly);
 	bignum_adjust(z, m, col, sign);
-	return 1;
 }
 
 /* z = sign * (|x|+|val|) */
-static int bignum_add_imm(pointer z, pointer x, int32_t val, int32_t sign)
+static void bignum_add_imm(pointer z, pointer x, int32_t val, int32_t sign)
 {
 	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
 	int32_t colx = abs(ivalue(x)), col = (colx > 1 ? colx : 1) + 1;
 	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &z);
-	if (bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_add((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1);
 	bignum_adjust(z, m, col, sign);
-	return 1;
 }
 
 /* z = sign * (|x|-|y|) */
-static int bignum_sub(pointer z, pointer x, pointer y, int32_t sign)
+static void bignum_sub(pointer z, pointer x, pointer y, int32_t sign)
 {
 	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), col = colx;
 	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &y);
-	if (bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)strvalue(bignum(y)), coly) == 0) {
-		return 0;
-	}
+	bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)strvalue(bignum(y)), coly);
 	bignum_adjust(z, m, col, sign);
-	return 1;
 }
 
 /* z = sign * (|x|-|val|) */
-static int bignum_sub_imm(pointer z, pointer x, int32_t val, int32_t sign)
+static void bignum_sub_imm(pointer z, pointer x, int32_t val, int32_t sign)
 {
 	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
 	int32_t colx = abs(ivalue(x)), col = colx;
 	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &z);
-	if (bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_sub((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1);
 	bignum_adjust(z, m, col, sign);
-	return 1;
 }
 
 /* z = x * y */
-static int bignum_mul(pointer z, pointer x, pointer y)
+static void bignum_mul(pointer z, pointer x, pointer y)
 {
 	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), col = colx + coly;
 	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &y);
-	if (bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, ((uint32_t *)strvalue(bignum(y))), coly) == 0) {
-		return 0;
-	}
+	bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, ((uint32_t *)strvalue(bignum(y))), coly);
 	bignum_adjust(z, m, col, (ivalue(x) < 0 ? -1 : 1) * (ivalue(y) < 0 ? -1 : 1));
-	return 1;
 }
 
 /* z = x * val */
-static int bignum_mul_imm(pointer z, pointer x, int32_t val)
+static void bignum_mul_imm(pointer z, pointer x, int32_t val)
 {
 	uint32_t y = val < 0 ? (uint32_t)~val + 1 : val;
 	int32_t colx = abs(ivalue(x)), col = colx + 1;
 	pointer m = mk_memblock(col * sizeof(uint32_t), &x, &z);
-	if (bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_mul((uint32_t *)strvalue(m), &col, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1);
 	bignum_adjust(z, m, col, (ivalue(x) < 0 ? -1 : 1) * (val < 0 ? -1 : 1));
-	return 1;
 }
 
 /* q = x / y + r*/
-static int32_t bignum_div(pointer q, pointer r, pointer x, pointer y)
+static void bignum_div(pointer q, pointer r, pointer x, pointer y)
 {
 	int32_t colx = abs(ivalue(x)), coly = abs(ivalue(y)), colq = colx, colr = coly, signx = ivalue(x) < 0 ? -1 : 1, signy = ivalue(y) < 0 ? -1 : 1;
 	pointer a = cons(x, y), m = mk_memblock(colq * sizeof(uint32_t), &a, &NIL);
 	pointer b = mk_memblock(2 * (colq + colr + 1) * sizeof(uint32_t), &m, &a);
 	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(b);
-	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(car(a))), colx, (uint32_t *)strvalue(bignum(cdr(a))), coly) == 0) {
-		return 0;
-	}
+	bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(car(a))), colx, (uint32_t *)strvalue(bignum(cdr(a))), coly);
 	bignum_adjust(q, m, colq, signx * signy);
 
 	m = mk_memblock(colr * sizeof(uint32_t), &q, &b);
 	memcpy((uint32_t *)strvalue(m), t_r, colr * sizeof(uint32_t));
 	bignum_adjust(r, m, colr, signx);
-	return 1;
 }
 
 /* q = x / val + r */
-static int bignum_div_imm(pointer q, pointer r, pointer x, int32_t val)
+static void bignum_div_imm(pointer q, pointer r, pointer x, int32_t val)
 {
 	int32_t colx = abs(ivalue(x)), colq = colx, colr, sign = (ivalue(x) < 0 ? -1 : 1) * (val < 0 ? -1 : 1);
 	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL);
 	uint32_t *t_q = (uint32_t *)strvalue(m), tr, y = val < 0 ? (uint32_t)~val + 1 : val;
-	if (bn_div(t_q, &colq, &tr, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_div(t_q, &colq, &tr, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1);
 	bignum_adjust(q, m, colq, sign);
 
 	type(r) = T_NUMBER | T_ATOM;
 	set_num_integer(r);
 	ivalue(r) = (int32_t)tr * (ivalue(x) < 0 ? -1 : 1);
 	bignum(r) = NIL;
-	return 1;
 }
 
 /* r = gcd(x, y) */
-static int bignum_gcd(pointer r, pointer x, pointer y)
+static void bignum_gcd(pointer r, pointer x, pointer y)
 {
 	int32_t cols = abs(ivalue(x)), colt = abs(ivalue(y));
 	pointer s, t, u;
@@ -2142,43 +2118,35 @@ static int bignum_gcd(pointer r, pointer x, pointer y)
 	while (colt > 1 || (colt == 1 && ((uint32_t *)strvalue(t))[0] > 0)) {
 		int32_t colq = cols, colr = colt;
 		uint32_t *t_q = (uint32_t *)strvalue(s), *t_r = (uint32_t *)strvalue(u);
-		if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(s), cols, (uint32_t *)strvalue(t), colt) == 0) {
-			return 0;
-		}
+		bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(s), cols, (uint32_t *)strvalue(t), colt);
 		memcpy(strvalue(s), strvalue(t), colt * sizeof(uint32_t));
 		cols = colt;
-		if (bn_sub((uint32_t *)strvalue(t), &colt, (uint32_t *)strvalue(t), colt, t_r, colr) == 0) {
-			return 0;
-		}
+		bn_sub((uint32_t *)strvalue(t), &colt, (uint32_t *)strvalue(t), colt, t_r, colr);
 		if (bn_gt((uint32_t *)strvalue(t), colt, t_r, colr)) {
 			memcpy(strvalue(t), t_r, colr * sizeof(uint32_t));
 			colt = colr;
 		}
 	}
 	bignum_adjust(r, s, cols, 1);
-	return 1;
 }
 
 /* r = gcd(x, val) */
-static int bignum_gcd_imm(pointer r, pointer x, int32_t val)
+static void bignum_gcd_imm(pointer r, pointer x, int32_t val)
 {
 	int32_t colx = abs(ivalue(x)), colq = colx, colr;
 	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL), n = mk_memblock(sizeof(uint32_t), &x, &m);
 	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(n), y = val < 0 ? (uint32_t)~val + 1 : val;
-	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1);
 	if (t_r[0] > 0) {
 		t_r[0] = (uint32_t)gcd(t_r[0], y);
 	} else {
 		t_r[0] = y;
 	}
 	bignum_adjust(r, n, 1, 1);
-	return 1;
 }
 
 /* r = lcm(x, y) */
-static int bignum_lcm(pointer r, pointer x, pointer y)
+static void bignum_lcm(pointer r, pointer x, pointer y)
 {
 	int32_t colq, colr, cols = abs(ivalue(x)), colt = abs(ivalue(y));
 	pointer s, t, u;
@@ -2193,56 +2161,40 @@ static int bignum_lcm(pointer r, pointer x, pointer y)
 	while (colt > 1 || (colt == 1 && ((uint32_t *)strvalue(t))[0] > 0)) {
 		colq = cols;
 		colr = colt;
-		if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(s), cols, (uint32_t *)strvalue(t), colt) == 0) {
-			return 0;
-		}
+		bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(s), cols, (uint32_t *)strvalue(t), colt);
 		memcpy(strvalue(s), strvalue(t), colt * sizeof(uint32_t));
 		cols = colt;
-		if (bn_sub((uint32_t *)strvalue(t), &colt, (uint32_t *)strvalue(t), colt, t_r, colr) == 0) {
-			return 0;
-		}
+		bn_sub((uint32_t *)strvalue(t), &colt, (uint32_t *)strvalue(t), colt, t_r, colr);
 		if (bn_gt((uint32_t *)strvalue(t), colt, t_r, colr)) {
 			memcpy(strvalue(t), t_r, colr * sizeof(uint32_t));
 			colt = colr;
 		}
 	}
-	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), abs(ivalue(x)), (uint32_t *)strvalue(s), cols) == 0) {
-		return 0;
-	}
-	if (bn_mul((uint32_t *)strvalue(t), &colt, t_q, colq, (uint32_t *)strvalue(bignum(y)), abs(ivalue(y))) == 0) {
-		return 0;
-	}
+	bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), abs(ivalue(x)), (uint32_t *)strvalue(s), cols);
+	bn_mul((uint32_t *)strvalue(t), &colt, t_q, colq, (uint32_t *)strvalue(bignum(y)), abs(ivalue(y)));
 	bignum_adjust(r, t, colt, 1);
-	return 1;
 }
 
 /* r = lcm(x, val) */
-static int bignum_lcm_imm(pointer r, pointer x, int32_t val)
+static void bignum_lcm_imm(pointer r, pointer x, int32_t val)
 {
 	int32_t colx = abs(ivalue(x)), colq = colx, colr;
 	pointer m = mk_memblock(colq * sizeof(uint32_t), &x, &NIL), n = mk_memblock(sizeof(uint32_t), &x, &m);
 	uint32_t *t_q = (uint32_t *)strvalue(m), *t_r = (uint32_t *)strvalue(n), y = val < 0 ? (uint32_t)~val + 1 : val, z;
-	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&y, 1);
 	if (t_r[0] > 0) {
 		z = (uint32_t)gcd(t_r[0], y);
 	} else {
 		z = y;
 	}
-	if (bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&z, 1) == 0) {
-		return 0;
-	}
+	bn_div(t_q, &colq, t_r, &colr, (uint32_t *)strvalue(bignum(x)), colx, (uint32_t *)&z, 1);
 	n = mk_memblock((colq + 1) * sizeof(uint32_t), &x, &m);
-	if (bn_mul((uint32_t *)strvalue(n), &colr, (uint32_t *)strvalue(m), colq, (uint32_t *)&y, 1) == 0) {
-		return 0;
-	}
+	bn_mul((uint32_t *)strvalue(n), &colr, (uint32_t *)strvalue(m), colq, (uint32_t *)&y, 1);
 	bignum_adjust(r, n, colr, 1);
-	return 1;
 }
 
 /* z = pow(x, val) */
-static int bignum_pow(pointer z, pointer x, int32_t val)
+static void bignum_pow(pointer z, pointer x, int32_t val)
 {
 	int32_t colx = bignum(x) == NIL ? 1 : abs(ivalue(x));
 	uint32_t v_x = bignum(x) == NIL ? (ivalue(x) < 0 ? (uint32_t)~ivalue(x) + 1 : ivalue(x)) : ((uint32_t *)strvalue(bignum(x)))[colx - 1];
@@ -2262,20 +2214,15 @@ static int bignum_pow(pointer z, pointer x, int32_t val)
 	while (val > 0) {
 		if (val & 0x1) {
 			val--;
-			if (bn_mul(tmp, &colz, t_z, colz, t_x, colx) == 0) {
-				return 0;
-			}
+			bn_mul(tmp, &colz, t_z, colz, t_x, colx);
 			memcpy(t_z, tmp, colz * sizeof(uint32_t));
 		} else {
 			val >>= 1;
-			if (bn_sqr(tmp, &colx, t_x, colx) == 0) {
-				return 0;
-			}
+			bn_sqr(tmp, &colx, t_x, colx);
 			memcpy(t_x, tmp, colx * sizeof(uint32_t));
 		}
 	}
 	bignum_adjust(z, m_z, colz, sign);
-	return 1;
 }
 
 /* ========== Routines for Evaluation Cycle ========== */

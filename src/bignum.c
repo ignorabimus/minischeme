@@ -96,7 +96,7 @@ int32_t bn_ge(uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
 }
 
 /* z = x + y */
-int32_t bn_add(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+void bn_add(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
 {
 	int32_t i, col = (colx < coly) ? colx : coly;
 	uint64_t t = 0;
@@ -120,11 +120,10 @@ int32_t bn_add(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t
 	if (t >>= 32) {
 		z[(*colz)++] = (uint32_t)t;
 	}
-	return 1;
 }
 
 /* z = x - y */
-int32_t bn_sub(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+void bn_sub(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
 {
 	int32_t i;
 	uint32_t carry = 0;
@@ -154,11 +153,10 @@ int32_t bn_sub(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t
 		}
 		(*colz)--;
 	}
-	return 1;
 }
 
 /* z = x * y */
-int32_t bn_mul(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+void bn_mul(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
 {
 	int32_t i, j;
 	memset(z, 0, sizeof(uint32_t) * (colx + coly));
@@ -179,11 +177,10 @@ int32_t bn_mul(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, uint32_t
 		}
 		(*colz)--;
 	}
-	return 1;
 }
 
 /* z = x^2 */
-int32_t bn_sqr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx)
+void bn_sqr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx)
 {
 	int32_t i, j = 0;
 	uint64_t t;
@@ -216,11 +213,10 @@ int32_t bn_sqr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx)
 		}
 		(*colz)--;
 	}
-	return 1;
 }
 
 /* z = x << n */
-int32_t bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
+void bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
 {
 	int32_t i, q = n / 32, r = n & 0x1F;
 
@@ -249,11 +245,10 @@ int32_t bn_sftl(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t
 		}
 		(*colz)--;
 	}
-	return 1;
 }
 
 /* z = x >> n */
-int32_t bn_sftr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
+void bn_sftr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t n)
 {
 	int32_t i, q = n / 32, r = n & 0x1F;
 
@@ -288,11 +283,10 @@ int32_t bn_sftr(uint32_t z[], int32_t *colz, uint32_t x[], int32_t colx, int32_t
 		}
 		(*colz)--;
 	}
-	return 1;
 }
 
 /* q = x / y + r */
-int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
+void bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_t x[], int32_t colx, uint32_t y[], int32_t coly)
 {
 	int32_t i;
 	if (coly == 1) {
@@ -320,12 +314,8 @@ int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_
 			cola = colx;
 			colb = coly;
 		} else {
-			if (!bn_sftl(t_a, &cola, x, colx, d)) {
-				return 0;
-			}
-			if (!bn_sftl(t_b, &colb, y, coly, d)) {
-				return 0;
-			}
+			bn_sftl(t_a, &cola, x, colx, d);
+			bn_sftl(t_b, &colb, y, coly, d);
 		}
 		i = cola - colb;
 		if (i > 0) {
@@ -334,9 +324,7 @@ int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_
 			if (bn_ge(t_a, cola, t_b, colb)) {
 				q[0] = 1;
 				*colq = 1;
-				if (!bn_sub(t_a, &cola, t_a, cola, t_b, colb)) {
-					return 0;
-				}
+				bn_sub(t_a, &cola, t_a, cola, t_b, colb);
 			} else {
 				*colq = 0;
 			}
@@ -359,13 +347,9 @@ int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_
 				do {
 					q2[0] = (uint32_t)qq;
 					q2[1] = (uint32_t)(qq >> 32);
-					if (!bn_mul(t_x, &colx, t_b, colb, q2, q2[1] > 0 ? 2 : 1)) {
-						return 0;
-					}
+					bn_mul(t_x, &colx, t_b, colb, q2, q2[1] > 0 ? 2 : 1);
 					--qq;
-					if (!bn_sftl(t_x, &colx, t_x, colx, i * 32)) {
-						return 0;
-					}
+					bn_sftl(t_x, &colx, t_x, colx, i * 32);
 				} while (bn_gt(t_x, colx, t_a, cola));
 				q[i] = (uint32_t)(qq + 1);
 				if (qq >= UINT32_MAX) {
@@ -373,9 +357,7 @@ int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_
 					bn_add(&q[i + 1], colq, &q[i + 1], *colq - i - 1, q2, 1);
 					*colq += i + 1;
 				}
-				if (!bn_sub(t_a, &cola, t_a, cola, t_x, colx)) {
-					return 0;
-				}
+				bn_sub(t_a, &cola, t_a, cola, t_x, colx);
 			} else if (bn_eq(t_a, cola, t_b, colb)) {
 				q[i] = 1;
 				while (i > 0) q[--i] = 0;
@@ -385,9 +367,7 @@ int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_
 			}
 		}
 		if (d > 0) {
-			if (!bn_sftr(r, colr, t_a, cola, d)) {
-				return 0;
-			}
+			bn_sftr(r, colr, t_a, cola, d);
 		} else {
 			memcpy(r, t_a, cola * 32);
 			*colr = cola;
@@ -399,7 +379,6 @@ int32_t bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_
 			}
 		}
 	}
-	return 1;
 }
 
 int32_t bn_str2num_base2(const char s[], int32_t len, uint32_t x[], int32_t col)
