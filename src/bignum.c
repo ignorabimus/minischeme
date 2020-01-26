@@ -369,7 +369,7 @@ void bn_div(uint32_t q[], int32_t *colq, uint32_t r[], int32_t *colr, uint32_t x
 		if (d > 0) {
 			bn_sftr(r, colr, t_a, cola, d);
 		} else {
-			memcpy(r, t_a, cola * 32);
+			memcpy(r, t_a, cola * sizeof(uint32_t));
 			*colr = cola;
 			while (*colr > 0) {
 				if (r[*colr - 1] > 0) {
