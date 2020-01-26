@@ -2262,6 +2262,23 @@ pointer reverse(pointer a) /* a must be checked by gc */
 	return p;
 }
 
+/* reverse list (without last arg) -- make new cells */
+void short_reverse(void)
+{
+	if (is_pair(args)) {
+		pointer p = cons(value, NIL);
+
+		for (; is_pair(cdr(args)); args = cdr(args)) {
+			p = cons(car(args), p);
+		}
+		code = car(args);
+		args = p;
+	} else {
+		code = value;
+		args = NIL;
+	}
+}
+
 /* reverse list --- no make new cells */
 pointer non_alloc_rev(pointer term, pointer list)
 {
@@ -3449,17 +3466,15 @@ OP_EVAL:
 		/* fall through */
 
 	case OP_E1ARGS:	/* eval arguments */
-		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
+			args = cons(value, args);
 			s_save(OP_E1ARGS, args, cdr(code));
 			code = car(code);
 			args = NIL;
 			s_goto(OP_EVAL);
 		}
 		/* end */
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 		/* fall through */
 
 	case OP_APPLY:		/* apply 'code' to 'args' */
@@ -3908,8 +3923,8 @@ OP_BEGIN:
 		/* fall through */
 
 	case OP_LET1:		/* let (caluculate parameters) */
-		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
+			args = cons(value, args);
 			s_save(OP_LET1, args, cdr(code));
 			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
 				Error_1("Bad syntax of binding spec in let :", car(code));
@@ -3919,9 +3934,7 @@ OP_BEGIN:
 			s_goto(OP_EVAL);
 		}
 		/* end */
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 
 		envir = cons(NIL, envir);
 		setenvironment(envir);
@@ -4003,8 +4016,8 @@ OP_BEGIN:
 		/* fall through */
 
 	case OP_LET1REC:	/* letrec (caluculate parameters) */
-		args = cons(value, args);
 		if (is_pair(code)) {	/* continue */
+			args = cons(value, args);
 			s_save(OP_LET1REC, args, cdr(code));
 			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
 				Error_1("Bad syntax of binding spec in letrec :", car(code));
@@ -4014,9 +4027,7 @@ OP_BEGIN:
 			s_goto(OP_EVAL);
 		}
 		/* end */
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 
 		for (x = car(code); args != NIL; x = cdr(x), args = cdr(args)) {
 			for (y = car(envir); y != NIL; y = cdr(y)) {
@@ -4086,8 +4097,8 @@ OP_BEGIN:
 		/* fall through */
 
 	case OP_DO1:		/* do -- init */
-		args = cons(value, args);
 		if (is_pair(code)) {
+			args = cons(value, args);
 			s_save(OP_DO1, args, cdr(code));
 			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
 				Error_1("Bad syntax of binding spec in do :", car(code));
@@ -4096,9 +4107,7 @@ OP_BEGIN:
 			args = NIL;
 			s_goto(OP_EVAL);
 		}
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 		/* fall through */
 
 	case OP_DO2:		/* do -- test */
@@ -4130,8 +4139,8 @@ OP_DO2:
 		/* fall through */
 
 	case OP_DO5:		/* do -- step */
-		args = cons(value, args);
 		if (is_pair(code)) {
+			args = cons(value, args);
 			s_save(OP_DO5, args, cdr(code));
 			code = car(code);
 			if (is_pair(cddr(code))) {
@@ -4144,9 +4153,7 @@ OP_DO2:
 		}
 		envir = cons(NIL, envir);
 		setenvironment(envir);
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 		s_goto(OP_DO2);
 
 	case OP_COND0:		/* cond */
@@ -4367,9 +4374,9 @@ OP_EXPANDPATTERN:
 		/* fall through */
 
 	case OP_LETSYNTAX1:		/* let-syntax */
-		args = cons(value, args);
 		if (is_pair(code)) {
 			/* continue */
+			args = cons(value, args);
 			s_save(OP_LETSYNTAX1, args, cdr(code));
 			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
 				Error_1("Bad syntax of binding spec in let-syntax :", car(code));
@@ -4382,9 +4389,7 @@ OP_EXPANDPATTERN:
 			s_goto(OP_EVAL);
 		}
 		/* end */
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 
 		envir = cons(NIL, envir);
 		setenvironment(envir);
@@ -4408,9 +4413,9 @@ OP_EXPANDPATTERN:
 		/* fall through */
 
 	case OP_LETRECSYNTAX1:	/* letrec-syntax */
-		args = cons(value, args);
 		if (is_pair(code)) {
 			/* continue */
+			args = cons(value, args);
 			s_save(OP_LETRECSYNTAX1, args, cdr(code));
 			if (!is_pair(car(code)) || !is_pair(cdar(code))) {
 				Error_1("Bad syntax of binding spec in letrec-syntax :", car(code));
@@ -4423,9 +4428,7 @@ OP_EXPANDPATTERN:
 			s_goto(OP_EVAL);
 		}
 		/* end */
-		args = reverse(args);
-		code = car(args);
-		args = cdr(args);
+		short_reverse();
 
 		for (mark_x = car(code); args != NIL; mark_x = cdr(mark_x), args = cdr(args)) {
 			exttype(car(args)) |= T_MACRO;
