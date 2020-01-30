@@ -1446,6 +1446,7 @@ void flushinput(void)
 	while (1) {
 		if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
 			fclose(port_file(inport));
+			port_file(inport) = NULL;
 		}
 		if (load_files == 1) {
 			break;
@@ -3568,6 +3569,7 @@ OP_T0LVL:
 		if (port_file(inport) == NULL || is_eofport(inport)) {
 			if (is_fileport(inport) && port_file(inport) != stdin && port_file(inport) != NULL) {
 				fclose(port_file(inport));
+				port_file(inport) = NULL;
 			}
 			if (load_files == 1) {
 				break;
