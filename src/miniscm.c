@@ -2665,9 +2665,12 @@ pointer expandsymbol(pointer p)
 		mark_y = cdr(mark_y);
 		return cons(x, y);
 	} else if (is_vector(p)) {
+		int saved_depth;
 		int i, len = (int)ivalue(p);
 		mark_x = cons(p, mark_x);
 		y = NIL;
+		saved_depth = stx_expand_quote_depth;
+		stx_expand_quote_depth = saved_depth + 1;
 		for (i = 0; i < len; i++) {
 			mark_y = cons(y, mark_y);
 			x = expandsymbol(vector_elem(car(mark_x), i));
@@ -2676,6 +2679,7 @@ pointer expandsymbol(pointer p)
 			y = cons(x, y);
 		}
 		mark_x = cdr(mark_x);
+		stx_expand_quote_depth = saved_depth;
 		mark_y = cons(y, mark_y);
 		i = list_length(y);
 		x = mk_vector(i);
@@ -2751,9 +2755,6 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 		mark_x = cons(p, mark_x);
 		x = caar(mark_x);
 		head_kind = stx_head_syntax_kind(x);
-		if (head_kind == STX_HEAD_NONE) {
-			stx_register_define_binder(p);
-		}
 		if (head_kind == STX_HEAD_QUOTE) {
 			int saved_depth = stx_expand_quote_depth;
 			x = expandpattern(caar(mark_x), d, n, e);
@@ -2767,6 +2768,9 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 			y = cdar(mark_x);
 			mark_x = cdr(mark_x);
 			return cons(x, y);
+		}
+		if (stx_expand_quote_depth == 0) {
+			stx_register_define_binder(p);
 		}
 		if (is_pair(cdar(mark_x)) && is_ellipsis(car(cdar(mark_x)))) {
 			if (expandpattern(caar(mark_x), d, n, e) == NULL) {
@@ -2806,12 +2810,16 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 		}
 		return cons(x, y);
 	} else if (is_vector(p)) {
+		int saved_depth;
 		int len = (int)ivalue(p);
 		mark_x = cons(p, mark_x);
 		y = NIL;
+		saved_depth = stx_expand_quote_depth;
+		stx_expand_quote_depth = saved_depth + 1;
 		for (i = 0; i < len; i++) {
 			if (i + 1 < len && is_ellipsis(vector_elem(car(mark_x), i + 1))) {
 				if (expandpattern(vector_elem(car(mark_x), i), d, n, e) == NULL) {
+					stx_expand_quote_depth = saved_depth;
 					mark_x = cdr(mark_x);
 					return NULL;
 				}
@@ -2833,11 +2841,13 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 			y = car(mark_y);
 			mark_y = cdr(mark_y);
 			if (x == NULL) {
+				stx_expand_quote_depth = saved_depth;
 				mark_x = cdr(mark_x);
 				return NULL;
 			}
 			y = cons(x, y);
 		}
+		stx_expand_quote_depth = saved_depth;
 		mark_x = cdr(mark_x);
 		i = list_length(y);
 		mark_y = cons(y, mark_y);
@@ -3324,6 +3334,7 @@ enum {
 static void stx_register_define_binder(pointer form)
 {
 	pointer head, target, params;
+	if (stx_expand_quote_depth > 0) return;
 	if (!is_pair(form)) return;
 	head = car(form);
 	if (!is_symbol(head) || !is_syntax(head)) return;
