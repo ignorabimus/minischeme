@@ -2,7 +2,7 @@
  * This software is released under the MIT License, see the LICENSE file.
  *
  * This version has been modified by Tatsuya WATANABE.
- *	current version is 0.85w12 (2020)
+ *	current version is 0.85w13 (2026)
  *
  * Below are the original credits.
  */
@@ -41,7 +41,7 @@
 #define BACKQUOTE '`'
 
 #if STANDALONE
-#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w12.\n"
+#define banner "Hello, This is Mini-Scheme Interpreter Version 0.85w13.\n"
 #define InitFile "init.scm"
 #endif
 
@@ -2609,9 +2609,9 @@ static pointer stx_rename_symbol(pointer sym)
 }
 
 enum {
-STX_HEAD_NONE = 0,
-STX_HEAD_QUOTE,
-STX_HEAD_SYNTAX_RULES
+	STX_HEAD_NONE = 0,
+	STX_HEAD_QUOTE,
+	STX_HEAD_SYNTAX_RULES
 };
 static int stx_head_syntax_kind(pointer head);
 static void stx_register_define_binder(pointer form);
