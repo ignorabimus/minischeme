@@ -88,6 +88,7 @@ struct cell {
 #define T_RESULTREADY    2	/* 00000010 */
 #define T_MACRO          4	/* 00000100 */
 #define T_DEFMACRO       8	/* 00001000 */	/* for define-macro */
+#define T_STX           16	/* 00010000 */	/* syntax object marker */
 #define T_DEFSYNTAX  32768	/* 1000000000000000 */	/* for define-syntax */
 #define T_SYNTAXNUM  32767	/* 0111111111111111 */	/* for define-syntax */
 

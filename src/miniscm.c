@@ -108,6 +108,7 @@ pointer QQUOTE;			/* pointer to symbol quasiquote */
 pointer UNQUOTE;		/* pointer to symbol unquote */
 pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
 
+pointer STX_RENAMES;    /* alist: (orig_sym . fresh_sym) */
 pointer ELLIPSIS;		/* pointer to symbol ... */
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
@@ -1057,6 +1058,7 @@ void gc(pointer *a, pointer *b)
 	QQUOTE = forward(QQUOTE);
 	UNQUOTE = forward(UNQUOTE);
 	UNQUOTESP = forward(UNQUOTESP);
+	STX_RENAMES = forward(STX_RENAMES);
 	ELLIPSIS = forward(ELLIPSIS);
 
 	/* forward current registers */
@@ -1261,6 +1263,7 @@ void gc(pointer *a, pointer *b)
 	mark(outport);
 	mark(winders);
 	mark(strbuff);
+	mark(STX_RENAMES);
 
 	/* mark current registers */
 	mark(args);
@@ -2566,27 +2569,95 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 	}
 }
 
+static pointer stx_expand_def_env = NULL;
+static int stx_expand_quote_depth = 0;
+static pointer stx_raw_mark = NULL;
+
+static pointer mk_stx(pointer sym, pointer cap_env)
+{
+	pointer x = cons(sym, cons(cap_env, NIL));
+	exttype(x) |= T_STX;
+	return x;
+}
+
+static int is_stx(pointer p)
+{
+	return is_pair(p)
+		&& (exttype(p) & T_STX)
+		&& is_pair(cdr(p))
+		&& cddr(p) == NIL;
+}
+
+static pointer stx_lookup_rename(pointer sym)
+{
+	pointer x;
+	for (x = STX_RENAMES; x != NIL; x = cdr(x)) {
+		if (caar(x) == sym) return cdar(x);
+	}
+	return NIL;
+}
+
+static pointer stx_rename_symbol(pointer sym)
+{
+	pointer fresh = stx_lookup_rename(sym);
+	pointer pair;
+	if (fresh != NIL) return fresh;
+	fresh = gensym();
+	pair = cons(sym, fresh);
+	STX_RENAMES = cons(pair, STX_RENAMES);
+	return fresh;
+}
+
+enum {
+STX_HEAD_NONE = 0,
+STX_HEAD_QUOTE,
+STX_HEAD_SYNTAX_RULES
+};
+static int stx_head_syntax_kind(pointer head);
+static void stx_register_define_binder(pointer form);
+
 pointer expandsymbol(pointer p)
 {
 	pointer x, y;
-	if (is_symbol(p)) {
-		if (syntaxnum(p) & T_DEFSYNTAX) {
-			car(p) = cons(cadr(args), car(p));
-			syntaxnum(car(p)) |= T_DEFSYNTAX;
-		} else {
-			p = cons(cdr(args), p);
-			type(p) = type(cdr(p));
-			syntaxnum(p) |= T_DEFSYNTAX;
+	if (is_pair(p) && car(p) == stx_raw_mark) {
+		return cdr(p);
+	} else if (is_stx(p)) {
+		if (stx_expand_quote_depth > 0) {
+			return car(p);
 		}
+		x = stx_lookup_rename(car(p));
+		if (x != NIL) return x;
 		return p;
+	} else if (is_symbol(p)) {
+		if (stx_expand_quote_depth > 0) {
+			return p;
+		}
+		x = stx_lookup_rename(p);
+		if (x != NIL) return x;
+		return mk_stx(p, stx_expand_def_env);
 	} else if (is_pair(p)) {
+		int head_kind;
 		mark_x = cons(p, mark_x);
-		x = expandsymbol(caar(mark_x));
-		if (is_symbol(x) && is_syntax(cdr(x)) && !strcmp(symname(cdr(x)), "quote")) {
+		x = caar(mark_x);
+		head_kind = stx_head_syntax_kind(x);
+		if (head_kind == STX_HEAD_NONE) {
+			stx_register_define_binder(p);
+		}
+		if (head_kind == STX_HEAD_QUOTE) {
+			int saved_depth = stx_expand_quote_depth;
+			x = expandsymbol(caar(mark_x));
+			stx_expand_quote_depth = saved_depth + 1;
+			y = expandsymbol(cdar(mark_x));
+			stx_expand_quote_depth = saved_depth;
+			mark_x = cdr(mark_x);
+			return cons(x, y);
+		} else if (head_kind == STX_HEAD_SYNTAX_RULES) {
+			x = expandsymbol(caar(mark_x));
 			y = cdar(mark_x);
 			mark_x = cdr(mark_x);
 			return cons(x, y);
 		}
+		x = expandsymbol(caar(mark_x));
 		mark_y = cons(x, mark_y);
 		y = expandsymbol(cdar(mark_x));
 		mark_x = cdr(mark_x);
@@ -2653,7 +2724,6 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 						}
 						y = vector_elem(car(value), i + 2);
 						if (y == NULL) continue;
-						y = expandsymbol(y);
 					}
 				} else {
 					*((long *)strvalue(cdr(code)) + e_d) = 0;
@@ -2668,15 +2738,36 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 				}
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
-				return expandsymbol(y);
+				return cons(stx_raw_mark, y);
 			}
 		}
 		if (d > 0 && find) {
-			return y;
+			if (y == NULL) return NULL;
+			return cons(stx_raw_mark, y);
 		}
 		return p;
 	} else if (is_pair(p)) {
+		int head_kind;
 		mark_x = cons(p, mark_x);
+		x = caar(mark_x);
+		head_kind = stx_head_syntax_kind(x);
+		if (head_kind == STX_HEAD_NONE) {
+			stx_register_define_binder(p);
+		}
+		if (head_kind == STX_HEAD_QUOTE) {
+			int saved_depth = stx_expand_quote_depth;
+			x = expandpattern(caar(mark_x), d, n, e);
+			stx_expand_quote_depth = saved_depth + 1;
+			y = expandpattern(cdar(mark_x), d, n, e);
+			stx_expand_quote_depth = saved_depth;
+			mark_x = cdr(mark_x);
+			return cons(x, y);
+		} else if (head_kind == STX_HEAD_SYNTAX_RULES) {
+			x = expandpattern(caar(mark_x), d, n, e);
+			y = cdar(mark_x);
+			mark_x = cdr(mark_x);
+			return cons(x, y);
+		}
 		if (is_pair(cdar(mark_x)) && is_ellipsis(car(cdar(mark_x)))) {
 			if (expandpattern(caar(mark_x), d, n, e) == NULL) {
 				mark_x = cdr(mark_x);
@@ -3230,6 +3321,69 @@ enum {
 	OP_ATOMP,
 };
 
+static void stx_register_define_binder(pointer form)
+{
+	pointer head, target, params;
+	if (!is_pair(form)) return;
+	head = car(form);
+	if (!is_symbol(head) || !is_syntax(head)) return;
+	if (!is_pair(cdr(form))) return;
+	switch (syntaxnum(head) & T_SYNTAXNUM) {
+	case OP_DEF0:
+		target = cadr(form);
+		if (is_symbol(target)) {
+			stx_rename_symbol(target);
+			return;
+		}
+		if (is_pair(target) && is_symbol(car(target))) {
+			stx_rename_symbol(car(target));
+		}
+		break;
+	case OP_LAMBDA:
+		params = cadr(form);
+		for (; is_pair(params); params = cdr(params)) {
+			if (is_symbol(car(params))) stx_rename_symbol(car(params));
+		}
+		if (is_symbol(params)) stx_rename_symbol(params);
+		break;
+	case OP_LET0:
+	case OP_LET0AST:
+	case OP_LET0REC:
+	case OP_LETRECAST0:
+	case OP_LETSYNTAX0:
+	case OP_LETRECSYNTAX0: {
+		pointer bindings = cadr(form);
+		if (is_symbol(bindings)) {
+			stx_rename_symbol(bindings);
+			if (!is_pair(cddr(form))) return;
+			bindings = caddr(form);
+		}
+		for (; is_pair(bindings); bindings = cdr(bindings)) {
+			pointer binding = car(bindings);
+			if (is_pair(binding) && is_symbol(car(binding))) {
+				stx_rename_symbol(car(binding));
+			}
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static int stx_head_syntax_kind(pointer head)
+{
+	if (!is_symbol(head) || !is_syntax(head)) return STX_HEAD_NONE;
+	switch (syntaxnum(head) & T_SYNTAXNUM) {
+	case OP_QUOTE:
+		return STX_HEAD_QUOTE;
+	case OP_SYNTAXRULES:
+		return STX_HEAD_SYNTAX_RULES;
+	default:
+		return STX_HEAD_NONE;
+	}
+}
+
 #define TST_NONE 0
 #define TST_ANY "\001"
 #define TST_STRING "\002"
@@ -3377,6 +3531,19 @@ LOOP:
 	switch (operator) {
 	case OP_EVAL:		/* main part of evalution */
 OP_EVAL:
+		if (is_stx(code)) {
+			pointer sym = car(code);
+			pointer cap = cadr(code);
+
+			for (x = cap; x != NIL; x = cdr(x)) {
+				for (y = car(x); y != NIL; y = cdr(y)) {
+					if (caar(y) == sym && cdar(y) != UNDEF) {
+						s_return(cdar(y));
+					}
+				}
+			}
+			Error_1("Unbounded variable", sym);
+		}
 		if (is_symbol(code)) {	/* symbol */
 			if (syntaxnum(code) & T_DEFSYNTAX) {
 				args = car(code);
@@ -3444,15 +3611,24 @@ OP_EVAL:
 		if (is_closure(value) && is_macro(value)) {	/* macro expansion */
 			if (syntaxnum(value) & T_DEFSYNTAX) {
 				args = cons(NIL, envir);
-				envir = closure_env(value);
+				stx_expand_def_env = closure_env(value);
 				s_save(OP_DOMACRO, NIL, NIL);
-				if (is_symbol(caar(value))) {
-					x = cons(caar(value), ELLIPSIS);
+				envir = stx_expand_def_env;
+				if (is_stx(caar(value))) {
+					y = car(caar(value));
+				} else if (is_symbol(caar(value)) && (syntaxnum(caar(value)) & T_DEFSYNTAX)) {
+					y = cdr(caar(value));
+				} else {
+					y = caar(value);
+				}
+				if (is_symbol(y)) {
+					x = cons(y, ELLIPSIS);
 					x = cons(x, NIL);
 					envir = cons(x, envir);
 					setenvironment(envir);
 					car(value) = cdar(value);
 				}
+				STX_RENAMES = NIL;
 				s_goto(OP_EXPANDPATTERN);
 			} else if (exttype(value) & T_DEFMACRO) {
 				args = cdr(code);
@@ -3612,6 +3788,7 @@ OP_READ_INTERNAL:
 		}
 
 	case OP_DOMACRO:	/* do macro */
+		stx_expand_def_env = NIL;
 		code = value;
 		s_goto(OP_EVAL);
 
@@ -4339,7 +4516,9 @@ OP_EXPANDPATTERN:
 				mark_x = mk_memblock(m * sizeof(int), &NIL, &NIL);
 				mark_y = mk_memblock(m * sizeof(int), &NIL, &NIL);
 				code = cons(mark_x, mark_y);
-				s_return(car(expandpattern(cdar(args), 0, 0, (int *)&w)));
+				x = car(expandpattern(cdar(args), 0, 0, (int *)&w));
+				stx_expand_quote_depth = 0;
+				s_return(expandsymbol(x));
 			}
 		}
 		s_return(NIL);
@@ -6978,6 +7157,7 @@ OP_PVECFROM:
 	case OP_MACRO_EXPAND2:	/* macro-expand */
 		if (syntaxnum(code) & T_DEFSYNTAX) {
 			value = code;
+			stx_expand_def_env = closure_env(value);
 			code = car(args);
 			s_goto(OP_EXPANDPATTERN);
 		} else if (exttype(code) & T_DEFMACRO) {
@@ -7337,6 +7517,9 @@ void scheme_init(void)
 	QQUOTE = mk_symbol("quasiquote");
 	UNQUOTE = mk_symbol("unquote");
 	UNQUOTESP = mk_symbol("unquote-splicing");
+	STX_RENAMES = NIL;
+	stx_expand_def_env = NIL;
+	stx_raw_mark = mk_uninterned_symbol("#:stx-raw");
 	ELLIPSIS = mk_symbol("...");
 #ifndef USE_SCHEME_STACK
 	dump_base = mk_dumpstack(NIL);
@@ -7360,6 +7543,8 @@ void scheme_deinit(void)
 	outport = NIL;
 	global_env = NIL;
 	winders = NIL;
+	stx_expand_def_env = NIL;
+	stx_raw_mark = NIL;
 #ifdef USE_COPYING_GC
 	gcell_list = NIL;
 #endif
