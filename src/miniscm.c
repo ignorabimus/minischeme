@@ -768,9 +768,9 @@ pointer mk_uninterned_symbol(const char *name)
 pointer gensym(void)
 {
 	char name[40];
-	static unsigned long gensym_cnt;
+	static uint64_t gensym_cnt;
 
-	snprintf(name, 40, "gensym-%lu", gensym_cnt++);
+	snprintf(name, 40, "gensym-%" PRIu64, gensym_cnt++);
 	return mk_uninterned_symbol(name);
 }
 
@@ -2461,7 +2461,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, int *s)
 		(*s)++;
 		return 1;
 	} else if (is_pair(p)) {
-		long len_f;
+		int len_f;
 		if (is_pair(cdr(p)) && is_ellipsis(cadr(p)) && (len_f = list_length(f)) >= 0) {
 			len_f -= list_length(cddr(p));
 			for (x = f; len_f-- > 0; x = cdr(x)) {
@@ -2481,7 +2481,7 @@ int matchpattern(pointer p, pointer f, pointer keyword, int *s)
 		}
 	} else if (is_vector(p)) {
 		if (is_vector(f)) {
-			long i, j;
+			int i, j;
 			for (i = 0, j = 0; i < ivalue(p) && j < ivalue(f); i++, j++) {
 				if (i + 1 < ivalue(p) && is_ellipsis(vector_elem(p, i + 1))) {
 					for (; j < ivalue(f) && j - i < 2 + ivalue(f) - ivalue(p); j++) {
@@ -2527,9 +2527,9 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 		ivalue(cdr(x)) = n;
 		set_vector_elem(car(value), (*s)++, f);
 	} else if (is_pair(p)) {
-		long len_f;
+		int len_f;
 		if (is_pair(cdr(p)) && is_ellipsis(cadr(p)) && (len_f = list_length(f)) >= 0) {
-			long i = 0;
+			int i = 0;
 			set_vector_elem(car(value), (*s)++, car(p));
 			x = vector_elem(car(value), (*s)++);
 			ivalue(car(x)) = d;
@@ -2548,7 +2548,7 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 		}
 	} else if (is_vector(p)) {
 		if (is_vector(f)) {
-			long i, j;
+			int i, j;
 			for (i = 0, j = 0; i < ivalue(p) && j < ivalue(f); i++, j++) {
 				if (i + 1 < ivalue(p) && is_ellipsis(vector_elem(p, i + 1))) {
 					set_vector_elem(car(value), (*s)++, vector_elem(p, i));
@@ -2730,7 +2730,7 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 						if (y == NULL) continue;
 					}
 				} else {
-					*((long *)strvalue(cdr(code)) + e_d) = 0;
+					*((int *)strvalue(cdr(code)) + e_d) = 0;
 				}
 			} else if (p == x && e_d == d && e_n == n) {
 				for (j = 0; j < d; j++) {
@@ -2980,7 +2980,7 @@ pointer s_clone_save(void) {
 	dump = cons((c), dump),                    \
 	dump = cons(envir, dump),                  \
 	dump = cons((b), dump),                    \
-	x = mk_integer((long)(a)),                 \
+	x = mk_integer((int32_t))(a)),             \
 	dump = cons(x, dump))
 
 #define s_return(a) BEGIN                      \
