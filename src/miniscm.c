@@ -378,33 +378,36 @@ size_t utf8_get_next(const char *utf8, int *utf32)
 	}
 }
 
-size_t utf8_strlen(const char *s)
+size_t utf8_strlen(const char *s, size_t len)
 {
+	const char *end = s + len;
 	size_t count = 0;
 
-	while (*s) {
+	while (s < end) {
 		s += utf8_get_next(s, NULL);
 		count++;
 	}
 	return count;
 }
 
-int utf8_strref(const char *s, size_t pos)
+int utf8_strref(const char *s, size_t len, size_t pos)
 {
+	const char *end = s + len;
 	int c;
 
-	while (*s) {
+	while (s < end) {
 		s += utf8_get_next(s, &c);
 		if (pos-- == 0) return c;
 	}
 	return -1;
 }
 
-int utf8_strpos(const char *s, size_t pos)
+int utf8_strpos(const char *s, size_t len, size_t pos)
 {
 	const char *t = s;
+	const char *end = s + len;
 
-	while (*s || pos == 0) {
+	while (s < end || pos == 0) {
 		if (pos-- == 0) return (int)(s - t);
 		s += utf8_get_next(s, NULL);
 	}
@@ -716,7 +719,8 @@ pointer mk_string(const char *str)
 pointer mk_counted_string(const char *str, size_t len)
 {
 	pointer x = get_string_cell(len, &NIL);
-	snprintf(strvalue(x), len + 1, "%s", str);
+	memcpy(strvalue(x), str, len);
+	strvalue(x)[len] = '\0';
 	return x;
 }
 
@@ -1363,9 +1367,9 @@ pointer port_from_scratch(void)
 	return mk_port_string(mk_empty_string(BLOCK_SIZE, '\0'), port_output);
 }
 
-pointer port_from_string(const char *str, int prop)
+pointer port_from_string(const char *str, size_t len, int prop)
 {
-	return mk_port_string(mk_string(str), prop);
+	return mk_port_string(mk_counted_string(str, len), prop);
 }
 
 pointer realloc_port_string(pointer p)
@@ -1515,6 +1519,31 @@ void putcharacter(const int c)
 			if (port_curr(outport) == endp) {
 				outport = realloc_port_string(outport);
 			}
+		}
+	}
+}
+
+void putbytes(const char *s, size_t len)
+{
+	if (is_fileport(outport)) {
+		if (len > 0) {
+			fwrite(s, 1, len, port_file(outport));
+		}
+	} else {
+		while (len > 0) {
+			char *endp = strvalue(car(outport)) + strlength(car(outport));
+			size_t avail = (size_t)(endp - port_curr(outport));
+			size_t n;
+
+			if (avail == 0) {
+				outport = realloc_port_string(outport);
+				continue;
+			}
+			n = (len < avail) ? len : avail;
+			memcpy(port_curr(outport), s, n);
+			port_curr(outport) += n;
+			s += n;
+			len -= n;
 		}
 	}
 }
@@ -1733,15 +1762,21 @@ int token(void)
 /* ========== Routines for Printing ========== */
 #define	ok_abbrev(x)	(is_pair(x) && cdr(x) == NIL)
 
-void printslashstring(unsigned char *s)
+void printslashstring(pointer l)
 {
-	int d;
+	static const char hex[] = "0123456789ABCDEF";
+	unsigned char *s = (unsigned char *)strvalue(l);
+	size_t i, start = 0, n = strlength(l);
 
 	putcharacter('"');
-	for ( ; *s; s++) {
-		if (*s == 0xff || *s == '"' || *s < ' ' || *s == '\\') {
+	for (i = 0; i < n; i++) {
+		unsigned char ch = s[i];
+		if (ch == 0xff || ch == '"' || ch < ' ' || ch == '\\') {
+			if (i > start) {
+				putbytes((const char *)s + start, i - start);
+			}
 			putcharacter('\\');
-			switch (*s) {
+			switch (ch) {
 			case '"':
 				putcharacter('"');
 				break;
@@ -1759,15 +1794,15 @@ void printslashstring(unsigned char *s)
 				break;
 			default:
 				putcharacter('x');
-				d = *s / 16;
-				putcharacter(d < 10 ? d + '0' : d - 10 + 'A');
-				d = *s % 16;
-				putcharacter(d < 10 ? d + '0' : d - 10 + 'A');
+				putcharacter(hex[ch >> 4]);
+				putcharacter(hex[ch & 0x0f]);
 				break;
 			}
-		} else {
-			putcharacter(*s);
+			start = i + 1;
 		}
+	}
+	if (n > start) {
+		putbytes((const char *)s + start, n - start);
 	}
 	putcharacter('"');
 }
@@ -1865,43 +1900,6 @@ char *atom2str(pointer l, int f)
 		} else {
 			p = symname(l);
 		}
-	} else if (is_string(l)) {
-		if (!f) {
-			p = strvalue(l);
-		} else {
-			printslashstring((unsigned char *)strvalue(l));
-			p = NULL;
-		}
-	} else if (is_character(l)) {
-		int c = (int)ivalue(l);
-		p = strvalue(strbuff);
-		if (!f) {
-			*(p + utf32_to_utf8(c, p)) = '\0';
-		} else {
-			switch (c) {
-			case ' ':
-				sprintf(p, "#\\space");
-				break;
-			case '\n':
-				sprintf(p, "#\\newline");
-				break;
-			case '\r':
-				sprintf(p, "#\\return");
-				break;
-			case '\t':
-				sprintf(p, "#\\tab");
-				break;
-			default:
-				if (c < 32) {
-					sprintf(p, "#\\x%x", c < 0 ? -c : c);
-				} else {
-					p[0] = '#';
-					p[1] = '\\';
-					*(p + 2 + utf32_to_utf8(c, p + 2)) = '\0';
-				}
-				break;
-			}
-		}
 	} else if (is_proc(l)) {
 		p = strvalue(strbuff);
 		sprintf(p, "#<PROCEDURE %d>", procnum(l));
@@ -1935,18 +1933,64 @@ char *atom2str(pointer l, int f)
 }
 
 /* print atoms */
-size_t printatom(pointer l, int f)
+void printatom(pointer l, int f)
 {
-	char *p = atom2str(l, f);
-
-	if (p == NULL) {
-		return 0;
+	char *p;
+	size_t len;
+	if (is_string(l)) {
+		if (!f) {
+			p = strvalue(l);
+			len = strlength(l);
+		} else {
+			printslashstring(l);
+			return;
+		}
+	} else if (is_character(l)) {
+		int c = (int)ivalue(l);
+		p = strvalue(strbuff);
+		if (!f) {
+			len = utf32_to_utf8(c, p);
+			p[len] = '\0';
+		} else {
+			switch (c) {
+			case ' ':
+				sprintf(p, "#\\space");
+				len = 7;
+				break;
+			case '\n':
+				sprintf(p, "#\\newline");
+				len = 9;
+				break;
+			case '\r':
+				sprintf(p, "#\\return");
+				len = 8;
+				break;
+			case '\t':
+				sprintf(p, "#\\tab");
+				len = 5;
+				break;
+			default:
+				if (c < 0x20 || (0x7f <= c && c <= 0x9f)) {
+					sprintf(p, "#\\x%02X", c < 0 ? -c : c);
+					len = strlen(p);
+				} else {
+					p[0] = '#';
+					p[1] = '\\';
+					len = 2 + utf32_to_utf8(c, p + 2);
+					p[len] = '\0';
+				}
+				break;
+			}
+		}
+	} else {
+		p = atom2str(l, f);
+		if (p == NULL) {
+			return;
+		}
+		len = strlen(p);
 	}
-	if (f < 0) {
-		return strlen(p);
-	}
-	putstr(p);
-	return 0;
+	putbytes(p, len);
+	return;
 }
 
 /* ========== Routines for Numerical operations ========== */
@@ -2427,12 +2471,20 @@ int equal(pointer a, pointer b)
 			return 0;
 	} else if (is_string(a)) {
 		if (is_string(b))
-			return strcmp(strvalue(a), strvalue(b)) == 0;
+			return strlength(a) == strlength(b) && memcmp(strvalue(a), strvalue(b), strlength(a)) == 0;
 		else
 			return 0;
 	} else {
 		return eqv(a, b);
 	}
+}
+
+int strobj_cmp(pointer a, pointer b)
+{
+	size_t la = strlength(a), lb = strlength(b);
+	int r = memcmp(strvalue(a), strvalue(b), la < lb ? la : lb);
+	if (r != 0) return r;
+	return (la < lb) ? -1 : (la > lb) ? 1 : 0;
 }
 
 int is_ellipsis(pointer p)
@@ -5810,6 +5862,9 @@ OP_DOWINDS2:
 
 	case OP_INT2CHAR:	/* integer->char */
 		if (!validargs("integer->char", 1, 1, TST_NATURAL)) Error_0(msg);
+		if (bignum(car(args)) != NIL || ivalue(car(args)) >= 0x110000) {
+			Error_1("integer->char: out of range:", car(args));
+		}
 		s_return(mk_character((int)ivalue(car(args))));
 
 	case OP_CHARUPCASE:	/* char-upcase */
@@ -5842,11 +5897,11 @@ OP_DOWINDS2:
 
 	case OP_STRLEN:		/* string-length */
 		if (!validargs("string-length", 1, 1, TST_STRING)) Error_0(msg);
-		s_return(mk_integer((int32_t)utf8_strlen(strvalue(car(args)))));
+		s_return(mk_integer((int32_t)utf8_strlen(strvalue(car(args)), strlength(car(args)))));
 
 	case OP_STRREF:		/* string-ref */
 		if (!validargs("string-ref", 2, 2, TST_STRING TST_NATURAL)) Error_0(msg);
-		w = utf8_strref(strvalue(car(args)), (size_t)ivalue(cadr(args)));
+		w = utf8_strref(strvalue(car(args)), strlength(car(args)), (size_t)ivalue(cadr(args)));
 		if (w == -1) {
 			Error_1("string-ref: out of bounds:", cadr(args));
 		}
@@ -5854,8 +5909,8 @@ OP_DOWINDS2:
 
 	case OP_STRSET:		/* string-set! */
 		if (!validargs("string-set!", 3, 3, TST_STRING TST_NATURAL TST_CHAR)) Error_0(msg);
-		w = utf8_strpos(strvalue(car(args)), (size_t)ivalue(cadr(args)));
-		if (w == -1 || strvalue(car(args))[w] == '\0') {
+		w = utf8_strpos(strvalue(car(args)), strlength(car(args)), (size_t)ivalue(cadr(args)));
+		if (w == -1 || (size_t)w >= strlength(car(args))) {
 			Error_1("string-set!: out of bounds:", cadr(args));
 		} else {
 			char utf8[4];
@@ -5878,19 +5933,19 @@ OP_DOWINDS2:
 
 	case OP_STREQU:		/* string=? */
 		if (!validargs("string=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) == 0);
+		s_retbool(strobj_cmp(car(args), cadr(args)) == 0);
 	case OP_STRLSS:		/* string<? */
 		if (!validargs("string<?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) < 0);
+		s_retbool(strobj_cmp(car(args), cadr(args)) < 0);
 	case OP_STRGTR:		/* string>? */
 		if (!validargs("string>?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) > 0);
+		s_retbool(strobj_cmp(car(args), cadr(args)) > 0);
 	case OP_STRLEQ:		/* string<=? */
 		if (!validargs("string<=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) <= 0);
+		s_retbool(strobj_cmp(car(args), cadr(args)) <= 0);
 	case OP_STRGEQ:		/* string>=? */
 		if (!validargs("string>=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
-		s_retbool(strcmp(strvalue(car(args)), strvalue(cadr(args))) >= 0);
+		s_retbool(strobj_cmp(car(args), cadr(args)) >= 0);
 
 	case OP_STRCIEQU:	/* string-ci=? */
 		if (!validargs("string-ci=?", 2, 2, TST_STRING TST_STRING)) Error_0(msg);
@@ -5910,16 +5965,16 @@ OP_DOWINDS2:
 
 	case OP_SUBSTR:		/* substring */
 		if (!validargs("substring", 2, 3, TST_STRING TST_NATURAL)) Error_0(msg);
-		w = utf8_strlen(strvalue(car(args)));
+		w = utf8_strlen(strvalue(car(args)), strlength(car(args)));
 		if (ivalue(cadr(args)) > w) {
 			Error_1("substring: start out of bounds:", cadr(args));
 		} else {
-			int start = utf8_strpos(strvalue(car(args)), (size_t)ivalue(cadr(args))), n;
+			int start = utf8_strpos(strvalue(car(args)), strlength(car(args)), (size_t)ivalue(cadr(args))), n;
 			if (cddr(args) != NIL) {
 				if (ivalue(caddr(args)) > w || ivalue(caddr(args)) < ivalue(cadr(args))) {
 					Error_1("substring: end out of bounds:", caddr(args));
 				}
-				n = utf8_strpos(strvalue(car(args)), (size_t)ivalue(caddr(args))) - start;
+				n = utf8_strpos(strvalue(car(args)), strlength(car(args)), (size_t)ivalue(caddr(args))) - start;
 			} else {
 				n = (int)strlength(car(args)) - start;
 			}
@@ -5974,12 +6029,12 @@ OP_DOWINDS2:
 
 	case OP_STRCOPY:	/* string-copy */
 		if (!validargs("string-copy", 1, 1, TST_STRING)) Error_0(msg);
-		s_return(mk_string(strvalue(car(args))));
+		s_return(mk_counted_string(strvalue(car(args)), strlength(car(args))));
 
 	case OP_STRFILL:	/* string-fill! */
 		if (!validargs("string-fill!", 2, 2, TST_STRING TST_CHAR)) Error_0(msg);
 		x = car(args);
-		w = utf8_strlen(strvalue(x));
+		w = utf8_strlen(strvalue(x), strlength(x));
 		if (w > 0) {
 			char utf8[4];
 			size_t len = utf32_to_utf8((int)ivalue(cadr(args)), utf8);
@@ -6750,7 +6805,7 @@ OP_ERR1:
 
 	case OP_OPEN_INSTRING:	/* open-input-string */
 		if (!validargs("open-input-string", 1, 1, TST_STRING)) Error_0(msg);
-		x = port_from_string(strvalue(car(args)), port_input);
+		x = port_from_string(strvalue(car(args)), strlength(car(args)), port_input);
 		if (x == NIL) {
 			s_return(F);
 		}
@@ -6766,7 +6821,7 @@ OP_ERR1:
 
 	case OP_OPEN_INOUTSTRING:	/* open-input-output-string */
 		if (!validargs("open-input-output-string", 1, 1, TST_STRING)) Error_0(msg);
-		x = port_from_string(strvalue(car(args)), port_input | port_output);
+		x = port_from_string(strvalue(car(args)), strlength(car(args)), port_input | port_output);
 		if (x == NIL) {
 			s_return(F);
 		}
@@ -6776,7 +6831,7 @@ OP_ERR1:
 		if (!validargs("get-output-string", 1, 1, TST_OUTPORT)) Error_0(msg);
 		x = car(args);
 		if (is_strport(x) && port_file(x) != NULL) {
-			s_return(mk_string(strvalue(car(x))));
+			s_return(mk_counted_string(strvalue(car(x)), (size_t)(port_curr(x) - strvalue(car(x)))));
 		}
 		s_return(F);
 
@@ -7597,7 +7652,7 @@ int scheme_load_string(const char *cmd)
 	int op;
 
 	interactive_repl = 0;
-	inport = port_from_string(cmd, port_input);
+	inport = port_from_string(cmd, strlen(cmd), port_input);
 	if (setjmp(error_jmp) == 0) {
 		op = OP_T0LVL;
 	} else {

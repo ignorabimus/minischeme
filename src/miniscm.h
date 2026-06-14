@@ -96,7 +96,7 @@ struct cell {
 #define type(p)         ((p)->_flag)
 #define exttype(p)      ((p)->_extflag)
 
-#define is_string(p)    (type(p)&T_STRING)
+#define is_string(p)    ((type(p) & (T_STRING | T_SYMBOL)) == T_STRING)
 #define strvalue(p)     ((p)->_object._string._svalue)
 #define strlength(p)    ((p)->_object._string._length)
 
