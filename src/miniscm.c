@@ -80,6 +80,8 @@ pointer oblist = &_NIL;	/* pointer to symbol table */
 pointer global_env;		/* pointer to global environment */
 struct cell _ZERO;		/* special cell representing integer 0 */
 struct cell _ONE;		/* special cell representing integer 1 */
+struct cell _STX_RAW_MARK;
+pointer STX_RAW_MARK = &_STX_RAW_MARK;	/* special cell representing raw syntax objects */
 
 pointer inport = &_NIL;		/* pointer to current-input-port */
 pointer outport = &_NIL;	/* pointer to current-output-port */
@@ -108,8 +110,9 @@ pointer QQUOTE;			/* pointer to symbol quasiquote */
 pointer UNQUOTE;		/* pointer to symbol unquote */
 pointer UNQUOTESP;		/* pointer to symbol unquote-splicing */
 
-pointer STX_RENAMES;    /* alist: (orig_sym . fresh_sym) */
+pointer STX_RENAMES;	/* alist: (orig_sym . fresh_sym) */
 pointer ELLIPSIS;		/* pointer to symbol ... */
+pointer stx_expand_def_env ;	/* pointer to environment for macro expansion */
 
 pointer free_cell = &_NIL;	/* pointer to top of free cells */
 size_t  fcells = 0;			/* # of free cells */
@@ -1064,6 +1067,7 @@ void gc(pointer *a, pointer *b)
 	UNQUOTESP = forward(UNQUOTESP);
 	STX_RENAMES = forward(STX_RENAMES);
 	ELLIPSIS = forward(ELLIPSIS);
+	stx_expand_def_env = forward(stx_expand_def_env);
 
 	/* forward current registers */
 	args = forward(args);
@@ -1267,7 +1271,7 @@ void gc(pointer *a, pointer *b)
 	mark(outport);
 	mark(winders);
 	mark(strbuff);
-	mark(STX_RENAMES);
+	mark(stx_expand_def_env);
 
 	/* mark current registers */
 	mark(args);
@@ -2621,9 +2625,7 @@ void bindpattern(pointer p, pointer f, int d, int n, int *s)
 	}
 }
 
-static pointer stx_expand_def_env = NULL;
 static int stx_expand_quote_depth = 0;
-static pointer stx_raw_mark = NULL;
 
 static pointer mk_stx(pointer sym, pointer cap_env)
 {
@@ -2671,7 +2673,7 @@ static void stx_register_define_binder(pointer form);
 pointer expandsymbol(pointer p)
 {
 	pointer x, y;
-	if (is_pair(p) && car(p) == stx_raw_mark) {
+	if (is_pair(p) && car(p) == STX_RAW_MARK) {
 		return cdr(p);
 	} else if (is_stx(p)) {
 		if (stx_expand_quote_depth > 0) {
@@ -2794,12 +2796,12 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 				}
 				y = vector_elem(car(value), i + 2);
 				if (y == NULL) return NIL;
-				return cons(stx_raw_mark, y);
+				return cons(STX_RAW_MARK, y);
 			}
 		}
 		if (d > 0 && find) {
 			if (y == NULL) return NULL;
-			return cons(stx_raw_mark, y);
+			return cons(STX_RAW_MARK, y);
 		}
 		return p;
 	} else if (is_pair(p)) {
@@ -7299,14 +7301,20 @@ void init_vars_global(void)
 	/* init global_env */
 	global_env = cons(NIL, NIL);
 	setenvironment(global_env);
+	/* init ZERO */
 	type(&_ZERO) = T_NUMBER | T_ATOM;
 	set_num_integer(&_ZERO);
 	ivalue(&_ZERO) = 0;
 	bignum(&_ZERO) = NIL;
+	/* init ONE */
 	type(&_ONE) = T_NUMBER | T_ATOM;
 	set_num_integer(&_ONE);
 	ivalue(&_ONE) = 1;
 	bignum(&_ONE) = NIL;
+	/* init STX_RAW_MARK */
+	type(STX_RAW_MARK) = (T_ATOM | MARK); 
+	car(STX_RAW_MARK) = cdr(STX_RAW_MARK) = STX_RAW_MARK;
+	/* init input file */
 	load_stack[0] = mk_port(stdin, port_input);
 	load_files = 1;
 	/* init output file */
@@ -7585,7 +7593,6 @@ void scheme_init(void)
 	UNQUOTESP = mk_symbol("unquote-splicing");
 	STX_RENAMES = NIL;
 	stx_expand_def_env = NIL;
-	stx_raw_mark = mk_uninterned_symbol("#:stx-raw");
 	ELLIPSIS = mk_symbol("...");
 #ifndef USE_SCHEME_STACK
 	dump_base = mk_dumpstack(NIL);
@@ -7610,7 +7617,6 @@ void scheme_deinit(void)
 	global_env = NIL;
 	winders = NIL;
 	stx_expand_def_env = NIL;
-	stx_raw_mark = NIL;
 #ifdef USE_COPYING_GC
 	gcell_list = NIL;
 #endif
