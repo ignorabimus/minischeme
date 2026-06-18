@@ -82,6 +82,12 @@ struct cell _ZERO;		/* special cell representing integer 0 */
 struct cell _ONE;		/* special cell representing integer 1 */
 struct cell _STX_RAW_MARK;
 pointer STX_RAW_MARK = &_STX_RAW_MARK;	/* special cell representing raw syntax objects */
+struct cell _PROC_LIST2VEC;
+pointer PROC_LIST2VEC = &_PROC_LIST2VEC; /* special cell representing procedure list->vector */
+struct cell _PROC_CONS;
+pointer PROC_CONS = &_PROC_CONS; /* special cell representing procedure cons */
+struct cell _PROC_APPEND;
+pointer PROC_APPEND = &_PROC_APPEND; /* special cell representing procedure append */
 
 pointer inport = &_NIL;		/* pointer to current-input-port */
 pointer outport = &_NIL;	/* pointer to current-output-port */
@@ -2917,41 +2923,6 @@ pointer expandpattern(pointer p, int d, int n, int *e)
 	}
 }
 
-/* make cons list for quasiquote */
-pointer mcons(pointer f, pointer l, pointer r)
-{
-	pointer x;
-
-	if (is_pair(r) && car(r) == QUOTE && cadr(r) == cdr(f) &&
-		is_pair(l) && car(l) == QUOTE && cadr(l) == cdr(f)) {
-		x = cons(f, NIL);
-		return cons(QUOTE, x);
-	} else {
-		args = l;
-		x = cons(r, NIL);
-		args = cons(args, x);
-		x = mk_symbol("cons");
-		return cons(x, args);
-	}
-}
-
-/* make append list for quasiquote */
-pointer mappend(pointer f, pointer l, pointer r)
-{
-	pointer x;
-
-	if (car(f) == NIL ||
-		(is_pair(r) && car(l) == QUOTE && cadr(r) == NIL)) {
-		return l;
-	} else {
-		args = l;
-		x = cons(r, NIL);
-		args = cons(args, x);
-		x = mk_symbol("append");
-		return cons(x, args);
-	}
-}
-
 /* true or false value macro */
 #define istrue(p)       ((p) != F)
 #define isfalse(p)      ((p) == F)
@@ -3384,6 +3355,39 @@ enum {
 	OP_MACRO_EXPAND2,
 	OP_ATOMP,
 };
+
+/* make cons list for quasiquote */
+pointer mcons(pointer f, pointer l, pointer r)
+{
+	pointer x;
+
+	if (is_pair(r) && car(r) == QUOTE && cadr(r) == cdr(f) &&
+		is_pair(l) && car(l) == QUOTE && cadr(l) == cdr(f)) {
+		x = cons(f, NIL);
+		return cons(QUOTE, x);
+	} else {
+		args = l;
+		x = cons(r, NIL);
+		x = cons(args, x);
+		return cons(PROC_CONS, x);
+	}
+}
+
+/* make append list for quasiquote */
+pointer mappend(pointer f, pointer l, pointer r)
+{
+	pointer x;
+
+	if (car(f) == NIL ||
+		(is_pair(r) && car(l) == QUOTE && cadr(r) == NIL)) {
+		return l;
+	} else {
+		args = l;
+		x = cons(r, NIL);
+		x = cons(args, x);
+		return cons(PROC_APPEND, x);
+	}
+}
 
 static void stx_register_define_binder(pointer form)
 {
@@ -3937,11 +3941,8 @@ OP_QQUOTE1:
 		}
 
 	case OP_QQUOTE2:	/* quasiquote -- 'vector */
-		args = cons(value, NIL);
-		x = mk_symbol("vector");
-		args = cons(x, args);
-		x = mk_symbol("apply");
-		s_return(cons(x, args));
+		x = cons(value, NIL);
+		s_return(cons(PROC_LIST2VEC, x));
 
 	case OP_QQUOTE3:	/* quasiquote -- 'quasiquote */
 		x = cons(QQUOTE, NIL);
@@ -7025,12 +7026,7 @@ OP_RDSEXPR:
 
 	case OP_RDQQUOTEVEC:
 		x = cons(value, NIL);
-		x = cons(QQUOTE, x);
-		args = cons(x, NIL);
-		x = mk_symbol("vector");
-		args = cons(x, args);
-		x = mk_symbol("apply");
-		s_return(cons(x, args));
+		s_return(cons(PROC_LIST2VEC, x));
 
 	case OP_RDUNQUOTE:
 		x = cons(value, NIL);
@@ -7314,6 +7310,18 @@ void init_vars_global(void)
 	/* init STX_RAW_MARK */
 	type(STX_RAW_MARK) = (T_ATOM | MARK); 
 	car(STX_RAW_MARK) = cdr(STX_RAW_MARK) = STX_RAW_MARK;
+	/* init PROC_LIST2VEC */
+	type(PROC_LIST2VEC) = (T_PROC | T_ATOM);
+	ivalue(PROC_LIST2VEC) = OP_LIST2VEC;
+	set_num_integer(PROC_LIST2VEC);
+	/* init PROC_CONS */
+	type(PROC_CONS) = (T_PROC | T_ATOM);
+	ivalue(PROC_CONS) = OP_CONS;
+	set_num_integer(PROC_CONS);
+	/* init PROC_APPEND */
+	type(PROC_APPEND) = (T_PROC | T_ATOM);
+	ivalue(PROC_APPEND) = OP_APPEND;
+	set_num_integer(PROC_APPEND);
 	/* init input file */
 	load_stack[0] = mk_port(stdin, port_input);
 	load_files = 1;
