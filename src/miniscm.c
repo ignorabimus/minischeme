@@ -2324,10 +2324,12 @@ pointer reverse(pointer a) /* a must be checked by gc */
 void short_reverse(void)
 {
 	if (is_pair(args)) {
-		pointer p = cons(value, NIL);
+		pointer p = cons(value, NIL), q;
 
-		for (; is_pair(cdr(args)); args = cdr(args)) {
-			p = cons(car(args), p);
+		for (; is_pair(cdr(args)); args = q) {
+			q = cdr(args);
+			cdr(args) = p;
+			p = args;
 		}
 		code = car(args);
 		args = p;
