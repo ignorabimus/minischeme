@@ -973,8 +973,8 @@ pointer mk_dumpstack(pointer next)
 	pointer x = get_consecutive_cells(3, &next, &NIL);
 
 	type(x) = T_PAIR;
-	type(x + 1) = T_NUMBER | T_ATOM;
-	type(x + 2) = T_NUMBER | T_ATOM;
+	type(x + 1) = T_PROC | T_ATOM;
+	type(x + 2) = T_PROC | T_ATOM;
 	car(x) = NIL;
 	cdr(x) = next;
 	return x;
@@ -1027,9 +1027,10 @@ pointer forward(pointer x)
 #ifndef USE_SCHEME_STACK
 void forward_dump(pointer base, pointer curr)
 {
-	pointer p, q;
+	pointer p, q, prev;
 
-	for (p = base; p != curr; p = dump_prev(p)) {
+	for (p = base; p != curr; p = prev) {
+		prev = dump_prev(p);
 		q = forward(p);
 		forward(p + 1);
 		forward(p + 2);
@@ -1037,7 +1038,8 @@ void forward_dump(pointer base, pointer curr)
 		dump_envir(q) = forward(dump_envir(q));
 		dump_code(q) = forward(dump_code(q));
 	}
-	for (; p != NIL; p = dump_prev(p)) {
+	for (; p != NIL; p = prev) {
+		prev = dump_prev(p);
 		forward(p);
 		forward(p + 1);
 		forward(p + 2);
@@ -1084,7 +1086,7 @@ void gc(pointer *a, pointer *b)
 	dump_base = forward(dump_base);
 
 	for (p = c_nest; p != NIL; p = cdr(p)) {
-		q = cdr(cdar(c_nest));
+		q = cdr(cdar(p));
 		forward_dump(cdr(q), car(q));
 	}
 #endif
@@ -1287,7 +1289,7 @@ void gc(pointer *a, pointer *b)
 	mark_dump(dump_base, dump);
 
 	for (p = c_nest; p != NIL; p = cdr(p)) {
-		pointer q = cdr(cdar(c_nest));
+		pointer q = cdr(cdar(p));
 		mark_dump(cdr(q), car(q));
 	}
 #else
