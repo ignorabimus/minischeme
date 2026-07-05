@@ -2644,14 +2644,6 @@ static pointer mk_stx(pointer sym, pointer cap_env)
 	return x;
 }
 
-static int is_stx(pointer p)
-{
-	return is_pair(p)
-		&& (exttype(p) & T_STX)
-		&& is_pair(cdr(p))
-		&& cddr(p) == NIL;
-}
-
 static pointer stx_lookup_rename(pointer sym)
 {
 	pointer x;

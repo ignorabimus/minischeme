@@ -162,6 +162,9 @@ enum {
 #define is_resultready(p) (exttype(p) & T_RESULTREADY)
 #define setresultready(p) exttype(p) |= T_RESULTREADY
 
+#define is_len2_pair(p) (is_pair(p) && is_pair(cdr(p)) && cddr(p) == NIL)
+#define is_stx(p)       ((exttype(p) & T_STX) && is_len2_pair(p))
+
 #define is_atom(p)      (type(p)&T_ATOM)
 #define setatom(p)      type(p) |= T_ATOM
 #define clratom(p)      type(p) &= CLRATOM
